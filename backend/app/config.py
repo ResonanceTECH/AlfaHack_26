@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 14
+    auth_access_token_ttl: int | None = Field(default=None, validation_alias="AUTH_ACCESS_TOKEN_TTL")
+    auth_refresh_token_ttl: int | None = Field(default=None, validation_alias="AUTH_REFRESH_TOKEN_TTL")
 
     redis_url: str = "redis://localhost:6379/0"
 
@@ -40,13 +42,30 @@ class Settings(BaseSettings):
         validation_alias="CORS_ORIGINS",
     )
 
+    otp_ttl_seconds: int = 300
+    otp_resend_seconds: int = 60
+    otp_max_attempts: int = 5
+    email_token_ttl_seconds: int = 86400
+
     rate_limit_per_minute: int = 120
 
     @property
     def is_production(self) -> bool:
         return self.app_env.lower() in ("production", "prod")
 
-    @computed_field
+    @property
+    def access_ttl_minutes(self) -> int:
+        if self.auth_access_token_ttl is not None:
+            return max(1, self.auth_access_token_ttl // 60)
+        return self.access_token_expire_minutes
+
+    @property
+    def refresh_ttl_days(self) -> int:
+        if self.auth_refresh_token_ttl is not None:
+            return max(1, self.auth_refresh_token_ttl // 86400)
+        return self.refresh_token_expire_days
+
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def cors_origins(self) -> List[str]:
         return [x.strip() for x in self.cors_origins_raw.split(",") if x.strip()]
