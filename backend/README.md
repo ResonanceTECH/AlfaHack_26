@@ -1,0 +1,81 @@
+# Backend — Alfa Business Credit API
+
+FastAPI: auth/RBAC, компании, финансы, подбор кредитов, калькулятор, заявки, менеджер, выписки, прогноз, readiness, ROI, AI-консультант.
+
+## Docker (из корня репо)
+
+```bash
+docker compose up --build
+```
+
+| | |
+|--|--|
+| Swagger | http://localhost:8000/docs |
+| Health | http://localhost:8000/health |
+| Postgres | `localhost:5433` |
+| Redis | `localhost:6379` |
+
+Compose поднимает БД, Redis, миграции, seed и API.
+
+## Локальная разработка
+
+```bash
+# из корня
+docker compose up -d db redis
+
+cd backend
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env
+
+alembic upgrade head
+python -m scripts.seed
+uvicorn app.main:app --reload --port 8000
+```
+
+## Демо-аккаунты
+
+| Роль | Email | Пароль |
+|------|-------|--------|
+| Предприниматель | `ip@demo.alfa` | `demo1234` |
+| Менеджер | `manager@demo.alfa` | `demo1234` |
+| Бухгалтер | `buh@demo.alfa` | `demo1234` |
+| Чужой тенант | `ooo@demo.alfa` | `demo1234` |
+
+## API (`/api/v1`)
+
+Полный список — в Swagger. Основные группы:
+
+| Группа | Назначение |
+|--------|------------|
+| `/auth/*` | регистрация/логин (email, phone OTP), refresh, logout |
+| `/companies/*` | профиль, финансы, обязательства, бизнес-цели |
+| `/credit/*` | продукты, рекомендации, калькулятор, сценарии, readiness |
+| `/applications/*` | заявки, документы, статусы |
+| `/manager/*` | очередь менеджера |
+| `/statements/*`, `/forecasts/*`, `/ai/chat` | выписки, прогноз CF, консультант |
+
+JSON на проводе — camelCase. Деньги — `NUMERIC`.
+
+## Переменные окружения
+
+См. `.env.example`. Минимум: `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET_KEY`.  
+SMS/email по умолчанию `console` (коды в лог). ML выключен (`ML_SERVICE_ENABLED=false`).
+
+## Структура
+
+```
+backend/
+  app/
+    api/v1/
+    core/
+    db/
+    models/
+    schemas/
+    services/
+  alembic/
+  scripts/seed.py
+```
+
+Рекомендации, прогноз и readiness — демо-инструменты, не официальное решение банка.
