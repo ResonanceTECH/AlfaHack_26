@@ -34,6 +34,10 @@ services:
       DATABASE_URL: postgresql+psycopg://alfa:alfa@db:5432/alfa_credit
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET_KEY: docker-demo-secret-change-me
+      FRONTEND_URL: http://localhost:8080
+      BACKEND_URL: http://localhost:8000
+      SMS_PROVIDER: console
+      EMAIL_PROVIDER: console
     volumes:
       - uploads:/app/uploads
     depends_on:
