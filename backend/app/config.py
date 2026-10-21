@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     otp_max_attempts: int = 5
     email_token_ttl_seconds: int = 86400
 
+    ml_service_url: str = Field(default="", validation_alias="ML_SERVICE_URL")
+    ml_service_enabled: bool = Field(default=False, validation_alias="ML_SERVICE_ENABLED")
+    ml_service_timeout: float = Field(default=8.0, validation_alias="ML_SERVICE_TIMEOUT")
+
     rate_limit_per_minute: int = 120
 
     @property
