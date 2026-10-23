@@ -7,7 +7,7 @@ from uuid import uuid4
 from sqlalchemy import DateTime, Enum, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.enums import UserRole, UserStatus
+from app.core.enums import MemberRole, UserRole, UserStatus
 from app.db.base import Base
 
 
@@ -47,7 +47,7 @@ class User(Base):
     def company_id(self) -> Optional[str]:
         if not self.memberships:
             return None
-        owners = [m for m in self.memberships if m.role.value == "owner"]
+        owners = [m for m in self.memberships if m.role == MemberRole.OWNER]
         if owners:
             return owners[0].company_id
         return self.memberships[0].company_id

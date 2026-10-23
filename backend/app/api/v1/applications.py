@@ -22,7 +22,7 @@ from app.schemas.application import (
     StatusUpdate,
 )
 from app.services.access import (
-    MANAGER_ROLES,
+    ANALYST_ROLES,
     require_application_access,
     require_company_access,
     require_roles,
@@ -170,17 +170,16 @@ def list_my_applications(db: DbDep, user: CurrentUser, company_id: str | None = 
         joinedload(CreditApplication.assigned_manager),
     )
 
-    if user.role == UserRole.ADMIN:
-        if company_id:
-            q = q.where(CreditApplication.company_id == company_id)
-    elif user.role in MANAGER_ROLES:
+    if user.role in ANALYST_ROLES:
         q = q.where(CreditApplication.status != ApplicationStatus.DRAFT)
         if company_id:
             require_company_access(db, user, company_id)
             q = q.where(CreditApplication.company_id == company_id)
-    else:
+    elif user.role == UserRole.ENTREPRENEUR:
         cid = resolve_company_id(db, user, company_id)
         q = q.where(CreditApplication.company_id == cid)
+    else:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Недостаточно прав")
 
     apps = db.scalars(q.order_by(CreditApplication.updated_at.desc())).unique().all()
     return [_serialize(a) for a in apps]
@@ -217,10 +216,10 @@ def submit_application(
     if app.status != ApplicationStatus.DRAFT and app.status != ApplicationStatus.DOCS_REQUESTED:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Заявку нельзя отправить из текущего статуса")
 
-    manager = db.scalar(select(User).where(User.role == UserRole.MANAGER, User.is_active.is_(True)))
+    analyst = db.scalar(select(User).where(User.role == UserRole.ANALYST, User.is_active.is_(True)))
     now = datetime.now(timezone.utc).isoformat()
     app.status = ApplicationStatus.SUBMITTED
-    app.assigned_manager_id = manager.id if manager else None
+    app.assigned_manager_id = analyst.id if analyst else None
     history = list(app.status_history or [])
     history.append({"status": "submitted", "at": now, "by": user.full_name})
     app.status_history = history
@@ -294,7 +293,7 @@ async def upload_document(
 def change_status(
     application_id: str, body: StatusUpdate, db: DbDep, user: CurrentUser, cid: CorrelationId
 ) -> dict:
-    require_roles(user, UserRole.MANAGER, UserRole.RISK_ANALYST, UserRole.ADMIN)
+    require_roles(user, UserRole.ANALYST)
     app = _load_app(db, application_id)
 
     if body.idempotency_key and app.status == body.status:
@@ -345,7 +344,7 @@ def change_status(
 def request_documents(
     application_id: str, body: DocsRequestIn, db: DbDep, user: CurrentUser, cid: CorrelationId
 ) -> dict:
-    require_roles(user, UserRole.MANAGER, UserRole.RISK_ANALYST, UserRole.ADMIN)
+    require_roles(user, UserRole.ANALYST)
     app = _load_app(db, application_id)
     now = datetime.now(timezone.utc).isoformat()
     app.status = ApplicationStatus.DOCS_REQUESTED

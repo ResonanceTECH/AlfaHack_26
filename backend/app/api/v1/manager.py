@@ -66,7 +66,7 @@ def manager_queue(
     product_id: str | None = None,
     assigned_to_me: bool = False,
 ) -> list[dict]:
-    require_roles(user, UserRole.MANAGER, UserRole.RISK_ANALYST, UserRole.ADMIN)
+    require_roles(user, UserRole.ANALYST)
     q = (
         select(CreditApplication)
         .options(
@@ -90,7 +90,7 @@ def manager_queue(
 def manager_company(application_id: str, db: DbDep, user: CurrentUser) -> Company:
     from fastapi import HTTPException, status
 
-    require_roles(user, UserRole.MANAGER, UserRole.RISK_ANALYST, UserRole.ADMIN)
+    require_roles(user, UserRole.ANALYST)
     app = db.get(CreditApplication, application_id)
     if app is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Не найдено")
@@ -104,7 +104,7 @@ def manager_company(application_id: str, db: DbDep, user: CurrentUser) -> Compan
 def manager_financials(application_id: str, db: DbDep, user: CurrentUser) -> FinancialSnapshot:
     from fastapi import HTTPException, status
 
-    require_roles(user, UserRole.MANAGER, UserRole.RISK_ANALYST, UserRole.ADMIN)
+    require_roles(user, UserRole.ANALYST)
     app = db.get(CreditApplication, application_id)
     if app is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Заявка не найдена")

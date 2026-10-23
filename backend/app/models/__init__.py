@@ -15,6 +15,7 @@ from app.models.finance import (
     FinancialTransaction,
     RefreshToken,
 )
+from app.models.rbac import RolePermission
 from app.models.user import User
 from app.models.verification import VerificationChallenge
 
@@ -24,6 +25,7 @@ __all__ = [
     "RefreshToken",
     "Company",
     "CompanyMember",
+    "RolePermission",
     "FinancialSnapshot",
     "FinancialTransaction",
     "FinancialObligation",

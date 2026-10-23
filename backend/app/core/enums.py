@@ -4,11 +4,23 @@ import enum
 
 
 class UserRole(str, enum.Enum):
-    ENTREPRENEUR = "entrepreneur"
-    ACCOUNTANT = "accountant"
-    MANAGER = "manager"
-    RISK_ANALYST = "risk_analyst"
-    ADMIN = "admin"
+    ENTREPRENEUR = "ENTREPRENEUR"
+    ANALYST = "ANALYST"
+    ADMIN = "ADMIN"
+
+
+class Permission(str, enum.Enum):
+    USERS_MANAGE = "users.manage"
+    CATALOG_MANAGE = "catalog.manage"
+    POLICY_EDIT = "policy.edit"
+    POLICY_PUBLISH = "policy.publish"
+    MODELS_MANAGE = "models.manage"
+    DEMO_RESET = "demo.reset"
+    ANALYTICS_READ = "analytics.read"
+    AUDIT_READ = "audit.read"
+    APPLICATIONS_REVIEW = "applications.review"
+    APPLICATIONS_DECIDE = "applications.decide"
+    COMPANIES_READ_CLIENT = "companies.read_client"
 
 
 class LegalForm(str, enum.Enum):
@@ -61,15 +73,15 @@ class TransactionCategory(str, enum.Enum):
 
 
 class MemberRole(str, enum.Enum):
-    OWNER = "owner"
-    ACCOUNTANT = "accountant"
-    VIEWER = "viewer"
+    OWNER = "OWNER"
+    MEMBER = "MEMBER"
+    VIEWER = "VIEWER"
 
 
 class UserStatus(str, enum.Enum):
-    PENDING = "pending"
-    ACTIVE = "active"
-    DISABLED = "disabled"
+    PENDING = "PENDING"
+    ACTIVE = "ACTIVE"
+    DISABLED = "DISABLED"
 
 
 class ChallengePurpose(str, enum.Enum):

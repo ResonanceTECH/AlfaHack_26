@@ -15,9 +15,11 @@ from app.core.enums import (
     LegalForm,
     MemberRole,
     ProductType,
+    TransactionCategory,
     UserRole,
     UserStatus,
 )
+from app.core.rbac import ROLE_PERMISSIONS
 from app.core.security import hash_password
 from app.db.base import Base
 from app.db.session import SessionLocal, engine
@@ -33,9 +35,9 @@ from app.models import (  # noqa: F401
     FinancialObligation,
     FinancialSnapshot,
     FinancialTransaction,
+    RolePermission,
     User,
 )
-from app.core.enums import TransactionCategory
 
 DEMO_PASSWORD = "demo1234"
 COMPANY_ID = "company_001"
@@ -204,25 +206,29 @@ def seed() -> None:
                 email_verified_at=now,
             ),
             User(
-                id="user_mgr_01",
-                email="manager@demo.alfa",
+                id="user_analyst_01",
+                email="analyst@demo.alfa",
                 password_hash=pwd,
                 full_name="Анна Соколова",
-                role=UserRole.MANAGER,
+                role=UserRole.ANALYST,
                 status=UserStatus.ACTIVE,
                 email_verified_at=now,
             ),
             User(
-                id="user_acc_01",
-                email="buh@demo.alfa",
+                id="user_admin_01",
+                email="admin@demo.alfa",
                 password_hash=pwd,
                 full_name="Елена Васильева",
-                role=UserRole.ACCOUNTANT,
+                role=UserRole.ADMIN,
                 status=UserStatus.ACTIVE,
                 email_verified_at=now,
             ),
         ]
         db.add_all(users)
+
+        for role, perms in ROLE_PERMISSIONS.items():
+            for perm in perms:
+                db.add(RolePermission(role=role, permission=perm))
 
         company = Company(
             id=COMPANY_ID,
@@ -243,12 +249,6 @@ def seed() -> None:
                     user_id="user_ent_01",
                     role=MemberRole.OWNER,
                     permissions={"read": True, "write": True, "submit": True},
-                ),
-                CompanyMember(
-                    company_id=COMPANY_ID,
-                    user_id="user_acc_01",
-                    role=MemberRole.ACCOUNTANT,
-                    permissions={"read": True, "write": True, "submit": False},
                 ),
             ]
         )
@@ -376,10 +376,10 @@ def seed() -> None:
 
         db.commit()
         print("Seed OK")
-        print("  ip@demo.alfa / demo1234")
-        print("  ooo@demo.alfa / demo1234  (чужой тенант)")
-        print("  manager@demo.alfa / demo1234")
-        print("  buh@demo.alfa / demo1234")
+        print("  ip@demo.alfa / demo1234  (ENTREPRENEUR)")
+        print("  ooo@demo.alfa / demo1234  (ENTREPRENEUR, чужой тенант)")
+        print("  analyst@demo.alfa / demo1234  (ANALYST)")
+        print("  admin@demo.alfa / demo1234  (ADMIN)")
     except Exception:
         db.rollback()
         raise
