@@ -2,6 +2,8 @@
 
 React / TypeScript / Vite / MUI клиент. Данные только с FastAPI (`/api/v1`).
 
+Эндпоинты, которые использует фронт: **[docs/ENDPOINTS.md](./docs/ENDPOINTS.md)** (пока логин и забыли пароль).
+
 ## Quick start
 
 **Весь стек через Docker** (из корня репо):
@@ -37,8 +39,6 @@ Seed-аккаунты бэкенда (если прогнали `scripts/seed.py
 | Предприниматель | `ip@demo.alfa` | `demo1234` |
 | Менеджер | `manager@demo.alfa` | `demo1234` |
 | Бухгалтер | `buh@demo.alfa` | `demo1234` |
-
-Или зарегистрируйтесь через `/register` — пользователь и компания пишутся в БД.
 
 ## Стек
 
