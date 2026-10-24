@@ -123,7 +123,7 @@ export function CompanyCreatePage() {
   }, [companyQ.data, form])
 
   if (!isAuthenticated || !user) {
-    return <Navigate to="/register" replace />
+    return <Navigate to="/login" replace />
   }
 
   if (user.role === 'manager' || user.role === 'risk_analyst' || user.role === 'admin') {

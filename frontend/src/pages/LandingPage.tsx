@@ -2,6 +2,7 @@ import { Box } from '@mui/material'
 import { ApplicationSection } from '@/components/landing/ApplicationSection'
 import { BenefitsSection } from '@/components/landing/BenefitsSection'
 import { CreditTypesSection } from '@/components/landing/CreditTypesSection'
+import { FaqSection } from '@/components/landing/FaqSection'
 import { FeaturesSection } from '@/components/landing/FeaturesSection'
 import { HeroSection } from '@/components/landing/HeroSection'
 import { LandingFooter } from '@/components/landing/LandingFooter'
@@ -25,6 +26,7 @@ export function LandingPage() {
         <BenefitsSection />
         <FeaturesSection />
         <CreditTypesSection />
+        <FaqSection />
         <ApplicationSection />
       </Box>
       <LandingFooter />
