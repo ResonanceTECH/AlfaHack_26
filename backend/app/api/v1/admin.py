@@ -16,6 +16,12 @@ from app.schemas.admin import (
     AdminDisableOut,
     AdminMemberOut,
     AdminMemberPut,
+    AdminModelActivateIn,
+    AdminModelActivateOut,
+    AdminModelActiveOut,
+    AdminModelEvaluationOut,
+    AdminModelOut,
+    AdminModelValidateOut,
     AdminPermissionOut,
     AdminPolicyCreate,
     AdminPolicyDiffOut,
@@ -31,12 +37,25 @@ from app.schemas.admin import (
     AdminResetCredentialsIn,
     AdminResetCredentialsOut,
     AdminRoleOut,
+    AdminRuntimeConfigOut,
+    AdminRuntimeConfigPatch,
     AdminUserCreate,
     AdminUserListOut,
     AdminUserOut,
     AdminUserPatch,
 )
 from app.services.access import require_permission, require_roles
+from app.services.admin_models import (
+    activate_model,
+    get_model,
+    get_runtime_config,
+    list_active as list_active_models,
+    list_evaluations,
+    list_models,
+    patch_runtime_config,
+    serialize_model,
+    validate_model,
+)
 from app.services.admin_policies import (
     create_policy,
     diff_versions as diff_policy_versions,
@@ -103,6 +122,11 @@ def _require_policy_edit(user: CurrentUser) -> None:
 def _require_policy_publish(user: CurrentUser) -> None:
     _require_admin(user)
     require_permission(user, Permission.POLICY_PUBLISH)
+
+
+def _require_models_manage(user: CurrentUser) -> None:
+    _require_admin(user)
+    require_permission(user, Permission.MODELS_MANAGE)
 
 
 @router.get("/roles", response_model=list[AdminRoleOut])
@@ -662,3 +686,123 @@ def admin_policy_diff(
 ) -> AdminPolicyDiffOut:
     _require_policy_edit(user)
     return AdminPolicyDiffOut(**diff_policy_versions(db, policy_id, from_version, to_version))
+
+
+@router.get("/models", response_model=list[AdminModelOut])
+def admin_list_models(
+    db: DbDep,
+    user: CurrentUser,
+    task: str | None = None,
+) -> list[AdminModelOut]:
+    _require_models_manage(user)
+    return [AdminModelOut(**m) for m in list_models(db, task=task)]
+
+
+@router.get("/models/active", response_model=list[AdminModelActiveOut])
+def admin_active_models(db: DbDep, user: CurrentUser) -> list[AdminModelActiveOut]:
+    _require_models_manage(user)
+    return [AdminModelActiveOut(**m) for m in list_active_models(db)]
+
+
+@router.get("/models/evaluations", response_model=list[AdminModelEvaluationOut])
+def admin_all_model_evaluations(db: DbDep, user: CurrentUser) -> list[AdminModelEvaluationOut]:
+    _require_models_manage(user)
+    return [AdminModelEvaluationOut(**e) for e in list_evaluations(db)]
+
+
+@router.get("/models/{model_id}", response_model=AdminModelOut)
+def admin_get_model(model_id: str, db: DbDep, user: CurrentUser) -> AdminModelOut:
+    _require_models_manage(user)
+    model = get_model(db, model_id)
+    if model is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Модель не найдена")
+    return AdminModelOut(**serialize_model(model, include_evals=True))
+
+
+@router.post("/models/{model_id}/validate", response_model=AdminModelValidateOut)
+def admin_validate_model(model_id: str, db: DbDep, user: CurrentUser) -> AdminModelValidateOut:
+    _require_models_manage(user)
+    model = get_model(db, model_id)
+    if model is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Модель не найдена")
+    return AdminModelValidateOut(**validate_model(db, model))
+
+
+@router.post("/models/{model_id}/activate", response_model=AdminModelActivateOut)
+def admin_activate_model(
+    model_id: str,
+    body: AdminModelActivateIn,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+) -> AdminModelActivateOut:
+    _require_models_manage(user)
+    model = get_model(db, model_id)
+    if model is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Модель не найдена")
+    result = activate_model(
+        db,
+        model,
+        task=body.task,
+        expected_model_version=body.expected_model_version,
+        reason=body.reason,
+        actor_id=user.id,
+    )
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="ml_model",
+        entity_id=model_id,
+        action="admin_activate",
+        details={
+            "task": body.task,
+            "status": result["status"],
+            "reason": body.reason,
+            "expected_model_version": body.expected_model_version,
+        },
+        correlation_id=cid,
+    )
+    db.commit()
+    return AdminModelActivateOut(**result)
+
+
+@router.get(
+    "/models/{model_id}/evaluations",
+    response_model=list[AdminModelEvaluationOut],
+)
+def admin_model_evaluations(
+    model_id: str, db: DbDep, user: CurrentUser
+) -> list[AdminModelEvaluationOut]:
+    _require_models_manage(user)
+    model = get_model(db, model_id)
+    if model is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Модель не найдена")
+    return [AdminModelEvaluationOut(**e) for e in list_evaluations(db, model_id=model_id)]
+
+
+@router.get("/config/runtime", response_model=AdminRuntimeConfigOut)
+def admin_get_runtime_config(user: CurrentUser) -> AdminRuntimeConfigOut:
+    _require_models_manage(user)
+    return AdminRuntimeConfigOut(**get_runtime_config())
+
+
+@router.patch("/config/runtime", response_model=AdminRuntimeConfigOut)
+def admin_patch_runtime_config(
+    body: AdminRuntimeConfigPatch,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+) -> AdminRuntimeConfigOut:
+    _require_models_manage(user)
+    result = patch_runtime_config(body.parameters)
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="runtime_config",
+        entity_id="runtime",
+        action="admin_patch_runtime",
+        details={"applied": result.get("applied"), "rejected": result.get("rejected")},
+        correlation_id=cid,
+    )
+    db.commit()
+    return AdminRuntimeConfigOut(**result)

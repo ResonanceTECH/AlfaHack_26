@@ -51,6 +51,7 @@ from app.models import (  # noqa: F401
     FundingNeedItem,
     MlModelRegistry,
     ModelActivation,
+    ModelEvaluation,
     Notification,
     RegistrySnapshot,
     RolePermission,
@@ -365,17 +366,62 @@ def _seed_catalog(db, now: datetime) -> None:
         )
     )
 
-    model = MlModelRegistry(
-        id="ml_rank_v1",
-        name="credit_product_ranker",
-        version="demo-v1",
-        task="RANK_PRODUCTS",
-        status="ACTIVE",
-        endpoint=None,
-        metrics={"ndcg": 0.0, "note": "rule-based fallback"},
-        meta={"seed_version": SEED_VERSION},
-    )
-    db.add(model)
+    models = [
+        MlModelRegistry(
+            id="ml_rank_v1",
+            name="credit_product_ranker",
+            version="demo-v1",
+            task="RANK_PRODUCTS",
+            status="ACTIVE",
+            endpoint=None,
+            metrics={"ndcg": 0.72, "latency_p50_ms": 12, "note": "rule-based fallback"},
+            meta={
+                "seed_version": SEED_VERSION,
+                "input_schema": {"funding_need": "object", "products": "array"},
+                "output_schema": {"ranked_product_ids": "array", "scores": "array"},
+                "artifact": "builtin:rules/ranker_v1",
+                "resources": {"ram_mb": 64, "device": "cpu"},
+                "fallback": "RULES_ENGINE",
+            },
+        ),
+        MlModelRegistry(
+            id="ml_assistant_v1",
+            name="credit_assistant_llm",
+            version="v1",
+            task="AI_ASSISTANT",
+            status="REGISTERED",
+            endpoint=None,
+            metrics={"latency_p50_ms": 180, "note": "small open-weight stub"},
+            meta={
+                "seed_version": SEED_VERSION,
+                "input_schema": {"messages": "array", "company_context": "object"},
+                "output_schema": {"reply": "string", "citations": "array"},
+                "artifact": "builtin:llm/assistant_v1",
+                "resources": {"ram_mb": 2048, "device": "cpu"},
+                "params_billion": 0.5,
+                "fallback": "TEMPLATE_REPLIES",
+            },
+        ),
+        MlModelRegistry(
+            id="ml_assistant_v2",
+            name="credit_assistant_llm",
+            version="v2",
+            task="AI_ASSISTANT",
+            status="REGISTERED",
+            endpoint=None,
+            metrics={"latency_p50_ms": 220, "note": "improved stub"},
+            meta={
+                "seed_version": SEED_VERSION,
+                "input_schema": {"messages": "array", "company_context": "object"},
+                "output_schema": {"reply": "string", "citations": "array", "actions": "array"},
+                "artifact": "builtin:llm/assistant_v2",
+                "resources": {"ram_mb": 3072, "device": "cpu"},
+                "params_billion": 1.0,
+                "fallback": "TEMPLATE_REPLIES",
+            },
+        ),
+    ]
+    db.add_all(models)
     db.add(
         ModelActivation(
             id="ml_act_rank_v1",
@@ -384,6 +430,26 @@ def _seed_catalog(db, now: datetime) -> None:
             is_active=True,
             activated_by=USER_ADMIN,
             activated_at=now,
+        )
+    )
+    db.add(
+        ModelEvaluation(
+            id="ml_eval_rank_v1",
+            model_id="ml_rank_v1",
+            dataset="synthetic_smb_v1",
+            metrics={"ndcg": 0.72, "hit_rate": 0.81, "baseline_ndcg": 0.55},
+            notes="Сравнение с random baseline на seed-датасете",
+            created_by=USER_ADMIN,
+        )
+    )
+    db.add(
+        ModelEvaluation(
+            id="ml_eval_asst_v2",
+            model_id="ml_assistant_v2",
+            dataset="assistant_smoke_v1",
+            metrics={"latency_p50_ms": 220, "toxicity": 0.0, "format_ok": 1.0},
+            notes="Smoke на шаблонных вопросах кабинета",
+            created_by=USER_ADMIN,
         )
     )
 

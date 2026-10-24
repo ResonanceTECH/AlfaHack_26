@@ -317,3 +317,88 @@ class AdminPolicyDiffOut(APIModel):
     added: dict[str, Any] = Field(default_factory=dict)
     removed: dict[str, Any] = Field(default_factory=dict)
     changed: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdminModelOut(APIModel):
+    id: str
+    name: str
+    version: str
+    task: str
+    status: str
+    endpoint: str | None = None
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    input_schema: dict[str, Any] = Field(default_factory=dict)
+    output_schema: dict[str, Any] = Field(default_factory=dict)
+    artifact: str | None = None
+    resources: dict[str, Any] = Field(default_factory=dict)
+    fallback: str | None = None
+    params_billion: float | None = None
+    is_active: bool = False
+    meta: dict[str, Any] = Field(default_factory=dict)
+    evaluations: list[dict[str, Any]] = Field(default_factory=list)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class AdminModelActiveOut(APIModel):
+    task: str
+    model_id: str
+    name: str | None = None
+    version: str | None = None
+    status: str = "ACTIVE"
+    activated_by: str | None = None
+    activated_at: datetime | None = None
+    fallback: str | None = None
+
+
+class AdminModelValidateOut(APIModel):
+    model_id: str
+    compatible: bool
+    health: dict[str, Any] = Field(default_factory=dict)
+    errors: list[dict[str, str]] = Field(default_factory=list)
+    warnings: list[dict[str, str]] = Field(default_factory=list)
+    contract: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdminModelActivateIn(APIModel):
+    task: str = Field(min_length=1, max_length=64)
+    expected_model_version: str | None = Field(default=None, max_length=64)
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class AdminModelActivateOut(APIModel):
+    model_id: str
+    task: str
+    status: str
+    version: str | None = None
+    reason: str | None = None
+    activation_id: str | None = None
+    activated_at: datetime | None = None
+    activated_by: str | None = None
+    validation: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdminModelEvaluationOut(APIModel):
+    id: str
+    model_id: str
+    dataset: str | None = None
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    notes: str | None = None
+    created_by: str | None = None
+    created_at: datetime | None = None
+    model_name: str | None = None
+    model_version: str | None = None
+    task: str | None = None
+    baseline: float | None = None
+
+
+class AdminRuntimeConfigOut(APIModel):
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    whitelist: list[str] = Field(default_factory=list)
+    note: str | None = None
+    applied: dict[str, Any] = Field(default_factory=dict)
+    rejected: list[str] = Field(default_factory=list)
+
+
+class AdminRuntimeConfigPatch(APIModel):
+    parameters: dict[str, Any] = Field(default_factory=dict)
