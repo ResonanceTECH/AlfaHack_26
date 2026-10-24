@@ -28,6 +28,7 @@ import { ReadinessPage } from '@/pages/ReadinessPage'
 import { RoiPage } from '@/pages/RoiPage'
 import { CalendarPage } from '@/pages/CalendarPage'
 import { ProfilePage } from '@/pages/ProfilePage'
+import { TeamPage } from '@/pages/TeamPage'
 import { StubSectionPage } from '@/pages/StubSectionPage'
 import type { ReactNode } from 'react'
 
@@ -129,7 +130,7 @@ export function AppRouter() {
         <Route path="calendar" element={<CalendarPage />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="documents" element={<StubSectionPage />} />
-        <Route path="team" element={<StubSectionPage />} />
+        <Route path="team" element={<TeamPage />} />
         <Route path="help" element={<StubSectionPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
