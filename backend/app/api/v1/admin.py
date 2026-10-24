@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Body, HTTPException, Query, Response, status
 
-from app.core.enums import Permission, ProductStatus, ProductType, UserRole, UserStatus
+from app.core.enums import Permission, PolicyStatus, ProductStatus, ProductType, UserRole, UserStatus
 from app.deps import CorrelationId, CurrentUser, DbDep
 from app.schemas.admin import (
     AdminCompanyBrief,
@@ -17,6 +17,17 @@ from app.schemas.admin import (
     AdminMemberOut,
     AdminMemberPut,
     AdminPermissionOut,
+    AdminPolicyCreate,
+    AdminPolicyDiffOut,
+    AdminPolicyListOut,
+    AdminPolicyOut,
+    AdminPolicyPatch,
+    AdminPolicyPublishIn,
+    AdminPolicySimulateAccepted,
+    AdminPolicySimulateIn,
+    AdminPolicySimulationOut,
+    AdminPolicyValidateOut,
+    AdminPolicyVersionOut,
     AdminResetCredentialsIn,
     AdminResetCredentialsOut,
     AdminRoleOut,
@@ -26,6 +37,19 @@ from app.schemas.admin import (
     AdminUserPatch,
 )
 from app.services.access import require_permission, require_roles
+from app.services.admin_policies import (
+    create_policy,
+    diff_versions as diff_policy_versions,
+    get_policy,
+    get_simulation,
+    list_policies,
+    list_versions as list_policy_versions,
+    patch_policy,
+    publish_policy,
+    serialize_policy,
+    start_simulation,
+    validate_rules,
+)
 from app.services.admin_products import (
     archive_product,
     create_product,
@@ -69,6 +93,16 @@ def _require_users_manage(user: CurrentUser) -> None:
 def _require_catalog_manage(user: CurrentUser) -> None:
     _require_admin(user)
     require_permission(user, Permission.CATALOG_MANAGE)
+
+
+def _require_policy_edit(user: CurrentUser) -> None:
+    _require_admin(user)
+    require_permission(user, Permission.POLICY_EDIT)
+
+
+def _require_policy_publish(user: CurrentUser) -> None:
+    _require_admin(user)
+    require_permission(user, Permission.POLICY_PUBLISH)
 
 
 @router.get("/roles", response_model=list[AdminRoleOut])
@@ -450,3 +484,181 @@ def admin_credit_product_versions(
 ) -> list[AdminCreditProductVersionOut]:
     _require_catalog_manage(user)
     return [AdminCreditProductVersionOut(**v) for v in list_versions(db, product_id)]
+
+
+@router.get("/policies", response_model=AdminPolicyListOut)
+def admin_list_policies(
+    db: DbDep,
+    user: CurrentUser,
+    status_filter: PolicyStatus | None = Query(default=None, alias="status"),
+    q: str | None = None,
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> AdminPolicyListOut:
+    _require_policy_edit(user)
+    items, total = list_policies(db, status=status_filter, q=q, limit=limit, offset=offset)
+    return AdminPolicyListOut(items=[AdminPolicyOut(**i) for i in items], total=total)
+
+
+@router.post("/policies", response_model=AdminPolicyOut, status_code=status.HTTP_201_CREATED)
+def admin_create_policy(
+    body: AdminPolicyCreate,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+) -> AdminPolicyOut:
+    _require_policy_edit(user)
+    created = create_policy(db, body.model_dump(), actor_id=user.id)
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="credit_policy",
+        entity_id=created.id,
+        action="admin_create",
+        details={"code": created.code},
+        correlation_id=cid,
+    )
+    db.commit()
+    created = get_policy(db, created.id) or created
+    return AdminPolicyOut(**serialize_policy(created, include_versions=True))
+
+
+@router.get("/policies/{policy_id}", response_model=AdminPolicyOut)
+def admin_get_policy(policy_id: str, db: DbDep, user: CurrentUser) -> AdminPolicyOut:
+    _require_policy_edit(user)
+    policy = get_policy(db, policy_id)
+    if policy is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Политика не найдена")
+    return AdminPolicyOut(**serialize_policy(policy, include_versions=True))
+
+
+@router.patch("/policies/{policy_id}", response_model=AdminPolicyOut)
+def admin_patch_policy(
+    policy_id: str,
+    body: AdminPolicyPatch,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+) -> AdminPolicyOut:
+    _require_policy_edit(user)
+    policy = get_policy(db, policy_id)
+    if policy is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Политика не найдена")
+    patch = body.model_dump(exclude_unset=True)
+    patch_policy(db, policy, patch)
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="credit_policy",
+        entity_id=policy.id,
+        action="admin_patch",
+        details={"fields": list(patch.keys()), "status": policy.status.value},
+        correlation_id=cid,
+    )
+    db.commit()
+    policy = get_policy(db, policy_id) or policy
+    return AdminPolicyOut(**serialize_policy(policy, include_versions=True))
+
+
+@router.get("/policies/{policy_id}/versions", response_model=list[AdminPolicyVersionOut])
+def admin_policy_versions(
+    policy_id: str, db: DbDep, user: CurrentUser
+) -> list[AdminPolicyVersionOut]:
+    _require_policy_edit(user)
+    return [AdminPolicyVersionOut(**v) for v in list_policy_versions(db, policy_id)]
+
+
+@router.post("/policies/{policy_id}/validate", response_model=AdminPolicyValidateOut)
+def admin_validate_policy(policy_id: str, db: DbDep, user: CurrentUser) -> AdminPolicyValidateOut:
+    _require_policy_edit(user)
+    policy = get_policy(db, policy_id)
+    if policy is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Политика не найдена")
+    return AdminPolicyValidateOut(**validate_rules(policy.rules or {}))
+
+
+@router.post(
+    "/policies/{policy_id}/simulate",
+    response_model=AdminPolicySimulateAccepted,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def admin_simulate_policy(
+    policy_id: str,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+    body: AdminPolicySimulateIn = Body(default_factory=AdminPolicySimulateIn),
+) -> AdminPolicySimulateAccepted:
+    _require_policy_edit(user)
+    policy = get_policy(db, policy_id)
+    if policy is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Политика не найдена")
+    sim = start_simulation(
+        db,
+        policy,
+        actor_id=user.id,
+        draft_version=body.draft_version,
+        scenario_ids=body.scenario_ids,
+        compare_with_published=body.compare_with_published,
+    )
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="policy_simulation",
+        entity_id=sim.id,
+        action="admin_simulate",
+        details={"policy_id": policy.id},
+        correlation_id=cid,
+    )
+    db.commit()
+    return AdminPolicySimulateAccepted(run_id=sim.id, status="QUEUED")
+
+
+@router.get(
+    "/policies/{policy_id}/simulations/{run_id}",
+    response_model=AdminPolicySimulationOut,
+)
+def admin_get_policy_simulation(
+    policy_id: str, run_id: str, db: DbDep, user: CurrentUser
+) -> AdminPolicySimulationOut:
+    _require_policy_edit(user)
+    return AdminPolicySimulationOut(**get_simulation(db, policy_id, run_id))
+
+
+@router.post("/policies/{policy_id}/publish", response_model=AdminPolicyOut)
+def admin_publish_policy(
+    policy_id: str,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+    body: AdminPolicyPublishIn = Body(default_factory=AdminPolicyPublishIn),
+) -> AdminPolicyOut:
+    _require_policy_publish(user)
+    policy = get_policy(db, policy_id)
+    if policy is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Политика не найдена")
+    publish_policy(db, policy, actor_id=user.id, changelog=body.changelog)
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="credit_policy",
+        entity_id=policy.id,
+        action="admin_publish",
+        details={"version": policy.version},
+        correlation_id=cid,
+    )
+    db.commit()
+    policy = get_policy(db, policy_id) or policy
+    return AdminPolicyOut(**serialize_policy(policy, include_versions=True))
+
+
+@router.get("/policies/{policy_id}/diff", response_model=AdminPolicyDiffOut)
+def admin_policy_diff(
+    policy_id: str,
+    db: DbDep,
+    user: CurrentUser,
+    from_version: str = Query(alias="from"),
+    to_version: str = Query(alias="to"),
+) -> AdminPolicyDiffOut:
+    _require_policy_edit(user)
+    return AdminPolicyDiffOut(**diff_policy_versions(db, policy_id, from_version, to_version))

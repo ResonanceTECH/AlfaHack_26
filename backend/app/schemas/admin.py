@@ -5,7 +5,17 @@ from typing import Any
 
 from pydantic import Field
 
-from app.core.enums import GoalType, LegalForm, MemberRole, ProductStatus, ProductType, ScheduleType, UserRole, UserStatus
+from app.core.enums import (
+    GoalType,
+    LegalForm,
+    MemberRole,
+    PolicyStatus,
+    ProductStatus,
+    ProductType,
+    ScheduleType,
+    UserRole,
+    UserStatus,
+)
 from app.core.money import Money
 from app.schemas.common import APIModel
 from app.schemas.credit import CreditProductRuleOut, FeeOut
@@ -219,3 +229,91 @@ class AdminCreditProductPatch(APIModel):
 
 class AdminCreditProductPublishIn(APIModel):
     changelog: str | None = Field(default=None, max_length=2000)
+
+
+class AdminPolicyVersionOut(APIModel):
+    id: str
+    policy_id: str | None = None
+    version: int
+    rules: dict[str, Any] = Field(default_factory=dict)
+    changelog: str | None = None
+    created_by: str | None = None
+    created_at: datetime | None = None
+
+
+class AdminPolicyOut(APIModel):
+    id: str
+    code: str
+    name: str
+    description: str | None = None
+    status: PolicyStatus
+    version: int = 1
+    rules: dict[str, Any] = Field(default_factory=dict)
+    parameter_source: str = "SYNTHETIC_DSL"
+    created_by: str | None = None
+    published_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    versions: list[AdminPolicyVersionOut] = Field(default_factory=list)
+
+
+class AdminPolicyListOut(APIModel):
+    items: list[AdminPolicyOut]
+    total: int = 0
+
+
+class AdminPolicyCreate(APIModel):
+    code: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=255)
+    description: str | None = None
+    rules: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdminPolicyPatch(APIModel):
+    code: str | None = Field(default=None, min_length=1, max_length=64)
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = None
+    rules: dict[str, Any] | None = None
+
+
+class AdminPolicyPublishIn(APIModel):
+    changelog: str | None = Field(default=None, max_length=2000)
+
+
+class AdminPolicyValidateOut(APIModel):
+    valid: bool
+    errors: list[dict[str, str]] = Field(default_factory=list)
+    warnings: list[dict[str, str]] = Field(default_factory=list)
+    allowed_keys: list[str] = Field(default_factory=list)
+
+
+class AdminPolicySimulateIn(APIModel):
+    draft_version: int | None = None
+    scenario_ids: list[str] | None = None
+    compare_with_published: bool = True
+
+
+class AdminPolicySimulateAccepted(APIModel):
+    run_id: str
+    status: str = "QUEUED"
+
+
+class AdminPolicySimulationOut(APIModel):
+    run_id: str
+    status: str
+    policy_draft_version: int | None = None
+    policy_id: str | None = None
+    results: list[dict[str, Any]] = Field(default_factory=list)
+    is_mock: bool = True
+    note: str | None = None
+    input: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime | None = None
+
+
+class AdminPolicyDiffOut(APIModel):
+    policy_id: str
+    from_version: int
+    to_version: int
+    added: dict[str, Any] = Field(default_factory=dict)
+    removed: dict[str, Any] = Field(default_factory=dict)
+    changed: dict[str, Any] = Field(default_factory=dict)
