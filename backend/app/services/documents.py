@@ -1,18 +1,30 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from fastapi import status as http_status
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.enums import ApplicationStatus
+from app.core.errors import AppError
 from app.models.application import ApplicationDocument, CreditApplication, DocumentRequest
 from app.models.credit import CreditProduct
 from app.models.user import User
 from app.services.notifications import notify
 from app.services.workflow import transition_application
+
+# Статусы, из которых аналитик может запросить документы
+DOCS_REQUEST_ALLOWED: set[ApplicationStatus] = {
+    ApplicationStatus.SUBMITTED,
+    ApplicationStatus.VALIDATING,
+    ApplicationStatus.IN_REVIEW,
+    ApplicationStatus.DOCS_REQUESTED,
+    ApplicationStatus.COUNTEROFFERED,
+}
 
 DEFAULT_REQUIRED_DOCS = [
     "PASSPORT",
@@ -303,21 +315,59 @@ def create_document_request(
     analyst: User,
     doc_type: str,
     comment: str | None,
+    due_at: datetime | None = None,
 ) -> DocumentRequest:
+    dtype = (doc_type or "").strip()
+    if not dtype:
+        raise AppError(
+            "VALIDATION_ERROR",
+            "doc_type обязателен",
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            fields=[{"field": "doc_type", "code": "REQUIRED"}],
+        )
+
+    if app.status not in DOCS_REQUEST_ALLOWED:
+        raise AppError(
+            "INVALID_TRANSITION",
+            f"Нельзя запросить документы из статуса {app.status.value}",
+            status_code=http_status.HTTP_409_CONFLICT,
+            fields=[{"field": "status", "code": app.status.value}],
+        )
+
+    open_same = next(
+        (
+            r
+            for r in (app.document_requests or [])
+            if r.doc_type == dtype and (r.status or "").upper() in ("OPEN", "PENDING", "REQUESTED")
+        ),
+        None,
+    )
+    if open_same is not None:
+        raise AppError(
+            "DUPLICATE_DOCUMENT_REQUEST",
+            f"Уже есть открытый запрос на тип «{dtype}»",
+            status_code=http_status.HTTP_409_CONFLICT,
+            fields=[{"field": "doc_type", "code": "DUPLICATE"}],
+        )
+
+    if due_at is None:
+        due_at = datetime.now(timezone.utc) + timedelta(days=7)
+
     req = DocumentRequest(
         application_id=app.id,
         requested_by=analyst.id,
-        doc_type=doc_type,
+        doc_type=dtype,
         comment=comment,
         status="OPEN",
+        due_at=due_at,
     )
     db.add(req)
     placeholder = ApplicationDocument(
         application_id=app.id,
-        doc_type=doc_type,
-        document_type=doc_type,
-        name=f"Запрошено: {doc_label(doc_type)}",
-        file_name=f"Запрошено: {doc_label(doc_type)}",
+        doc_type=dtype,
+        document_type=dtype,
+        name=f"Запрошено: {doc_label(dtype)}",
+        file_name=f"Запрошено: {doc_label(dtype)}",
         file_path="",
         size=0,
         status="requested",
@@ -330,7 +380,7 @@ def create_document_request(
             app,
             ApplicationStatus.DOCS_REQUESTED,
             actor=analyst,
-            comment=comment or f"Запрошен документ: {doc_type}",
+            comment=comment or f"Запрошен документ: {dtype}",
         )
     db.flush()
     if app.document_requests is None:
@@ -348,14 +398,68 @@ def create_document_request(
             user_id=app.created_by,
             type="DOCUMENTS_REQUESTED",
             title="Запрошены дополнительные документы",
-            body=comment or f"Нужен документ: {doc_label(doc_type)}",
+            body=comment or f"Нужен документ: {doc_label(dtype)}",
             payload={
                 "application_id": app.id,
                 "company_id": app.company_id,
                 "document_request_id": req.id,
-                "doc_type": doc_type,
+                "doc_type": dtype,
             },
         )
+    return req
+
+
+def cancel_document_request(
+    db: Session,
+    *,
+    app: CreditApplication,
+    analyst: User,
+    request_id: str,
+    reason: str | None = None,
+) -> DocumentRequest:
+    req = next((r for r in (app.document_requests or []) if r.id == request_id), None)
+    if req is None:
+        raise AppError(
+            "NOT_FOUND",
+            "Запрос документа не найден",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+    if (req.status or "").upper() not in ("OPEN", "PENDING", "REQUESTED"):
+        raise AppError(
+            "REQUEST_NOT_OPEN",
+            f"Запрос уже закрыт (статус {req.status})",
+            status_code=http_status.HTTP_409_CONFLICT,
+        )
+
+    req.status = "CANCELLED"
+    if reason:
+        # comment append
+        prev = (req.comment or "").strip()
+        req.comment = f"{prev}\n[cancelled] {reason}".strip() if prev else f"[cancelled] {reason}"
+
+    # снять placeholder requested
+    for d in app.documents or []:
+        if (
+            (d.document_type or d.doc_type) == req.doc_type
+            and (d.status or "") == "requested"
+            and not d.file_path
+        ):
+            d.status = "cancelled"
+
+    open_left = [
+        r
+        for r in (app.document_requests or [])
+        if r.id != req.id and (r.status or "").upper() in ("OPEN", "PENDING", "REQUESTED")
+    ]
+    if app.status == ApplicationStatus.DOCS_REQUESTED and not open_left:
+        transition_application(
+            db,
+            app,
+            ApplicationStatus.IN_REVIEW,
+            actor=analyst,
+            comment=reason or "Запрос документов отменён",
+        )
+    db.flush()
     return req
 
 

@@ -138,3 +138,20 @@ class AnalystChecksOut(APIModel):
     status: ApplicationStatus
     summary: AnalystChecksSummary = Field(default_factory=AnalystChecksSummary)
     checks: list[AnalystCheckOut] = Field(default_factory=list)
+
+
+class AnalystDocumentRequestCreate(APIModel):
+    doc_type: str = Field(min_length=1, max_length=64)
+    comment: str | None = None
+    due_at: datetime | None = None
+
+
+class AnalystDocumentRequestCancel(APIModel):
+    reason: str | None = None
+
+
+class AnalystDocumentRequestResult(APIModel):
+    request: DocumentRequestOut
+    application_id: str
+    status: ApplicationStatus
+    current_step: str | None = None

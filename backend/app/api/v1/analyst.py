@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.core.enums import ApplicationStatus, UserRole
-from app.deps import CurrentUser, DbDep
+from app.deps import CorrelationId, CurrentUser, DbDep
+from app.models.application import ApplicationComment
 from app.schemas.analyst import (
     AnalystApplicationCard,
     AnalystCheckOut,
@@ -11,6 +14,9 @@ from app.schemas.analyst import (
     AnalystChecksSummary,
     AnalystCompanyBrief,
     AnalystDecisionBrief,
+    AnalystDocumentRequestCancel,
+    AnalystDocumentRequestCreate,
+    AnalystDocumentRequestResult,
     AnalystFinancialsBrief,
     AnalystOfferBrief,
     AnalystQueueItem,
@@ -24,6 +30,12 @@ from app.services.analyst import (
     build_analyst_checks,
     get_analyst_application,
     list_analyst_queue,
+)
+from app.services.audit import write_audit
+from app.services.documents import (
+    cancel_document_request,
+    create_document_request,
+    serialize_document_request,
 )
 
 router = APIRouter(prefix="/analyst", tags=["analyst"])
@@ -102,4 +114,118 @@ def analyst_application_checks(
         status=raw["status"],
         summary=AnalystChecksSummary(**raw["summary"]),
         checks=[AnalystCheckOut(**c) for c in raw["checks"]],
+    )
+
+
+@router.get(
+    "/applications/{application_id}/document-requests",
+    response_model=list[DocumentRequestOut],
+)
+def analyst_list_document_requests(
+    application_id: str, db: DbDep, user: CurrentUser
+) -> list[DocumentRequestOut]:
+    require_roles(user, UserRole.ANALYST)
+    app = get_analyst_application(db, application_id)
+    if app is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Заявка не найдена")
+    require_application_access(db, user, app)
+    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    reqs = sorted(app.document_requests or [], key=lambda r: r.created_at or epoch, reverse=True)
+    return [DocumentRequestOut(**serialize_document_request(r)) for r in reqs]
+
+
+@router.post(
+    "/applications/{application_id}/document-requests",
+    response_model=AnalystDocumentRequestResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def analyst_create_document_request(
+    application_id: str,
+    body: AnalystDocumentRequestCreate,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+) -> AnalystDocumentRequestResult:
+    require_roles(user, UserRole.ANALYST)
+    app = get_analyst_application(db, application_id)
+    if app is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Заявка не найдена")
+    require_application_access(db, user, app, write=True)
+
+    req = create_document_request(
+        db,
+        app=app,
+        analyst=user,
+        doc_type=body.doc_type,
+        comment=body.comment,
+        due_at=body.due_at,
+    )
+    db.add(
+        ApplicationComment(
+            application_id=app.id,
+            author_id=user.id,
+            author_name=user.full_name,
+            author_role=user.role.value,
+            text=body.comment or f"Запрошен документ: {body.doc_type}",
+            is_internal=False,
+        )
+    )
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="document_request",
+        entity_id=req.id,
+        action="create",
+        details={"application_id": app.id, "doc_type": body.doc_type},
+        correlation_id=cid,
+    )
+    db.commit()
+    db.refresh(req)
+    app = get_analyst_application(db, application_id) or app
+    return AnalystDocumentRequestResult(
+        request=DocumentRequestOut(**serialize_document_request(req)),
+        application_id=app.id,
+        status=app.status,
+        current_step=app.current_step,
+    )
+
+
+@router.post(
+    "/applications/{application_id}/document-requests/{request_id}/cancel",
+    response_model=AnalystDocumentRequestResult,
+)
+def analyst_cancel_document_request(
+    application_id: str,
+    request_id: str,
+    body: AnalystDocumentRequestCancel,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+) -> AnalystDocumentRequestResult:
+    require_roles(user, UserRole.ANALYST)
+    app = get_analyst_application(db, application_id)
+    if app is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Заявка не найдена")
+    require_application_access(db, user, app, write=True)
+
+    req = cancel_document_request(
+        db, app=app, analyst=user, request_id=request_id, reason=body.reason
+    )
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="document_request",
+        entity_id=req.id,
+        action="cancel",
+        details={"application_id": app.id, "reason": body.reason},
+        correlation_id=cid,
+    )
+    db.commit()
+    db.refresh(req)
+    app = get_analyst_application(db, application_id) or app
+    return AnalystDocumentRequestResult(
+        request=DocumentRequestOut(**serialize_document_request(req)),
+        application_id=app.id,
+        status=app.status,
+        current_step=app.current_step,
     )
