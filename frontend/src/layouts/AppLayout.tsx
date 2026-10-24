@@ -34,7 +34,7 @@ import SupportAgentRoundedIcon from '@mui/icons-material/SupportAgentRounded'
 import NotificationsNoneRoundedIcon from '@mui/icons-material/NotificationsNoneRounded'
 import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { listCompanies } from '@/api/companies'
 import { useAuth } from '@/contexts/AuthContext'
@@ -146,11 +146,21 @@ function AlfaMark({ size = 32 }: { size?: number }) {
   )
 }
 
+function pageTitle(pathname: string): string {
+  const flat = [...entrepreneurGroups, ...managerGroups].flatMap((g) => g.items)
+  const exact = flat.find((i) => i.to === pathname)
+  if (exact) return exact.label
+  if (pathname === '/app' || pathname === '/app/') return 'Главная'
+  return 'Кабинет'
+}
+
 export function AppLayout() {
   const { user, logout, selectCompany } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down('md'))
+  const headerTitle = pageTitle(location.pathname)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -544,7 +554,20 @@ export function AppLayout() {
               <MenuIcon />
             </IconButton>
           )}
-          <Box sx={{ flex: 1 }} />
+          <Typography
+            sx={{
+              flex: 1,
+              fontFamily: 'Manrope, sans-serif',
+              fontWeight: 700,
+              fontSize: 15,
+              color: '#0B1F35',
+              letterSpacing: '-0.01em',
+              minWidth: 0,
+            }}
+            noWrap
+          >
+            {headerTitle}
+          </Typography>
 
           <IconButton size="small" sx={{ color: '#5A6B7D' }}>
             <Badge badgeContent={4} color="error" overlap="circular">
@@ -557,23 +580,42 @@ export function AppLayout() {
               <Button
                 onClick={(e) => setCompanyAnchor(e.currentTarget)}
                 endIcon={<KeyboardArrowDownRoundedIcon sx={{ fontSize: 18 }} />}
+                startIcon={
+                  <Box
+                    sx={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: '50%',
+                      bgcolor: '#EF3124',
+                      color: '#fff',
+                      fontSize: 11,
+                      fontWeight: 800,
+                      display: 'grid',
+                      placeItems: 'center',
+                      lineHeight: 1,
+                    }}
+                  >
+                    {(activeCompany.name.replace(/^ООО\s*[«"]?/i, '').trim()[0] ?? 'К').toUpperCase()}
+                  </Box>
+                }
                 sx={{
-                  maxWidth: 220,
+                  maxWidth: 240,
                   borderRadius: 2,
-                  px: 1.25,
-                  py: 0.6,
+                  px: 1.1,
+                  py: 0.55,
                   bgcolor: '#fff',
                   border: '1px solid rgba(11,31,53,0.08)',
                   color: '#0B1F35',
                   fontWeight: 600,
                   fontSize: 13,
                   textTransform: 'none',
-                  '& .MuiButton-endIcon': { ml: 0.5 },
+                  '& .MuiButton-startIcon': { mr: 0.75 },
+                  '& .MuiButton-endIcon': { ml: 0.35 },
                 }}
               >
                 <Typography
                   noWrap
-                  sx={{ fontSize: 13, fontWeight: 600, maxWidth: 160, textAlign: 'left' }}
+                  sx={{ fontSize: 13, fontWeight: 600, maxWidth: 150, textAlign: 'left' }}
                 >
                   {activeCompany.name}
                 </Typography>
