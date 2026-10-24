@@ -89,6 +89,7 @@ export async function getCompanyDashboard(companyId: string): Promise<CompanyDas
 }
 
 export function mapCompany(raw: Record<string, unknown>): Company {
+  const roleRaw = raw.membershipRole ?? raw.membership_role
   return {
     id: str(raw.id),
     inn: str(raw.inn),
@@ -99,6 +100,29 @@ export function mapCompany(raw: Record<string, unknown>): Company {
     registrationDate: str(raw.registrationDate ?? raw.registration_date).slice(0, 10),
     region: str(raw.region),
     employeesCount: num(raw.employeesCount ?? raw.employees_count),
+    registryStatus: str(raw.registryStatus ?? raw.registry_status, 'ACTIVE'),
+    version: num(raw.version, 1),
+    membershipRole:
+      roleRaw != null && roleRaw !== ''
+        ? (String(roleRaw).toUpperCase() as Company['membershipRole'])
+        : undefined,
+  }
+}
+
+export async function verifyCompanyRegistry(companyId: string): Promise<{
+  found: boolean
+  registryStatus: string | null
+  checkedAt: string
+}> {
+  const { data } = await api.post(`/companies/${companyId}/registry/verify`)
+  const raw = data as Record<string, unknown>
+  return {
+    found: Boolean(raw.found),
+    registryStatus:
+      raw.registryStatus != null || raw.registry_status != null
+        ? str(raw.registryStatus ?? raw.registry_status)
+        : null,
+    checkedAt: str(raw.checkedAt ?? raw.checked_at),
   }
 }
 
