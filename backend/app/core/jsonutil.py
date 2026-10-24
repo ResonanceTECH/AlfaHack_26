@@ -6,12 +6,14 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
+from app.core.money import format_money
+
 
 def jsonable(obj: Any) -> Any:
     if obj is None or isinstance(obj, (str, int, float, bool)):
         return obj
     if isinstance(obj, Decimal):
-        return float(obj)
+        return format_money(obj)
     if isinstance(obj, (datetime, date)):
         return obj.isoformat()
     if isinstance(obj, UUID):

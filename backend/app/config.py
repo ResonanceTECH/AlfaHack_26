@@ -45,23 +45,6 @@ class Settings(BaseSettings):
     frontend_url: str = Field(default="http://localhost:5173", validation_alias="FRONTEND_URL")
     backend_url: str = Field(default="http://localhost:8000", validation_alias="BACKEND_URL")
 
-    sms_provider: str = Field(default="console", validation_alias="SMS_PROVIDER")
-    sms_api_key: str = Field(default="", validation_alias="SMS_API_KEY")
-    sms_sender: str = Field(default="AlfaCredit", validation_alias="SMS_SENDER")
-
-    email_provider: str = Field(default="console", validation_alias="EMAIL_PROVIDER")
-    smtp_host: str = Field(default="", validation_alias="SMTP_HOST")
-    smtp_port: int = Field(default=587, validation_alias="SMTP_PORT")
-    smtp_username: str = Field(default="", validation_alias="SMTP_USERNAME")
-    smtp_password: str = Field(default="", validation_alias="SMTP_PASSWORD")
-    smtp_from_email: str = Field(default="", validation_alias="SMTP_FROM_EMAIL")
-    smtp_use_tls: bool = Field(default=True, validation_alias="SMTP_USE_TLS")
-
-    otp_ttl_seconds: int = 300
-    otp_resend_seconds: int = 60
-    otp_max_attempts: int = 5
-    email_token_ttl_seconds: int = 86400
-
     ml_service_url: str = Field(default="", validation_alias="ML_SERVICE_URL")
     ml_service_enabled: bool = Field(default=False, validation_alias="ML_SERVICE_ENABLED")
     ml_service_timeout: float = Field(default=8.0, validation_alias="ML_SERVICE_TIMEOUT")

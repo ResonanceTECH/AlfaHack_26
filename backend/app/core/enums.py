@@ -4,11 +4,23 @@ import enum
 
 
 class UserRole(str, enum.Enum):
-    ENTREPRENEUR = "entrepreneur"
-    ACCOUNTANT = "accountant"
-    MANAGER = "manager"
-    RISK_ANALYST = "risk_analyst"
-    ADMIN = "admin"
+    ENTREPRENEUR = "ENTREPRENEUR"
+    ANALYST = "ANALYST"
+    ADMIN = "ADMIN"
+
+
+class Permission(str, enum.Enum):
+    USERS_MANAGE = "users.manage"
+    CATALOG_MANAGE = "catalog.manage"
+    POLICY_EDIT = "policy.edit"
+    POLICY_PUBLISH = "policy.publish"
+    MODELS_MANAGE = "models.manage"
+    DEMO_RESET = "demo.reset"
+    ANALYTICS_READ = "analytics.read"
+    AUDIT_READ = "audit.read"
+    APPLICATIONS_REVIEW = "applications.review"
+    APPLICATIONS_DECIDE = "applications.decide"
+    COMPANIES_READ_CLIENT = "companies.read_client"
 
 
 class LegalForm(str, enum.Enum):
@@ -32,14 +44,45 @@ class ProductType(str, enum.Enum):
     CREDIT_LINE = "credit_line"
 
 
+class ProductStatus(str, enum.Enum):
+    DRAFT = "DRAFT"
+    PUBLISHED = "PUBLISHED"
+    ARCHIVED = "ARCHIVED"
+
+
+class PolicyStatus(str, enum.Enum):
+    DRAFT = "DRAFT"
+    PUBLISHED = "PUBLISHED"
+    ARCHIVED = "ARCHIVED"
+
+
 class ApplicationStatus(str, enum.Enum):
-    DRAFT = "draft"
-    SUBMITTED = "submitted"
-    IN_REVIEW = "in_review"
-    DOCS_REQUESTED = "docs_requested"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    ISSUED = "issued"
+    DRAFT = "DRAFT"
+    SUBMITTED = "SUBMITTED"
+    VALIDATING = "VALIDATING"
+    IN_REVIEW = "IN_REVIEW"
+    DOCS_REQUESTED = "DOCS_REQUESTED"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    COUNTEROFFERED = "COUNTEROFFERED"
+    OFFER_ACCEPTED = "OFFER_ACCEPTED"
+    AGREEMENT_PREPARATION = "AGREEMENT_PREPARATION"
+    ISSUED = "ISSUED"
+
+
+class DecisionType(str, enum.Enum):
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    COUNTEROFFERED = "COUNTEROFFERED"
+    NEED_INFO = "NEED_INFO"
+
+
+class OfferStatus(str, enum.Enum):
+    ACTIVE = "ACTIVE"
+    ACCEPTED = "ACCEPTED"
+    DECLINED = "DECLINED"
+    EXPIRED = "EXPIRED"
+    SUPERSEDED = "SUPERSEDED"
 
 
 class ScheduleType(str, enum.Enum):
@@ -61,46 +104,77 @@ class TransactionCategory(str, enum.Enum):
 
 
 class MemberRole(str, enum.Enum):
-    OWNER = "owner"
-    ACCOUNTANT = "accountant"
-    VIEWER = "viewer"
+    OWNER = "OWNER"
+    MEMBER = "MEMBER"
+    VIEWER = "VIEWER"
 
 
 class UserStatus(str, enum.Enum):
-    PENDING = "pending"
-    ACTIVE = "active"
-    DISABLED = "disabled"
+    PENDING = "PENDING"
+    ACTIVE = "ACTIVE"
+    DISABLED = "DISABLED"
 
 
-class ChallengePurpose(str, enum.Enum):
-    REGISTRATION = "registration"
-    LOGIN = "login"
-    PASSWORD_RESET = "password_reset"
-    CONTACT_CHANGE = "contact_change"
+class StatementStatus(str, enum.Enum):
+    QUEUED = "QUEUED"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CONFIRMED = "CONFIRMED"
 
 
-class ChallengeChannel(str, enum.Enum):
-    SMS = "sms"
-    EMAIL = "email"
+class WorkflowStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class CheckAudience(str, enum.Enum):
+    PUBLIC = "PUBLIC"
+    ANALYST = "ANALYST"
+    INTERNAL = "INTERNAL"
 
 
 STATUS_TRANSITIONS: dict[ApplicationStatus, set[ApplicationStatus]] = {
     ApplicationStatus.DRAFT: {ApplicationStatus.SUBMITTED},
     ApplicationStatus.SUBMITTED: {
+        ApplicationStatus.VALIDATING,
         ApplicationStatus.IN_REVIEW,
         ApplicationStatus.DOCS_REQUESTED,
         ApplicationStatus.REJECTED,
+    },
+    ApplicationStatus.VALIDATING: {
+        ApplicationStatus.IN_REVIEW,
+        ApplicationStatus.DOCS_REQUESTED,
+        ApplicationStatus.APPROVED,
+        ApplicationStatus.REJECTED,
+        ApplicationStatus.COUNTEROFFERED,
     },
     ApplicationStatus.IN_REVIEW: {
         ApplicationStatus.DOCS_REQUESTED,
         ApplicationStatus.APPROVED,
         ApplicationStatus.REJECTED,
+        ApplicationStatus.COUNTEROFFERED,
     },
     ApplicationStatus.DOCS_REQUESTED: {
         ApplicationStatus.IN_REVIEW,
+        ApplicationStatus.VALIDATING,
         ApplicationStatus.REJECTED,
     },
-    ApplicationStatus.APPROVED: {ApplicationStatus.ISSUED, ApplicationStatus.REJECTED},
+    ApplicationStatus.APPROVED: {
+        ApplicationStatus.OFFER_ACCEPTED,
+        ApplicationStatus.AGREEMENT_PREPARATION,
+        ApplicationStatus.ISSUED,
+        ApplicationStatus.REJECTED,
+    },
+    ApplicationStatus.COUNTEROFFERED: {
+        ApplicationStatus.OFFER_ACCEPTED,
+        ApplicationStatus.REJECTED,
+        ApplicationStatus.IN_REVIEW,
+    },
+    ApplicationStatus.OFFER_ACCEPTED: {ApplicationStatus.AGREEMENT_PREPARATION, ApplicationStatus.ISSUED},
+    ApplicationStatus.AGREEMENT_PREPARATION: {ApplicationStatus.ISSUED},
     ApplicationStatus.REJECTED: set(),
     ApplicationStatus.ISSUED: set(),
 }
