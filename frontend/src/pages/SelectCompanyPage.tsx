@@ -1,6 +1,7 @@
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import BusinessOutlinedIcon from '@mui/icons-material/BusinessOutlined'
 import ChecklistRtlOutlinedIcon from '@mui/icons-material/ChecklistRtlOutlined'
+import PersonOutlineRoundedIcon from '@mui/icons-material/PersonOutlineRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import ShowChartOutlinedIcon from '@mui/icons-material/ShowChartOutlined'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
@@ -48,13 +49,22 @@ function initialLetter(name: string): string {
   return (raw?.[0] ?? '?').toUpperCase()
 }
 
-function roleBadge(
-  item: CompanyListItem,
-  selected: boolean,
-): { label: string; bg: string; color: string } {
-  if (selected) return { label: 'Выбрана', bg: '#E6F6EC', color: '#1B8A5A' }
-  if (item.membershipRole === 'VIEWER') return { label: 'Просмотр', bg: '#FCE8E6', color: '#C41E14' }
-  return { label: 'Доступна', bg: '#EEF1F5', color: '#5A6B7D' }
+function statusChips(item: CompanyListItem, selected: boolean) {
+  const chips: { label: string; bg: string; color: string }[] = []
+  if (selected) chips.push({ label: 'Выбрана', bg: '#FCE8E6', color: '#C41E14' })
+  if (item.registryStatus === 'ACTIVE' && item.membershipRole !== 'VIEWER') {
+    chips.push({ label: 'Активна', bg: '#E6F6EC', color: '#1B8A5A' })
+  } else if (item.membershipRole === 'VIEWER') {
+    chips.push({ label: 'Просмотр', bg: '#EEF1F5', color: '#5A6B7D' })
+  } else {
+    chips.push({ label: 'Черновик', bg: '#EEF1F5', color: '#5A6B7D' })
+  }
+  return chips
+}
+
+function maskInn(inn: string, full: boolean): string {
+  if (full || inn.length < 4) return inn
+  return `•••• ${inn.slice(-4)}`
 }
 
 function roleLabel(role?: MemberRole): string {
@@ -165,6 +175,9 @@ export function SelectCompanyPage() {
       setInn('')
       setFound(null)
       setLookupError(null)
+      selectCompany(company.id)
+      // leave empty preview / first-visit → filled select or cabinet
+      navigate('/select-company', { replace: true })
     },
     onError: (err) => setLookupError(apiError(err, 'Не удалось добавить компанию')),
   })
@@ -709,8 +722,8 @@ function FirstVisitEmpty({
             Добавьте первую компанию
           </Typography>
           <Typography sx={{ color: '#5A6B7D', fontSize: 15, lineHeight: 1.45, mb: 2.5, maxWidth: 420 }}>
-            Здравствуйте, {userName.split(' ')[0]}! Чтобы открыть кабинет, найдите организацию
-            или ИП по ИНН — займёт меньше минуты.
+            Здравствуйте, {userName.trim().split(/\s+/)[0] || 'коллега'}! Чтобы открыть кабинет,
+            найдите организацию или ИП по ИНН — займёт меньше минуты.
           </Typography>
 
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} sx={{ mb: 1.5 }}>
@@ -821,7 +834,7 @@ function FirstVisitEmpty({
                 sx={{
                   bgcolor: '#F7F8FA',
                   borderRadius: 2.5,
-                  p: 1.5,
+                  p: { xs: 1.25, md: 1.5 },
                   minWidth: 0,
                 }}
               >
@@ -840,7 +853,7 @@ function FirstVisitEmpty({
                 <Typography
                   sx={{
                     fontWeight: 700,
-                    fontSize: 13,
+                    fontSize: { xs: 12, md: 13 },
                     color: '#0B1F35',
                     lineHeight: 1.25,
                     mb: 0.35,
@@ -848,18 +861,39 @@ function FirstVisitEmpty({
                 >
                   {s.title}
                 </Typography>
-                <Typography sx={{ fontSize: 12, color: '#8A96A3', lineHeight: 1.35 }}>
+                <Typography
+                  sx={{
+                    fontSize: 12,
+                    color: '#8A96A3',
+                    lineHeight: 1.35,
+                    display: { xs: 'none', sm: 'block' },
+                  }}
+                >
                   {s.body}
                 </Typography>
               </Box>
             ))}
           </Box>
+
+          <Button
+            variant="text"
+            onClick={onLogout}
+            sx={{
+              display: { xs: 'inline-flex', md: 'none' },
+              mt: 1.5,
+              color: '#5A6B7D',
+              fontWeight: 600,
+              alignSelf: 'center',
+            }}
+          >
+            Выйти из аккаунта
+          </Button>
         </Box>
 
-        {/* Secondary: value + logout */}
+        {/* Secondary: value + logout — desktop */}
         <Box
           sx={{
-            display: 'flex',
+            display: { xs: 'none', md: 'flex' },
             flexDirection: 'column',
             minHeight: 0,
             gap: 2,
@@ -1088,20 +1122,20 @@ function AddByInnPanel({
 }
 
 function PreviewPanel({
-  empty,
   selected,
   dash,
   dashLoading,
   onContinue,
   onLogout,
 }: {
-  empty: boolean
   selected: CompanyListItem | null
   dash: Awaited<ReturnType<typeof getCompanyDashboard>> | undefined
   dashLoading: boolean
   onContinue: () => void
   onLogout: () => void
 }) {
+  if (!selected) return null
+
   return (
     <Box
       sx={{
@@ -1131,176 +1165,99 @@ function PreviewPanel({
         Что вас ждёт в кабинете
       </Typography>
 
-      {empty && (
-        <Stack spacing={1.5} sx={{ flex: 1, minHeight: 0 }}>
-          {[
-            { k: 'Компания', v: 'Пока не выбрана' },
-            { k: 'Заявки', v: 'Появятся после добавления' },
-            { k: 'Подбор продуктов', v: 'Под цель и выписку' },
-            { k: 'Менеджер', v: 'Назначим при первой заявке' },
-          ].map((row) => (
-            <Stack
-              key={row.k}
-              direction="row"
-              justifyContent="space-between"
-              sx={{
-                py: 1.25,
-                borderBottom: '1px solid rgba(11,31,53,0.06)',
-                gap: 2,
-              }}
-            >
-              <Typography sx={{ color: '#8A96A3', fontSize: 14 }}>{row.k}</Typography>
-              <Typography sx={{ color: '#0B1F35', fontSize: 14, fontWeight: 600, textAlign: 'right' }}>
-                {row.v}
-              </Typography>
-            </Stack>
-          ))}
-
-          <Box
+      <Stack spacing={0} sx={{ flex: 1, minHeight: 0 }}>
+        {(
+          [
+            { k: 'Компания', v: selected.name },
+            {
+              k: 'Активные заявки',
+              v: dashLoading ? '…' : String(dash?.applicationsActive ?? 0),
+            },
+            { k: 'Регион', v: selected.region || '—' },
+            { k: 'Роль', v: roleLabel(selected.membershipRole) },
+          ] as const
+        ).map((row) => (
+          <Stack
+            key={row.k}
+            direction="row"
+            justifyContent="space-between"
             sx={{
-              mt: 'auto',
-              bgcolor: '#F7F8FA',
-              borderRadius: 2.5,
-              p: 2,
-              display: 'flex',
-              gap: 1.25,
+              py: 1.35,
+              borderBottom: '1px solid rgba(11,31,53,0.06)',
+              gap: 2,
             }}
           >
-            <BusinessOutlinedIcon sx={{ color: '#EF3124', fontSize: 22, mt: 0.2 }} />
-            <Typography sx={{ fontSize: 13, color: '#5A6B7D', lineHeight: 1.45 }}>
-              Добавьте компанию слева — откроем кабинет с подбором кредита, заявками и прогнозом cash
-              flow
+            <Typography sx={{ color: '#8A96A3', fontSize: 14, flexShrink: 0 }}>{row.k}</Typography>
+            <Typography
+              sx={{
+                color: '#0B1F35',
+                fontSize: 14,
+                fontWeight: 600,
+                textAlign: 'right',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {row.v}
+            </Typography>
+          </Stack>
+        ))}
+
+        {dash?.nextTaskTitle && (
+          <Box
+            sx={{
+              mt: 2,
+              bgcolor: '#FCE8E6',
+              borderRadius: 2.5,
+              p: 1.75,
+              display: 'flex',
+              gap: 1.25,
+              alignItems: 'flex-start',
+            }}
+          >
+            <WarningAmberRoundedIcon sx={{ color: '#EF3124', fontSize: 20, mt: 0.15 }} />
+            <Typography sx={{ fontSize: 13, color: '#5A2A26', lineHeight: 1.4 }}>
+              {dash.nextTaskTitle}
+              {dash.nextTaskDue ? ` — до ${formatDate(dash.nextTaskDue)}` : ''}
             </Typography>
           </Box>
+        )}
 
+        {!dash?.nextTaskTitle && dash && dash.applicationsTotal === 0 && (
+          <Box sx={{ mt: 2, bgcolor: '#F7F8FA', borderRadius: 2.5, p: 1.75 }}>
+            <Typography sx={{ fontSize: 13, color: '#5A6B7D', lineHeight: 1.4 }}>
+              Активных задач нет. Можно перейти к подбору продукта и заявке.
+            </Typography>
+          </Box>
+        )}
+
+        <Box sx={{ mt: 'auto', pt: 2.5, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+          <Button
+            variant="contained"
+            color="primary"
+            fullWidth
+            onClick={onContinue}
+            sx={{ borderRadius: 2.5, py: 1.45, fontWeight: 700, fontSize: 15 }}
+          >
+            Продолжить как «{shortName(selected.name)}»
+          </Button>
           <Button
             variant="outlined"
-            onClick={onLogout}
             fullWidth
+            onClick={onLogout}
             sx={{
-              mt: 1,
-              borderRadius: 2,
+              borderRadius: 2.5,
+              py: 1.25,
               borderColor: 'rgba(11,31,53,0.18)',
               color: '#0B1F35',
               fontWeight: 600,
-              py: 1.2,
             }}
           >
             Выйти из аккаунта
           </Button>
-        </Stack>
-      )}
-
-      {!empty && selected && (
-        <Stack spacing={0} sx={{ flex: 1, minHeight: 0 }}>
-          {(
-            [
-              { k: 'Компания', v: selected.name },
-              {
-                k: 'Активные заявки',
-                v: dashLoading ? '…' : String(dash?.applicationsActive ?? 0),
-              },
-              {
-                k: 'Регион',
-                v: selected.region || '—',
-              },
-              {
-                k: 'Роль',
-                v: roleLabel(selected.membershipRole),
-              },
-            ] as const
-          ).map((row) => (
-            <Stack
-              key={row.k}
-              direction="row"
-              justifyContent="space-between"
-              sx={{
-                py: 1.35,
-                borderBottom: '1px solid rgba(11,31,53,0.06)',
-                gap: 2,
-              }}
-            >
-              <Typography sx={{ color: '#8A96A3', fontSize: 14, flexShrink: 0 }}>{row.k}</Typography>
-              <Typography
-                sx={{
-                  color: '#0B1F35',
-                  fontSize: 14,
-                  fontWeight: 600,
-                  textAlign: 'right',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {row.v}
-              </Typography>
-            </Stack>
-          ))}
-
-          {dash?.nextTaskTitle && (
-            <Box
-              sx={{
-                mt: 2,
-                bgcolor: '#FCE8E6',
-                borderRadius: 2.5,
-                p: 1.75,
-                display: 'flex',
-                gap: 1.25,
-                alignItems: 'flex-start',
-              }}
-            >
-              <WarningAmberRoundedIcon sx={{ color: '#EF3124', fontSize: 20, mt: 0.15 }} />
-              <Typography sx={{ fontSize: 13, color: '#5A2A26', lineHeight: 1.4 }}>
-                {dash.nextTaskTitle}
-                {dash.nextTaskDue
-                  ? ` — до ${formatDate(dash.nextTaskDue)}`
-                  : ''}
-              </Typography>
-            </Box>
-          )}
-
-          {!dash?.nextTaskTitle && dash && dash.applicationsTotal === 0 && (
-            <Box
-              sx={{
-                mt: 2,
-                bgcolor: '#F7F8FA',
-                borderRadius: 2.5,
-                p: 1.75,
-              }}
-            >
-              <Typography sx={{ fontSize: 13, color: '#5A6B7D', lineHeight: 1.4 }}>
-                Активных задач нет. Можно перейти к подбору продукта и заявке.
-              </Typography>
-            </Box>
-          )}
-
-          <Box sx={{ mt: 'auto', pt: 2.5, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
-            <Button
-              variant="contained"
-              color="primary"
-              fullWidth
-              onClick={onContinue}
-              sx={{ borderRadius: 2.5, py: 1.45, fontWeight: 700, fontSize: 15 }}
-            >
-              Продолжить как «{shortName(selected.name)}»
-            </Button>
-            <Button
-              variant="outlined"
-              fullWidth
-              onClick={onLogout}
-              sx={{
-                borderRadius: 2.5,
-                py: 1.25,
-                borderColor: 'rgba(11,31,53,0.18)',
-                color: '#0B1F35',
-                fontWeight: 600,
-              }}
-            >
-              Выйти из аккаунта
-            </Button>
-          </Box>
-        </Stack>
-      )}
+        </Box>
+      </Stack>
     </Box>
   )
 }
