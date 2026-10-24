@@ -34,7 +34,7 @@ import SupportAgentRoundedIcon from '@mui/icons-material/SupportAgentRounded'
 import NotificationsNoneRoundedIcon from '@mui/icons-material/NotificationsNoneRounded'
 import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { listCompanies } from '@/api/companies'
 import { useAuth } from '@/contexts/AuthContext'
@@ -107,27 +107,6 @@ const managerGroups: NavGroup[] = [
   },
 ]
 
-const crumbLabels: Record<string, string> = {
-  '/app': 'Главная',
-  '/app/company': 'Компания',
-  '/app/statements': 'Финансовый профиль',
-  '/app/ai': 'AI-консультант',
-  '/app/recommendations': 'Подбор',
-  '/app/scenarios': 'Сценарии и расчёты',
-  '/app/applications': 'Мои заявки',
-  '/app/documents': 'Документы',
-  '/app/calendar': 'Календарь платежей',
-  '/app/team': 'Команда',
-  '/app/help': 'Помощь',
-  '/app/manager': 'Очередь заявок',
-  '/app/goals': 'Бизнес-цель',
-  '/app/compare': 'Сравнение',
-  '/app/calculator': 'Калькулятор',
-  '/app/forecast': 'Прогноз',
-  '/app/readiness': 'Готовность',
-  '/app/roi': 'Окупаемость',
-}
-
 function initials(name?: string): string {
   if (!name) return '·'
   const parts = name.trim().split(/\s+/)
@@ -170,7 +149,6 @@ function AlfaMark({ size = 32 }: { size?: number }) {
 export function AppLayout() {
   const { user, logout, selectCompany } = useAuth()
   const navigate = useNavigate()
-  const location = useLocation()
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down('md'))
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -218,10 +196,6 @@ export function AppLayout() {
 
   const activeCompany =
     companiesQ.data?.find((c) => c.id === user?.companyId) ?? companiesQ.data?.[0] ?? null
-
-  const crumb =
-    crumbLabels[location.pathname] ??
-    (location.pathname.startsWith('/app/applications/') ? 'Заявка' : 'Кабинет')
 
   function toggleCollapsed() {
     setCollapsed((v) => !v)
