@@ -147,6 +147,7 @@ function AlfaMark({ size = 32 }: { size?: number }) {
 }
 
 function pageTitle(pathname: string): string {
+  if (pathname === '/app/profile') return 'Профиль'
   const flat = [...entrepreneurGroups, ...managerGroups].flatMap((g) => g.items)
   const exact = flat.find((i) => i.to === pathname)
   if (exact) return exact.label
@@ -155,7 +156,7 @@ function pageTitle(pathname: string): string {
 }
 
 export function AppLayout() {
-  const { user, logout, selectCompany } = useAuth()
+  const { user, selectCompany } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const theme = useTheme()
@@ -652,11 +653,8 @@ export function AppLayout() {
           )}
 
           <Avatar
-            onClick={() => {
-              logout()
-              navigate('/login')
-            }}
-            title="Выйти"
+            onClick={() => navigate('/app/profile')}
+            title="Профиль"
             sx={{
               width: 34,
               height: 34,
