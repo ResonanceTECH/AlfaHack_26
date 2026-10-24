@@ -5,9 +5,11 @@ from decimal import Decimal
 
 from pydantic import Field
 
-from app.core.enums import GoalType, LegalForm, ProductType, ScheduleType
+from app.core.enums import GoalType, LegalForm, ProductStatus, ProductType, ScheduleType
 from app.core.money import Money
 from app.schemas.common import APIModel
+
+CATALOG_VERSION = "catalog-v1"
 
 
 class FeeOut(APIModel):
@@ -16,8 +18,36 @@ class FeeOut(APIModel):
     value: Money
 
 
+class CreditProductRuleOut(APIModel):
+    id: str
+    rule_type: str
+    parameters: dict = {}
+    version: str = "demo-rules-v1"
+
+
+class CreditProductListItem(APIModel):
+    id: str
+    code: str | None = None
+    name: str
+    type: ProductType
+    description: str
+    amount_min: Money
+    amount_max: Money
+    term_min: int
+    term_max: int
+    rate_min: Money
+    rate_max: Money
+    collateral_required: bool
+    legal_forms: list[LegalForm]
+    suitable_goals: list[GoalType]
+    status: ProductStatus
+    version: int = 1
+    currency: str = "RUB"
+
+
 class CreditProductOut(APIModel):
     id: str
+    code: str | None = None
     name: str
     type: ProductType
     description: str
@@ -34,7 +64,18 @@ class CreditProductOut(APIModel):
     documents: list[str]
     fees: list[FeeOut]
     schedule_types: list[ScheduleType]
+    features: list = []
+    eligibility_rules: dict = {}
+    rules: list[CreditProductRuleOut] = []
+    status: ProductStatus = ProductStatus.PUBLISHED
+    version: int = 1
+    catalog_version: str = CATALOG_VERSION
     currency: str = "RUB"
+
+
+class CreditProductCatalogOut(APIModel):
+    catalog_version: str = CATALOG_VERSION
+    items: list[CreditProductListItem]
 
 
 class RecommendationsRequest(APIModel):
