@@ -19,6 +19,8 @@ from app.schemas.analyst import (
     AnalystDocumentRequestResult,
     AnalystFinancialsBrief,
     AnalystOfferBrief,
+    AnalystProposeIn,
+    AnalystProposeOut,
     AnalystQueueItem,
     AnalystQueueOut,
     AnalystWorkflowBrief,
@@ -32,6 +34,7 @@ from app.services.analyst import (
     list_analyst_queue,
 )
 from app.services.audit import write_audit
+from app.services.decisions import propose_decision, serialize_offer
 from app.services.documents import (
     cancel_document_request,
     create_document_request,
@@ -228,4 +231,90 @@ def analyst_cancel_document_request(
         application_id=app.id,
         status=app.status,
         current_step=app.current_step,
+    )
+
+
+@router.post(
+    "/applications/{application_id}/propose",
+    response_model=AnalystProposeOut,
+)
+def analyst_propose_decision(
+    application_id: str,
+    body: AnalystProposeIn,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+) -> AnalystProposeOut:
+    require_roles(user, UserRole.ANALYST)
+    app = get_analyst_application(db, application_id)
+    if app is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Заявка не найдена")
+    require_application_access(db, user, app, write=True)
+
+    _decision, offer, payload = propose_decision(
+        db,
+        app=app,
+        analyst=user,
+        decision_type=body.decision,
+        reason_codes=body.reason_codes or None,
+        explanation=body.explanation,
+        comment=body.comment,
+        offer_amount=body.offer_amount,
+        offer_term_months=body.offer_term_months,
+        offer_rate=body.offer_rate,
+        product_id=body.product_id,
+        offer_label=body.offer_label,
+    )
+
+    if body.comment or body.explanation:
+        db.add(
+            ApplicationComment(
+                application_id=app.id,
+                author_id=user.id,
+                author_name=user.full_name,
+                author_role=user.role.value,
+                text=body.comment or body.explanation or "",
+                is_internal=True,
+            )
+        )
+
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="application",
+        entity_id=app.id,
+        action="propose_decision",
+        details={
+            "decision": body.decision.value,
+            "decision_id": payload["decision_id"],
+            "offer_id": payload.get("offer_id"),
+        },
+        correlation_id=cid,
+    )
+    db.commit()
+
+    offer_brief = None
+    if offer is not None:
+        raw_offer = serialize_offer(offer)
+        offer_brief = AnalystOfferBrief(
+            id=raw_offer["id"],
+            amount=raw_offer["amount"],
+            term_months=raw_offer["term_months"],
+            rate=raw_offer["rate"],
+            monthly_payment=raw_offer.get("monthly_payment"),
+            status=raw_offer["status"],
+            expires_at=raw_offer.get("expires_at"),
+            conditions=raw_offer.get("conditions") or {},
+        )
+
+    return AnalystProposeOut(
+        application_id=payload["application_id"],
+        status=payload["status"],
+        current_step=payload.get("current_step"),
+        decision_id=payload["decision_id"],
+        decision_type=payload["decision_type"],
+        offer_id=payload.get("offer_id"),
+        reason_codes=list(payload.get("reason_codes") or []),
+        explanation=payload.get("explanation"),
+        offer=offer_brief,
     )

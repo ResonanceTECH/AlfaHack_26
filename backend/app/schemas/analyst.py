@@ -155,3 +155,28 @@ class AnalystDocumentRequestResult(APIModel):
     application_id: str
     status: ApplicationStatus
     current_step: str | None = None
+
+
+class AnalystProposeIn(APIModel):
+    decision: DecisionType
+    reason_codes: list[str] = Field(default_factory=list)
+    explanation: str | None = None
+    comment: str | None = None
+    # параметры offer (APPROVED / COUNTEROFFERED)
+    offer_amount: Money | None = Field(default=None, gt=0)
+    offer_term_months: int | None = Field(default=None, ge=1, le=360)
+    offer_rate: Money | None = None
+    product_id: str | None = None
+    offer_label: str | None = None
+
+
+class AnalystProposeOut(APIModel):
+    application_id: str
+    status: ApplicationStatus
+    current_step: str | None = None
+    decision_id: str
+    decision_type: DecisionType | str
+    offer_id: str | None = None
+    reason_codes: list[str] = Field(default_factory=list)
+    explanation: str | None = None
+    offer: AnalystOfferBrief | None = None
