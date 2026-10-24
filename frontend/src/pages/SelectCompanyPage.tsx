@@ -83,7 +83,9 @@ export function SelectCompanyPage() {
   })
 
   const companies = companiesQ.data ?? []
-  const isEmpty = !companiesQ.isLoading && companies.length === 0
+  // Don't treat API errors as "no companies" — that wrongly opens first-visit INN screen
+  const isEmpty =
+    !companiesQ.isLoading && !companiesQ.isError && companies.length === 0
 
   // Drop selection only if company disappeared — never auto-open preview
   useEffect(() => {
@@ -205,6 +207,32 @@ export function SelectCompanyPage() {
         }}
       >
         <CircularProgress size={32} sx={{ color: '#EF3124' }} />
+      </Box>
+    )
+  }
+
+  if (companiesQ.isError) {
+    return (
+      <Box
+        sx={{
+          height: '100vh',
+          display: 'grid',
+          placeItems: 'center',
+          bgcolor: '#F3F5F8',
+          px: 2,
+        }}
+      >
+        <Alert
+          severity="error"
+          sx={{ maxWidth: 420, borderRadius: 2.5 }}
+          action={
+            <Button color="inherit" size="small" onClick={() => companiesQ.refetch()}>
+              Повторить
+            </Button>
+          }
+        >
+          Не удалось загрузить компании. Проверьте вход и бэкенд.
+        </Alert>
       </Box>
     )
   }
