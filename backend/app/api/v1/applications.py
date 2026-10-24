@@ -9,13 +9,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
 from app.config import get_settings
-from app.core.enums import STATUS_TRANSITIONS, ApplicationStatus, ProductStatus, UserRole
+from app.core.enums import ApplicationStatus, ProductStatus, UserRole
 from app.deps import CorrelationId, CurrentUser, DbDep
 from app.models.application import ApplicationComment, ApplicationDocument, CreditApplication
 from app.models.credit import CreditProduct
 from app.models.funding import FundingNeed
 from app.models.user import User
 from app.schemas.application import (
+    ApplicationChecksOut,
     ApplicationCreate,
     ApplicationDraftCreate,
     ApplicationDraftCreated,
@@ -25,6 +26,7 @@ from app.schemas.application import (
     ApplicationUpdate,
     ApplicationValidationOut,
     DocsRequestIn,
+    PublicCheckOut,
     StatusUpdate,
     ValidationIssue,
 )
@@ -43,6 +45,7 @@ from app.services.applications import (
     validate_application,
 )
 from app.services.audit import write_audit
+from app.services.workflow import public_checks, serialize_check, transition_application
 
 router = APIRouter(tags=["applications"])
 
@@ -403,6 +406,21 @@ def application_public_status(
     )
 
 
+@router.get(
+    "/companies/{company_id}/applications/{application_id}/checks",
+    response_model=ApplicationChecksOut,
+)
+def application_public_checks(
+    company_id: str, application_id: str, db: DbDep, user: CurrentUser
+) -> ApplicationChecksOut:
+    app = _company_app(db, company_id, application_id, user)
+    return ApplicationChecksOut(
+        application_id=app.id,
+        status=app.status,
+        checks=[PublicCheckOut(**serialize_check(c)) for c in public_checks(app)],
+    )
+
+
 # --- Legacy + analyst ---
 
 
@@ -534,11 +552,13 @@ async def upload_document(
         )
 
     if app.status == ApplicationStatus.DOCS_REQUESTED:
-        now = datetime.now(timezone.utc).isoformat()
-        app.status = ApplicationStatus.IN_REVIEW
-        history = list(app.status_history or [])
-        history.append({"status": "IN_REVIEW", "at": now, "by": user.full_name})
-        app.status_history = history
+        transition_application(
+            db,
+            app,
+            ApplicationStatus.IN_REVIEW,
+            actor=user,
+            comment="Документы загружены",
+        )
 
     db.commit()
     return ApplicationOut(**serialize_application(_load_app(db, app.id)))
@@ -554,23 +574,18 @@ def change_status(
     if body.idempotency_key and app.status == body.status:
         return ApplicationOut(**serialize_application(app))
 
-    allowed = STATUS_TRANSITIONS.get(app.status, set())
-    if body.status not in allowed and not (
-        app.status == ApplicationStatus.SUBMITTED and body.status == ApplicationStatus.DOCS_REQUESTED
-    ):
-        if body.status not in allowed:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail=f"Переход {app.status.value} → {body.status.value} запрещён",
-            )
-
-    now = datetime.now(timezone.utc).isoformat()
-    app.status = body.status
     if app.assigned_manager_id is None:
         app.assigned_manager_id = user.id
-    history = list(app.status_history or [])
-    history.append({"status": body.status.value, "at": now, "by": user.full_name})
-    app.status_history = history
+    if app.assigned_analyst_id is None:
+        app.assigned_analyst_id = user.id
+
+    transition_application(
+        db,
+        app,
+        body.status,
+        actor=user,
+        comment=body.comment,
+    )
 
     if body.comment:
         db.add(
@@ -602,11 +617,13 @@ def request_documents(
 ) -> ApplicationOut:
     require_roles(user, UserRole.ANALYST)
     app = _load_app(db, application_id)
-    now = datetime.now(timezone.utc).isoformat()
-    app.status = ApplicationStatus.DOCS_REQUESTED
-    history = list(app.status_history or [])
-    history.append({"status": "DOCS_REQUESTED", "at": now, "by": user.full_name})
-    app.status_history = history
+    transition_application(
+        db,
+        app,
+        ApplicationStatus.DOCS_REQUESTED,
+        actor=user,
+        comment=body.comment or f"Запрошен документ: {body.document_type}",
+    )
 
     db.add(
         ApplicationDocument(

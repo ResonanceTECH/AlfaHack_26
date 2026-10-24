@@ -7,7 +7,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.enums import ApplicationStatus, ProductStatus, UserRole, WorkflowStatus
+from app.core.enums import ApplicationStatus, ProductStatus, UserRole
 from app.models.application import ApplicationWorkflow, CreditApplication
 from app.models.company import Company
 from app.models.credit import CreditProduct
@@ -16,6 +16,12 @@ from app.models.funding import FundingNeed
 from app.models.user import User
 from app.services.readiness import compute_readiness
 from app.services.recommendations import business_age_months
+from app.services.workflow import (
+    active_workflow,
+    create_workflow,
+    run_automated_validation,
+    transition_application,
+)
 
 
 def utcnow() -> datetime:
@@ -30,6 +36,7 @@ def load_application(db: Session, app_id: str) -> CreditApplication | None:
             joinedload(CreditApplication.comments),
             joinedload(CreditApplication.assigned_manager),
             joinedload(CreditApplication.workflows),
+            joinedload(CreditApplication.checks),
         )
         .where(CreditApplication.id == app_id)
     )
@@ -264,35 +271,39 @@ def create_draft(
     return app
 
 
+def _submit_payload(app: CreditApplication, wf: ApplicationWorkflow | None) -> dict[str, Any]:
+    return {
+        "application_id": app.id,
+        "application_number": application_number(app),
+        "status": app.status,
+        "workflow_id": wf.id if wf else None,
+        "next_step": app.current_step or "AUTOMATED_VALIDATION",
+    }
+
+
 def submit_draft(
     db: Session,
     *,
     app: CreditApplication,
     user: User,
     idempotency_key: str | None,
-) -> tuple[CreditApplication, ApplicationWorkflow, dict[str, Any]]:
+) -> tuple[CreditApplication, ApplicationWorkflow | None, dict[str, Any]]:
     form = dict(app.form_data or {})
-    if app.status == ApplicationStatus.SUBMITTED:
-        wf = next(iter(app.workflows or []), None)
-        payload = {
-            "application_id": app.id,
-            "application_number": application_number(app),
-            "status": app.status,
-            "workflow_id": wf.id if wf else None,
-            "next_step": app.current_step or "AUTOMATED_VALIDATION",
-        }
-        return app, wf, payload  # type: ignore[return-value]
+    wf = active_workflow(app)
+
+    # Уже в конвейере — идемпотентный ответ
+    if app.status not in (ApplicationStatus.DRAFT, ApplicationStatus.DOCS_REQUESTED):
+        if idempotency_key and form.get("submit_idempotency_key") == idempotency_key:
+            return app, wf, _submit_payload(app, wf)
+        if app.status in (
+            ApplicationStatus.SUBMITTED,
+            ApplicationStatus.VALIDATING,
+            ApplicationStatus.IN_REVIEW,
+        ):
+            return app, wf, _submit_payload(app, wf)
 
     if idempotency_key and form.get("submit_idempotency_key") == idempotency_key:
-        wf = next(iter(app.workflows or []), None)
-        payload = {
-            "application_id": app.id,
-            "application_number": application_number(app),
-            "status": app.status,
-            "workflow_id": wf.id if wf else None,
-            "next_step": app.current_step or "AUTOMATED_VALIDATION",
-        }
-        return app, wf, payload  # type: ignore[return-value]
+        return app, wf, _submit_payload(app, wf)
 
     validation = validate_application(db, app)
     if not validation["can_submit"]:
@@ -301,42 +312,46 @@ def submit_draft(
     analyst = db.scalar(
         select(User).where(User.role == UserRole.ANALYST, User.is_active.is_(True))
     )
-
     now = utcnow()
-    app.status = ApplicationStatus.SUBMITTED
-    app.current_step = "AUTOMATED_VALIDATION"
-    app.submitted_at = now
-    app.assigned_manager_id = analyst.id if analyst else None
-    app.assigned_analyst_id = analyst.id if analyst else None
-    app.version = int(app.version or 1) + 1
-    history = list(app.status_history or [])
-    history.append({"status": "SUBMITTED", "at": now.isoformat(), "by": user.full_name})
-    app.status_history = history
+    if app.submitted_at is None:
+        app.submitted_at = now
+    if analyst:
+        app.assigned_manager_id = app.assigned_manager_id or analyst.id
+        app.assigned_analyst_id = app.assigned_analyst_id or analyst.id
 
     year = now.year
     short = app.id.replace("-", "")[-4:].upper()
-    number = f"ABC-{year}-{short}"
+    number = form.get("application_number") or f"ABC-{year}-{short}"
     form["application_number"] = number
     if idempotency_key:
         form["submit_idempotency_key"] = idempotency_key
     app.form_data = form
 
-    wf = ApplicationWorkflow(
-        application_id=app.id,
-        workflow_type="CREDIT_REVIEW",
-        status=WorkflowStatus.PENDING,
-        current_step="AUTOMATED_VALIDATION",
-        context={"triggered_by": user.id, "source": "submit"},
-        started_at=now,
-    )
-    db.add(wf)
-    db.flush()
+    if app.status == ApplicationStatus.DRAFT:
+        transition_application(
+            db,
+            app,
+            ApplicationStatus.SUBMITTED,
+            actor=user,
+            comment="Отправка заявки",
+        )
+        wf = create_workflow(db, app, actor=user)
+        # Демо: сразу прогоняем auto-validation → IN_REVIEW
+        run_automated_validation(db, app, actor=user, workflow=wf)
+    elif app.status == ApplicationStatus.DOCS_REQUESTED:
+        wf = active_workflow(app) or create_workflow(db, app, actor=user)
+        run_automated_validation(db, app, actor=user, workflow=wf)
+    else:
+        transition_application(
+            db,
+            app,
+            ApplicationStatus.SUBMITTED,
+            actor=user,
+            comment="Отправка заявки",
+        )
+        wf = create_workflow(db, app, actor=user)
+        run_automated_validation(db, app, actor=user, workflow=wf)
 
-    payload = {
-        "application_id": app.id,
-        "application_number": number,
-        "status": app.status,
-        "workflow_id": wf.id,
-        "next_step": "AUTOMATED_VALIDATION",
-    }
-    return app, wf, payload
+    db.flush()
+    wf = active_workflow(app) or wf
+    return app, wf, _submit_payload(app, wf)

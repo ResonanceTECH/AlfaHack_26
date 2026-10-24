@@ -156,3 +156,19 @@ class ApplicationStatusOut(APIModel):
     next_action: str | None = None
     application_number: str | None = None
     updated_at: datetime | None = None
+
+
+class PublicCheckOut(APIModel):
+    id: str
+    check_key: str
+    status: str
+    score: int | None = None
+    reason_codes: list[str] = []
+    explanation: str | None = None
+    created_at: datetime | None = None
+
+
+class ApplicationChecksOut(APIModel):
+    application_id: str
+    status: ApplicationStatus
+    checks: list[PublicCheckOut] = []
