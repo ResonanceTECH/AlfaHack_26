@@ -51,6 +51,7 @@ export function AuthShell({ title, subtitle, beforeTitle, children, footer }: Au
               textDecoration: 'none',
               width: 'fit-content',
               mb: 4,
+              height: 28,
               '&:hover': { opacity: 0.85 },
             }}
           >
@@ -86,7 +87,7 @@ export function AuthShell({ title, subtitle, beforeTitle, children, footer }: Au
               letterSpacing: '-0.035em',
               mb: subtitle ? 1.25 : 3.5,
               lineHeight: 1.15,
-              fontSize: { xs: '1.65rem', sm: '1.95rem' },
+              fontSize: { xs: '1.85rem', sm: '2.35rem' },
               color: '#0B1F35',
             }}
           >
@@ -125,19 +126,31 @@ export function AuthShell({ title, subtitle, beforeTitle, children, footer }: Au
             minHeight: 560,
           }}
         >
-          <Stack spacing={1.5} sx={{ position: 'relative', zIndex: 2, pt: 3.5, px: 4.5, pb: 4.5, maxWidth: 340 }}>
+          <Stack
+            spacing={1.5}
+            sx={{
+              position: 'relative',
+              zIndex: 2,
+              // Match left title baseline: left pad − panel margin + logo spacer
+              pt: { xs: 2, sm: 3.75 },
+              px: { xs: 3.25, sm: 5 },
+              pb: 4.5,
+              maxWidth: 380,
+            }}
+          >
+            <Box sx={{ mb: 4, height: 28 }} aria-hidden />
             <Typography
               sx={{
                 fontFamily: 'Manrope, sans-serif',
                 fontWeight: 800,
-                fontSize: '1.7rem',
-                letterSpacing: '-0.02em',
-                lineHeight: 1.2,
+                fontSize: { xs: '1.85rem', sm: '2.35rem' },
+                letterSpacing: '-0.035em',
+                lineHeight: 1.15,
               }}
             >
               Развиваем бизнес вместе
             </Typography>
-            <Typography sx={{ opacity: 0.95, fontSize: 15, lineHeight: 1.45, maxWidth: 280 }}>
+            <Typography sx={{ opacity: 0.95, fontSize: 16, lineHeight: 1.45, maxWidth: 320 }}>
               Финансовые решения для роста на каждом этапе
             </Typography>
           </Stack>
