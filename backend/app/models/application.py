@@ -246,3 +246,4 @@ class ApplicationCheck(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     application = relationship("CreditApplication", back_populates="checks")
+    workflow = relationship("ApplicationWorkflow", foreign_keys=[workflow_id])

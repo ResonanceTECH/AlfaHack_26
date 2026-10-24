@@ -39,6 +39,7 @@ class User(Base):
 
     memberships = relationship("CompanyMembership", back_populates="user", cascade="all, delete-orphan")
     sessions = relationship("AuthSession", back_populates="user", cascade="all, delete-orphan")
+    notifications = relationship("Notification", back_populates="user")
 
     @property
     def company_id(self) -> Optional[str]:

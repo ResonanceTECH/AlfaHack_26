@@ -707,6 +707,7 @@ def _seed_applications(db, now: datetime) -> None:
             result={"outcome": "APPROVED"},
         )
     )
+    db.flush()  # workflow до checks (FK workflow_id)
     db.add(
         ApplicationCheck(
             id="chk_approved_01",
@@ -734,6 +735,7 @@ def _seed_applications(db, now: datetime) -> None:
             payload={"scenario": "demo_approved"},
         )
     )
+    db.flush()  # decision до offers
     db.add(
         CreditOffer(
             id="offer_approved_01",
@@ -790,6 +792,7 @@ def _seed_applications(db, now: datetime) -> None:
             payload={"scenario": "demo_counteroffer"},
         )
     )
+    db.flush()
     db.add(
         CreditOffer(
             id="offer_counter_01",
@@ -912,40 +915,47 @@ def _seed_scenarios_and_notifications(db, now: datetime) -> None:
             )
         )
 
-    db.add_all(
-        [
-            Notification(
-                id="ntf_ent_01",
-                user_id=USER_ENT_01,
-                channel="IN_APP",
-                type="APPLICATION_APPROVED",
-                title="Заявка предварительно одобрена",
-                body="По заявке app_approved_01 доступно предложение offer_approved_01.",
-                payload={"application_id": "app_approved_01", "offer_id": "offer_approved_01"},
-                is_read=False,
-            ),
-            Notification(
-                id="ntf_ent_02",
-                user_id=USER_ENT_01,
-                channel="IN_APP",
-                type="DOCS_REQUESTED",
-                title="Запрошены документы",
-                body="По заявке app_docs_01 нужен бизнес-план.",
-                payload={"application_id": "app_docs_01", "document_request_id": "docreq_01"},
-                is_read=False,
-            ),
-            Notification(
-                id="ntf_analyst_01",
-                user_id=USER_ANALYST,
-                channel="IN_APP",
-                type="QUEUE_HINT",
-                title="Очередь аналитика",
-                body="В демо есть заявки COUNTEROFFERED / DOCS_REQUESTED / REJECTED.",
-                payload={"seed_version": SEED_VERSION},
-                is_read=True,
-                read_at=now,
-            ),
-        ]
+    ent = db.get(User, USER_ENT_01)
+    analyst = db.get(User, USER_ANALYST)
+    if ent is None or analyst is None:
+        raise RuntimeError(
+            f"Seed: users missing before notifications "
+            f"(ent={ent is not None}, analyst={analyst is not None}) — нужен flush после _seed_users"
+        )
+
+    ent.notifications.append(
+        Notification(
+            id="ntf_ent_01",
+            channel="IN_APP",
+            type="APPLICATION_APPROVED",
+            title="Заявка предварительно одобрена",
+            body="По заявке app_approved_01 доступно предложение offer_approved_01.",
+            payload={"application_id": "app_approved_01", "offer_id": "offer_approved_01"},
+            is_read=False,
+        )
+    )
+    ent.notifications.append(
+        Notification(
+            id="ntf_ent_02",
+            channel="IN_APP",
+            type="DOCS_REQUESTED",
+            title="Запрошены документы",
+            body="По заявке app_docs_01 нужен бизнес-план.",
+            payload={"application_id": "app_docs_01", "document_request_id": "docreq_01"},
+            is_read=False,
+        )
+    )
+    analyst.notifications.append(
+        Notification(
+            id="ntf_analyst_01",
+            channel="IN_APP",
+            type="QUEUE_HINT",
+            title="Очередь аналитика",
+            body="В демо есть заявки COUNTEROFFERED / DOCS_REQUESTED / REJECTED.",
+            payload={"seed_version": SEED_VERSION},
+            is_read=True,
+            read_at=now,
+        )
     )
 
 
@@ -965,11 +975,15 @@ def seed(*, force: bool = False) -> None:
 
         now = datetime.now(timezone.utc)
         _seed_users(db, pwd, now)
+        db.flush()  # users должны быть в БД до FK (memberships / notifications / apps)
         _seed_rbac(db)
         _seed_catalog(db, now)
+        db.flush()
         _seed_company_ip(db, now)
         _seed_company_ooo(db, now)
+        db.flush()
         _seed_applications(db, now)
+        db.flush()
         _seed_scenarios_and_notifications(db, now)
 
         db.commit()
