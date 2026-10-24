@@ -102,6 +102,13 @@ export function SelectCompanyPage() {
 
   const selected = companies.find((c) => c.id === selectedId) ?? null
 
+  // Keep preview in sync with what's visible in the list
+  useEffect(() => {
+    if (!filtered.length) return
+    if (selectedId && filtered.some((c) => c.id === selectedId)) return
+    setSelectedId(filtered[0].id)
+  }, [filtered, selectedId])
+
   const dashQ = useQuery({
     queryKey: ['company-dashboard', selected?.id],
     queryFn: () => getCompanyDashboard(selected!.id),
@@ -269,8 +276,7 @@ export function SelectCompanyPage() {
               Выберите компанию
             </Typography>
             <Typography sx={{ color: '#5A6B7D', fontSize: 14, mt: 0.75, lineHeight: 1.4 }}>
-              Вошли как {user?.fullName || 'пользователь'} · данные и заявки показываются в разрезе
-              выбранной компании
+              {user?.fullName || 'Пользователь'} · выберите организацию, с которой продолжите работу
             </Typography>
           </Box>
 
@@ -491,13 +497,16 @@ export function SelectCompanyPage() {
 
         {/* Right preview — desktop only */}
         <Box sx={{ display: { xs: 'none', md: 'flex' }, minHeight: 0 }}>
-          <PreviewPanel
-            selected={selected}
-            dash={dashQ.data}
-            dashLoading={dashQ.isLoading}
-            onContinue={onContinue}
-            onLogout={onLogout}
-          />
+          {selected && (
+            <PreviewPanel
+              key={selected.id}
+              selected={selected}
+              dash={dashQ.data}
+              dashLoading={dashQ.isLoading || (dashQ.isFetching && !dashQ.data)}
+              onContinue={onContinue}
+              onLogout={onLogout}
+            />
+          )}
         </Box>
       </Box>
     </Box>
@@ -516,15 +525,7 @@ function CompanyCard({
   onContinue: () => void
 }) {
   const isOOO = item.legalForm === 'OOO'
-  const formLabel = isOOO ? 'ООО' : 'ИП'
-  const meta = [
-    `ИНН ${maskInn(item.inn, selected)}`,
-    formLabel,
-    item.region || null,
-    item.membershipRole ? roleLabel(item.membershipRole) : null,
-  ]
-    .filter(Boolean)
-    .join(' · ')
+  const meta = `ИНН ${maskInn(item.inn, selected)}`
 
   return (
     <Box
@@ -1140,14 +1141,12 @@ function PreviewPanel({
   onContinue,
   onLogout,
 }: {
-  selected: CompanyListItem | null
+  selected: CompanyListItem
   dash: Awaited<ReturnType<typeof getCompanyDashboard>> | undefined
   dashLoading: boolean
   onContinue: () => void
   onLogout: () => void
 }) {
-  if (!selected) return null
-
   return (
     <Box
       sx={{
