@@ -544,9 +544,7 @@ export function AppLayout() {
               <MenuIcon />
             </IconButton>
           )}
-          <Typography sx={{ flex: 1, fontSize: 14, fontWeight: 600, color: '#5A6B7D' }}>
-            {crumb}
-          </Typography>
+          <Box sx={{ flex: 1 }} />
 
           <IconButton size="small" sx={{ color: '#5A6B7D' }}>
             <Badge badgeContent={4} color="error" overlap="circular">
