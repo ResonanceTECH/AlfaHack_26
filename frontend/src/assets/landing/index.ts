@@ -1,20 +1,11 @@
-/**
- * Drop SVG files into this folder and wire imports here.
- *
- * Expected:
- *   hero.svg
- *   benefit-goal.svg
- *   benefit-match.svg
- *   benefit-statement.svg
- *   benefit-ready.svg
- *   feature-ai.svg
- *   feature-forecast.svg
- *   feature-scenario.svg
- *   feature-roi.svg
- */
+import heroDashboard from './hero-dashboard.png'
 
+/**
+ * Landing illustrations.
+ * Source: `Финансовый дашборд с портфелем и ростом.png` → hero-dashboard.png
+ */
 export const landingAssets = {
-  hero: null as string | null,
+  hero: heroDashboard as string,
   benefitGoal: null as string | null,
   benefitMatch: null as string | null,
   benefitStatement: null as string | null,
