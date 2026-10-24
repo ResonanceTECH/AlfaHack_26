@@ -21,6 +21,7 @@ from app.schemas.company import (
     ObligationOut,
     ObligationUpdate,
 )
+from app.schemas.dashboard import CompanyDashboardOut
 from app.schemas.registry import (
     RegistryHistoryItem,
     RegistryLookupIn,
@@ -35,6 +36,7 @@ from app.services.access import (
     resolve_company_id,
 )
 from app.services.audit import write_audit
+from app.services.dashboard import build_dashboard
 from app.services.finance_engine import calc_required_amount
 from app.services import registry as registry_service
 
@@ -201,6 +203,15 @@ def get_company(company_id: str, db: DbDep, user: CurrentUser) -> CompanyOut:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
     membership = get_membership(db, user.id, company_id)
     return _company_out(company, membership)
+
+
+@router.get("/companies/{company_id}/dashboard", response_model=CompanyDashboardOut)
+def company_dashboard(company_id: str, db: DbDep, user: CurrentUser) -> CompanyDashboardOut:
+    require_company_access(db, user, company_id)
+    company = db.get(Company, company_id)
+    if company is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
+    return CompanyDashboardOut(**build_dashboard(db, company, user))
 
 
 @router.patch("/companies/{company_id}", response_model=CompanyOut)
