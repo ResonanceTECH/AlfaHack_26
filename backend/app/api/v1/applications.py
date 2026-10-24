@@ -24,11 +24,17 @@ from app.schemas.application import (
     ApplicationSubmitOut,
     ApplicationUpdate,
     ApplicationValidationOut,
+    DecisionOut,
     DocsRequestIn,
     DocumentMetaOut,
     DocumentRequestOut,
     DocumentRequestRespondIn,
+    OfferAcceptIn,
+    OfferAcceptOut,
+    OfferDeclineIn,
+    OfferOut,
     PublicCheckOut,
+    ReasonCodeOut,
     RequiredDocumentSlot,
     StatusUpdate,
     ValidationIssue,
@@ -48,6 +54,13 @@ from app.services.applications import (
     validate_application,
 )
 from app.services.audit import write_audit
+from app.services.decisions import (
+    accept_offer,
+    decline_offer,
+    ensure_decision_for_status,
+    serialize_offer,
+    serialize_public_decision,
+)
 from app.services.documents import (
     create_document_request,
     list_documents_bundle,
@@ -434,6 +447,116 @@ def application_public_checks(
 
 
 @router.get(
+    "/companies/{company_id}/applications/{application_id}/decision",
+    response_model=DecisionOut,
+)
+def get_application_decision(
+    company_id: str, application_id: str, db: DbDep, user: CurrentUser
+) -> DecisionOut:
+    app = _company_app(db, company_id, application_id, user)
+    raw = serialize_public_decision(db, app)
+    if raw is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Решение ещё не сформировано")
+    return DecisionOut(
+        application_id=raw["application_id"],
+        decision=raw["decision"],
+        decision_scope=raw["decision_scope"],
+        reason_codes=[ReasonCodeOut(**r) for r in raw["reason_codes"]],
+        policy_version=raw.get("policy_version"),
+        updated_at=raw.get("updated_at"),
+        explanation=raw.get("explanation"),
+    )
+
+
+@router.get(
+    "/companies/{company_id}/applications/{application_id}/offers",
+    response_model=list[OfferOut],
+)
+def list_application_offers(
+    company_id: str, application_id: str, db: DbDep, user: CurrentUser
+) -> list[OfferOut]:
+    app = _company_app(db, company_id, application_id, user)
+    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    offers = sorted(app.offers or [], key=lambda o: o.created_at or epoch, reverse=True)
+    return [OfferOut(**serialize_offer(o)) for o in offers]
+
+
+@router.post(
+    "/companies/{company_id}/applications/{application_id}/offers/{offer_id}/accept",
+    response_model=OfferAcceptOut,
+)
+def accept_application_offer(
+    company_id: str,
+    application_id: str,
+    offer_id: str,
+    body: OfferAcceptIn,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> OfferAcceptOut:
+    require_company_access(db, user, company_id, write=True)
+    app = _load_app(db, application_id)
+    if app.company_id != company_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Заявка не найдена")
+    require_application_access(db, user, app, write=True)
+
+    payload = accept_offer(
+        db,
+        app=app,
+        user=user,
+        offer_id=offer_id,
+        offer_version=body.offer_version,
+        accepted_terms=body.accepted_terms,
+        idempotency_key=idempotency_key,
+    )
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="credit_offer",
+        entity_id=offer_id,
+        action="accept",
+        details={"application_id": app.id, "offer_version": body.offer_version},
+        correlation_id=cid,
+    )
+    db.commit()
+    return OfferAcceptOut(**payload)
+
+
+@router.post(
+    "/companies/{company_id}/applications/{application_id}/offers/{offer_id}/decline",
+    response_model=OfferOut,
+)
+def decline_application_offer(
+    company_id: str,
+    application_id: str,
+    offer_id: str,
+    body: OfferDeclineIn,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+) -> OfferOut:
+    require_company_access(db, user, company_id, write=True)
+    app = _load_app(db, application_id)
+    if app.company_id != company_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Заявка не найдена")
+    require_application_access(db, user, app, write=True)
+
+    offer = decline_offer(db, app=app, user=user, offer_id=offer_id, reason=body.reason)
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="credit_offer",
+        entity_id=offer_id,
+        action="decline",
+        details={"application_id": app.id, "reason": body.reason},
+        correlation_id=cid,
+    )
+    db.commit()
+    return OfferOut(**serialize_offer(offer))
+
+
+@router.get(
     "/companies/{company_id}/applications/{application_id}/documents",
     response_model=ApplicationDocumentsOut,
 )
@@ -742,6 +865,8 @@ def change_status(
         actor=user,
         comment=body.comment,
     )
+    # При decision-статусах сразу публикуем демо decision + offers
+    ensure_decision_for_status(db, app, body.status, user)
 
     if body.comment:
         db.add(

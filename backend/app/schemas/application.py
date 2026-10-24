@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from pydantic import Field
 
-from app.core.enums import ApplicationStatus, GoalType, ProductType, UserRole
+from app.core.enums import ApplicationStatus, DecisionType, GoalType, OfferStatus, ProductType, UserRole
 from app.core.money import Money
 from app.schemas.common import APIModel
 
@@ -215,3 +215,54 @@ class ApplicationChecksOut(APIModel):
     application_id: str
     status: ApplicationStatus
     checks: list[PublicCheckOut] = []
+
+
+class ReasonCodeOut(APIModel):
+    code: str
+    title: str
+    details: str | None = None
+
+
+class DecisionOut(APIModel):
+    application_id: str
+    decision: DecisionType | str
+    decision_scope: str = "DEMO_PRELIMINARY"
+    reason_codes: list[ReasonCodeOut] = []
+    policy_version: str | None = None
+    updated_at: datetime | None = None
+    explanation: str | None = None
+
+
+class OfferOut(APIModel):
+    id: str
+    application_id: str
+    decision_id: str | None = None
+    product_id: str | None = None
+    amount: Money
+    term_months: int
+    rate: Money
+    monthly_payment: Money | None = None
+    currency: str = "RUB"
+    status: OfferStatus | str
+    offer_version: int = 1
+    is_alternative: bool = False
+    label: str | None = None
+    expires_at: datetime | None = None
+    created_at: datetime | None = None
+    conditions: dict = Field(default_factory=dict)
+
+
+class OfferAcceptIn(APIModel):
+    offer_version: int = 1
+    accepted_terms: bool = True
+
+
+class OfferAcceptOut(APIModel):
+    application_id: str
+    offer_id: str
+    status: ApplicationStatus
+    next_step: str = "AGREEMENT_PREPARATION"
+
+
+class OfferDeclineIn(APIModel):
+    reason: str | None = None
