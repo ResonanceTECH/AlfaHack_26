@@ -25,8 +25,7 @@ export function VerifyEmailPage() {
         if (cancelled) return
         setUserFromSession(session.user)
         setDone(true)
-        if (!session.user.companyId) navigate('/onboarding/company', { replace: true })
-        else navigate('/app', { replace: true })
+        navigate('/select-company', { replace: true })
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Ссылка недействительна или устарела')
