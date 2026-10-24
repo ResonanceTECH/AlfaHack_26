@@ -7,6 +7,7 @@ import { VerifyEmailPage } from '@/pages/VerifyEmailPage'
 import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage'
 import { ResetPasswordPage } from '@/pages/ResetPasswordPage'
 import { CompanyCreatePage } from '@/pages/CompanyCreatePage'
+import { SelectCompanyPage } from '@/pages/SelectCompanyPage'
 import { OnboardingFinancesPage } from '@/pages/OnboardingFinancesPage'
 import { OnboardingConfirmPage } from '@/pages/OnboardingConfirmPage'
 import { DashboardPage } from '@/pages/DashboardPage'
@@ -48,7 +49,7 @@ function Protected({
     user.role !== 'manager' &&
     user.role !== 'risk_analyst' &&
     user.role !== 'admin'
-  if (needsCompany) return <Navigate to="/onboarding/company" replace />
+  if (needsCompany) return <Navigate to="/select-company" replace />
   return children
 }
 
@@ -60,6 +61,14 @@ export function AppRouter() {
       <Route path="/verify-email" element={<VerifyEmailPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route
+        path="/select-company"
+        element={
+          <Protected allowWithoutCompany roles={['entrepreneur', 'accountant', 'admin']}>
+            <SelectCompanyPage />
+          </Protected>
+        }
+      />
       <Route
         path="/onboarding/company"
         element={

@@ -58,6 +58,8 @@ export interface User {
   status?: UserStatus
 }
 
+export type MemberRole = 'OWNER' | 'MEMBER' | 'VIEWER'
+
 export interface Company {
   id: string
   inn: string
@@ -68,6 +70,44 @@ export interface Company {
   registrationDate: string
   region: string
   employeesCount: number
+}
+
+export interface CompanyListItem {
+  id: string
+  inn: string
+  name: string
+  legalForm: LegalForm
+  region: string
+  industry: string
+  registryStatus: string
+  version: number
+  membershipRole?: MemberRole
+}
+
+export interface RegistryCompany {
+  inn: string
+  legalForm: LegalForm
+  name: string
+  registrationDate: string
+  region: string
+  registryStatus: string
+}
+
+export interface RegistryLookupResult {
+  found: boolean
+  source: string
+  company: RegistryCompany | null
+  checkedAt: string
+  innValid: boolean
+}
+
+export interface CompanyDashboardSummary {
+  company: { id: string; name: string; inn: string; legalForm: LegalForm; region: string }
+  applicationsActive: number
+  applicationsTotal: number
+  nextTaskTitle?: string
+  nextTaskDue?: string
+  managerHint?: string
 }
 
 export interface FinancialSnapshot {
