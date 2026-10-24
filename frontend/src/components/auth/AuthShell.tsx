@@ -1,4 +1,3 @@
-import ArrowForwardIcon from '@mui/icons-material/ArrowForward'
 import { Box, Link as MuiLink, Stack, Typography } from '@mui/material'
 import type { ReactNode } from 'react'
 import { Link as RouterLink } from 'react-router-dom'
@@ -213,16 +212,9 @@ export function AuthFooterLink({
         component={RouterLink}
         to={to}
         underline="hover"
-        sx={{
-          color: 'primary.main',
-          fontWeight: 700,
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 0.35,
-        }}
+        sx={{ color: 'primary.main', fontWeight: 700 }}
       >
         {label}
-        <ArrowForwardIcon sx={{ fontSize: 16 }} />
       </MuiLink>
     </Typography>
   )
