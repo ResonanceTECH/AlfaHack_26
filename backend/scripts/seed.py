@@ -56,6 +56,7 @@ from app.models import (  # noqa: F401
     RolePermission,
     User,
 )
+from app.services.registry import INN_IP, INN_OOO
 from app.services.statements import tx_hash
 
 SEED_VERSION = "2026-10"
@@ -68,29 +69,6 @@ USER_ADMIN = "user_admin_01"
 
 COMPANY_IP = "company_001"
 COMPANY_OOO = "company_002"
-
-
-def _inn10(base9: str) -> str:
-    assert len(base9) == 9 and base9.isdigit()
-    w = [2, 4, 10, 3, 5, 9, 4, 6, 8]
-    digits = [int(c) for c in base9]
-    ctrl = sum(d * ww for d, ww in zip(digits, w)) % 11 % 10
-    return base9 + str(ctrl)
-
-
-def _inn12(base10: str) -> str:
-    assert len(base10) == 10 and base10.isdigit()
-    w1 = [7, 2, 4, 10, 3, 5, 9, 4, 6, 8]
-    w2 = [3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8]
-    d = [int(c) for c in base10]
-    n11 = sum(x * ww for x, ww in zip(d, w1)) % 11 % 10
-    d11 = d + [n11]
-    n12 = sum(x * ww for x, ww in zip(d11, w2)) % 11 % 10
-    return base10 + str(n11) + str(n12)
-
-
-INN_IP = _inn12("7701234567")  # 12 цифр, валидная КС
-INN_OOO = _inn10("770987654")  # 10 цифр, валидная КС
 
 PRODUCTS = [
     {

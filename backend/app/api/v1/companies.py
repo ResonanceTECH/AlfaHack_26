@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app.core.enums import LegalForm, MemberRole, UserRole
 from app.deps import CorrelationId, CurrentUser, DbDep
-from app.models.company import Company, CompanyMember
+from app.models.company import Company, CompanyMember, RegistrySnapshot
 from app.models.finance import FinancialObligation, FinancialSnapshot
 from app.models.funding import BusinessGoal
 from app.schemas.company import (
@@ -21,6 +21,12 @@ from app.schemas.company import (
     ObligationOut,
     ObligationUpdate,
 )
+from app.schemas.registry import (
+    RegistryHistoryItem,
+    RegistryLookupIn,
+    RegistryLookupOut,
+    RegistryVerifyOut,
+)
 from app.services.access import (
     get_membership,
     list_accessible_companies,
@@ -30,6 +36,7 @@ from app.services.access import (
 )
 from app.services.audit import write_audit
 from app.services.finance_engine import calc_required_amount
+from app.services import registry as registry_service
 
 router = APIRouter(tags=["companies"])
 
@@ -80,11 +87,66 @@ def list_companies(db: DbDep, user: CurrentUser) -> list[CompanyListItem]:
     ]
 
 
+@router.post("/registry/companies/lookup", response_model=RegistryLookupOut)
+def registry_lookup(body: RegistryLookupIn, user: CurrentUser) -> RegistryLookupOut:
+    _ = user  # auth обязателен, но lookup не tenant-scoped
+    raw = registry_service.lookup(body.inn)
+    company = None
+    if raw.get("company"):
+        company = raw["company"]
+    return RegistryLookupOut(
+        found=bool(raw["found"]),
+        source=raw["source"],
+        company=company,
+        checked_at=raw["checked_at"],
+        inn_valid=bool(raw.get("inn_valid", True)),
+    )
+
+
+@router.post("/companies/{company_id}/registry/verify", response_model=RegistryVerifyOut)
+def registry_verify(
+    company_id: str, db: DbDep, user: CurrentUser, cid: CorrelationId
+) -> RegistryVerifyOut:
+    require_company_access(db, user, company_id, write=True)
+    company = db.get(Company, company_id)
+    if company is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
+
+    snap, result = registry_service.verify_company(db, company)
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="registry_snapshot",
+        entity_id=snap.id,
+        action="registry.verify",
+        details={
+            "company_id": company_id,
+            "found": result["found"],
+            "match": (result.get("comparison") or {}).get("match"),
+            "registry_status": result.get("registry_status"),
+        },
+        correlation_id=cid,
+    )
+    db.commit()
+    return RegistryVerifyOut(**result)
+
+
+@router.get("/companies/{company_id}/registry/history", response_model=list[RegistryHistoryItem])
+def registry_history(company_id: str, db: DbDep, user: CurrentUser) -> list[RegistrySnapshot]:
+    require_company_access(db, user, company_id)
+    return list(
+        db.scalars(
+            select(RegistrySnapshot)
+            .where(RegistrySnapshot.company_id == company_id)
+            .order_by(RegistrySnapshot.checked_at.desc())
+        ).all()
+    )
+
+
 @router.post("/companies", response_model=CompanyOut, status_code=status.HTTP_201_CREATED)
 def create_company(
     body: CompanyCreate, db: DbDep, user: CurrentUser, cid: CorrelationId
 ) -> CompanyOut:
-    """Демо/provisioning: создать компанию и OWNER-membership. Не публичная регистрация."""
     require_roles(user, UserRole.ENTREPRENEUR)
 
     expected_inn_len = 12 if body.legal_form == LegalForm.IP else 10
