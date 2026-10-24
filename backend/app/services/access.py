@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.enums import ApplicationStatus, Permission, UserRole
 from app.core.rbac import has_permission
 from app.models.application import CreditApplication
-from app.models.company import CompanyMember
+from app.models.company import Company, CompanyMember
 from app.models.user import User
 
 ANALYST_ROLES = {UserRole.ANALYST}
@@ -27,6 +27,37 @@ def get_membership(db: Session, user_id: str, company_id: str) -> CompanyMember 
 def user_company_ids(db: Session, user: User) -> set[str]:
     rows = db.scalars(select(CompanyMember.company_id).where(CompanyMember.user_id == user.id)).all()
     return set(rows)
+
+
+def list_accessible_companies(db: Session, user: User) -> list[tuple[Company, CompanyMember | None]]:
+    if user.role == UserRole.ADMIN:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            detail="Администратор работает через /admin/*",
+        )
+
+    if user.role in BANK_STAFF_ROLES:
+        if not has_permission(user.role, Permission.COMPANIES_READ_CLIENT):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Недостаточно прав")
+        company_ids = db.scalars(
+            select(CreditApplication.company_id)
+            .where(CreditApplication.status != ApplicationStatus.DRAFT)
+            .distinct()
+        ).all()
+        if not company_ids:
+            return []
+        companies = list(
+            db.scalars(select(Company).where(Company.id.in_(company_ids)).order_by(Company.name)).all()
+        )
+        return [(c, None) for c in companies]
+
+    rows = db.execute(
+        select(Company, CompanyMember)
+        .join(CompanyMember, CompanyMember.company_id == Company.id)
+        .where(CompanyMember.user_id == user.id)
+        .order_by(Company.name)
+    ).all()
+    return [(company, membership) for company, membership in rows]
 
 
 def _analyst_can_read_company(db: Session, company_id: str) -> bool:

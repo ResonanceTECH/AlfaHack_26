@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 
-from app.core.enums import LegalForm, MemberRole
+from app.core.enums import LegalForm, MemberRole, UserRole
 from app.deps import CorrelationId, CurrentUser, DbDep
 from app.models.company import Company, CompanyMember
 from app.models.finance import FinancialObligation, FinancialSnapshot
@@ -12,6 +12,7 @@ from app.schemas.company import (
     BusinessGoalCreate,
     BusinessGoalOut,
     CompanyCreate,
+    CompanyListItem,
     CompanyOut,
     CompanyUpdate,
     FinancialSnapshotOut,
@@ -20,7 +21,13 @@ from app.schemas.company import (
     ObligationOut,
     ObligationUpdate,
 )
-from app.services.access import require_company_access, resolve_company_id
+from app.services.access import (
+    get_membership,
+    list_accessible_companies,
+    require_company_access,
+    require_roles,
+    resolve_company_id,
+)
 from app.services.audit import write_audit
 from app.services.finance_engine import calc_required_amount
 
@@ -33,15 +40,52 @@ def _default_ogrn(inn: str, legal_form: LegalForm) -> str:
     return (inn + "000")[:13].ljust(13, "0")
 
 
+def _company_out(
+    company: Company,
+    membership: CompanyMember | None = None,
+) -> CompanyOut:
+    return CompanyOut(
+        id=company.id,
+        inn=company.inn,
+        name=company.name,
+        legal_form=company.legal_form,
+        ogrn=company.ogrn,
+        industry=company.industry,
+        registration_date=company.registration_date,
+        region=company.region,
+        employees_count=company.employees_count,
+        registry_status=company.registry_status,
+        version=company.version,
+        membership_role=membership.role if membership else None,
+        membership_permissions=membership.permissions if membership else None,
+    )
+
+
+@router.get("/companies", response_model=list[CompanyListItem])
+def list_companies(db: DbDep, user: CurrentUser) -> list[CompanyListItem]:
+    rows = list_accessible_companies(db, user)
+    return [
+        CompanyListItem(
+            id=company.id,
+            inn=company.inn,
+            name=company.name,
+            legal_form=company.legal_form,
+            region=company.region,
+            industry=company.industry,
+            registry_status=company.registry_status,
+            version=company.version,
+            membership_role=membership.role if membership else None,
+        )
+        for company, membership in rows
+    ]
+
+
 @router.post("/companies", response_model=CompanyOut, status_code=status.HTTP_201_CREATED)
 def create_company(
     body: CompanyCreate, db: DbDep, user: CurrentUser, cid: CorrelationId
-) -> Company:
-    if user.company_id:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            detail="У пользователя уже есть компания",
-        )
+) -> CompanyOut:
+    """Демо/provisioning: создать компанию и OWNER-membership. Не публичная регистрация."""
+    require_roles(user, UserRole.ENTREPRENEUR)
 
     expected_inn_len = 12 if body.legal_form == LegalForm.IP else 10
     if len(body.inn) != expected_inn_len:
@@ -66,14 +110,13 @@ def create_company(
     )
     db.add(company)
     db.flush()
-    db.add(
-        CompanyMember(
-            company_id=company.id,
-            user_id=user.id,
-            role=MemberRole.OWNER,
-            permissions={"read": True, "write": True, "submit": True},
-        )
+    membership = CompanyMember(
+        company_id=company.id,
+        user_id=user.id,
+        role=MemberRole.OWNER,
+        permissions={"read": True, "write": True, "submit": True},
     )
+    db.add(membership)
     write_audit(
         db,
         actor_id=user.id,
@@ -85,39 +128,63 @@ def create_company(
     )
     db.commit()
     db.refresh(company)
-    return company
+    return _company_out(company, membership)
 
 
 @router.get("/companies/{company_id}", response_model=CompanyOut)
-def get_company(company_id: str, db: DbDep, user: CurrentUser) -> Company:
+def get_company(company_id: str, db: DbDep, user: CurrentUser) -> CompanyOut:
     require_company_access(db, user, company_id)
     company = db.get(Company, company_id)
     if company is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
-    return company
+    membership = get_membership(db, user.id, company_id)
+    return _company_out(company, membership)
+
 
 @router.patch("/companies/{company_id}", response_model=CompanyOut)
 def update_company(
     company_id: str, body: CompanyUpdate, db: DbDep, user: CurrentUser, cid: CorrelationId
-) -> Company:
+) -> CompanyOut:
     require_company_access(db, user, company_id, write=True)
     company = db.get(Company, company_id)
     if company is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
-    for k, v in body.model_dump(exclude_unset=True).items():
+
+    patch = body.model_dump(exclude_unset=True)
+    expected_version = patch.pop("version", None)
+    if expected_version is not None and expected_version != company.version:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=f"Конфликт версии: ожидали {expected_version}, сейчас {company.version}",
+        )
+    if not patch:
+        membership = get_membership(db, user.id, company_id)
+        return _company_out(company, membership)
+
+    before = {
+        "name": company.name,
+        "industry": company.industry,
+        "region": company.region,
+        "employees_count": company.employees_count,
+        "version": company.version,
+    }
+    for k, v in patch.items():
         setattr(company, k, v)
+    company.version = int(company.version or 1) + 1
+
     write_audit(
         db,
         actor_id=user.id,
         entity_type="company",
         entity_id=company_id,
         action="update",
-        details=body.model_dump(exclude_unset=True, mode="json"),
+        details={"before": before, "after": patch, "version": company.version},
         correlation_id=cid,
     )
     db.commit()
     db.refresh(company)
-    return company
+    membership = get_membership(db, user.id, company_id)
+    return _company_out(company, membership)
 
 @router.get("/companies/{company_id}/financials", response_model=FinancialSnapshotOut)
 def get_financials(company_id: str, db: DbDep, user: CurrentUser) -> FinancialSnapshot:

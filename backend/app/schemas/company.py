@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from pydantic import Field, field_validator
 
-from app.core.enums import GoalType, LegalForm
+from app.core.enums import GoalType, LegalForm, MemberRole
 from app.core.money import Money
 from app.schemas.common import APIModel
 
@@ -20,6 +20,22 @@ class CompanyOut(APIModel):
     registration_date: date
     region: str
     employees_count: int
+    registry_status: str = "ACTIVE"
+    version: int = 1
+    membership_role: MemberRole | None = None
+    membership_permissions: dict | None = None
+
+
+class CompanyListItem(APIModel):
+    id: str
+    inn: str
+    name: str
+    legal_form: LegalForm
+    region: str
+    industry: str
+    registry_status: str = "ACTIVE"
+    version: int = 1
+    membership_role: MemberRole | None = None
 
 
 class CompanyCreate(APIModel):
@@ -43,12 +59,15 @@ class CompanyCreate(APIModel):
 
 
 class CompanyUpdate(APIModel):
-    name: str | None = None
-    industry: str | None = None
-    region: str | None = None
+
+    name: str | None = Field(default=None, min_length=2, max_length=512)
+    industry: str | None = Field(default=None, min_length=2, max_length=255)
+    region: str | None = Field(default=None, min_length=2, max_length=255)
     employees_count: int | None = Field(default=None, ge=0)
-    ogrn: str | None = None
-    registration_date: date | None = None
+    version: int | None = Field(
+        default=None,
+        description="Ожидаемая version записи; при несовпадении — 409",
+    )
 
     @field_validator("employees_count")
     @classmethod
@@ -56,6 +75,14 @@ class CompanyUpdate(APIModel):
         if v is not None and v < 0:
             raise ValueError("Число сотрудников не может быть отрицательным")
         return v
+
+    @field_validator("name", "industry", "region")
+    @classmethod
+    def strip_text(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = v.strip()
+        return s or None
 
 
 class FinancialSnapshotOut(APIModel):
