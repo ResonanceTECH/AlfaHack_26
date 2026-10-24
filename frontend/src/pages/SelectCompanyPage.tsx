@@ -42,13 +42,6 @@ function apiError(err: unknown, fallback: string): string {
   return fallback
 }
 
-function initialLetter(name: string): string {
-  const clean = name.replace(/[«»"']/g, '').trim()
-  const parts = clean.split(/\s+/)
-  const raw = parts[0] === 'ООО' || parts[0] === 'ИП' ? parts[1] ?? parts[0] : parts[0]
-  return (raw?.[0] ?? '?').toUpperCase()
-}
-
 function statusChips(item: CompanyListItem, selected: boolean) {
   const chips: { label: string; bg: string; color: string }[] = []
   if (selected) chips.push({ label: 'Выбрана', bg: '#FCE8E6', color: '#C41E14' })
@@ -259,9 +252,9 @@ export function SelectCompanyPage() {
           px: { xs: 2, md: 3, lg: 4 },
           py: { xs: 2, md: 2.5 },
           display: 'grid',
-          gridTemplateColumns: { xs: '1fr', md: '1.15fr 0.85fr' },
+          gridTemplateColumns: { xs: '1fr', md: '1.25fr 0.75fr' },
           gap: { xs: 2, md: 2.5 },
-          maxWidth: 1280,
+          maxWidth: 1180,
           width: '100%',
           mx: 'auto',
         }}
@@ -377,8 +370,9 @@ export function SelectCompanyPage() {
               overflow: 'auto',
               display: 'flex',
               flexDirection: 'column',
-              gap: 1.25,
+              gap: 1.75,
               pr: 0.25,
+              pb: 0.5,
             }}
           >
             {companiesQ.isError && (
@@ -388,95 +382,22 @@ export function SelectCompanyPage() {
             )}
 
             {!companiesQ.isError &&
-              filtered.map((item) => {
-                const active = item.id === selectedId
-                const badge = roleBadge(item, active)
-                return (
-                  <Box
-                    key={item.id}
-                    component="button"
-                    type="button"
-                    onClick={() => {
-                      setSelectedId(item.id)
-                      setAdding(false)
-                    }}
-                    sx={{
-                      appearance: 'none',
-                      WebkitAppearance: 'none',
-                      border: active ? '1.5px solid #EF3124' : '1.5px solid transparent',
-                      margin: 0,
-                      font: 'inherit',
-                      textAlign: 'left',
-                      width: '100%',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 1.75,
-                      bgcolor: '#fff',
-                      borderRadius: 3,
-                      px: 2,
-                      py: 1.75,
-                      boxShadow: active
-                        ? '0 0 0 3px rgba(239,49,36,0.12)'
-                        : '0 1px 3px rgba(11,31,53,0.05)',
-                      transition: 'border 0.15s, box-shadow 0.15s',
-                      '&:hover': { borderColor: active ? '#EF3124' : 'rgba(11,31,53,0.12)' },
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: 2,
-                        bgcolor: active ? '#EF3124' : '#0B1F35',
-                        color: '#fff',
-                        display: 'grid',
-                        placeItems: 'center',
-                        fontFamily: 'Manrope, sans-serif',
-                        fontWeight: 800,
-                        fontSize: 18,
-                        flexShrink: 0,
-                      }}
-                    >
-                      {initialLetter(item.name)}
-                    </Box>
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography
-                        sx={{
-                          fontWeight: 700,
-                          fontSize: 15,
-                          color: '#0B1F35',
-                          letterSpacing: '-0.01em',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {item.name}
-                      </Typography>
-                      <Typography sx={{ color: '#8A96A3', fontSize: 13, mt: 0.25 }}>
-                        ИНН {item.inn}
-                        {item.membershipRole ? ` · ${roleLabel(item.membershipRole)}` : ''}
-                      </Typography>
-                    </Box>
-                    <Box
-                      sx={{
-                        px: 1.25,
-                        py: 0.4,
-                        borderRadius: 999,
-                        bgcolor: badge.bg,
-                        color: badge.color,
-                        fontSize: 12,
-                        fontWeight: 700,
-                        flexShrink: 0,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {badge.label}
-                    </Box>
-                  </Box>
-                )
-              })}
+              filtered.map((item) => (
+                <CompanyCard
+                  key={item.id}
+                  item={item}
+                  selected={item.id === selectedId}
+                  onSelect={() => {
+                    setSelectedId(item.id)
+                    setAdding(false)
+                  }}
+                  onContinue={() => {
+                    setSelectedId(item.id)
+                    selectCompany(item.id)
+                    navigate('/app')
+                  }}
+                />
+              ))}
 
             {filtered.length === 0 && (
               <Box
@@ -529,63 +450,56 @@ export function SelectCompanyPage() {
                   width: '100%',
                   cursor: 'pointer',
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: 1.75,
+                  flexDirection: 'column',
+                  alignItems: 'stretch',
+                  gap: 2,
                   bgcolor: '#fff',
-                  borderRadius: 3,
-                  px: 2,
-                  py: 1.75,
-                  border: '1.5px dashed rgba(239,49,36,0.35)',
+                  borderRadius: 3.5,
+                  p: 2.5,
+                  border: '1.5px dashed rgba(239,49,36,0.4)',
                   '&:hover': { bgcolor: 'rgba(239,49,36,0.03)', borderColor: '#EF3124' },
                 }}
               >
-                <Box
-                  sx={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 2,
-                    bgcolor: 'rgba(239,49,36,0.08)',
-                    color: '#EF3124',
-                    display: 'grid',
-                    placeItems: 'center',
-                    flexShrink: 0,
-                  }}
-                >
-                  <AddRoundedIcon />
-                </Box>
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography sx={{ fontWeight: 700, fontSize: 15, color: '#0B1F35' }}>
-                    Добавить компанию по ИНН
-                  </Typography>
-                  <Typography sx={{ color: '#8A96A3', fontSize: 13, mt: 0.25 }}>
-                    Найдём в реестре и попросим подтвердить доступ
-                  </Typography>
-                </Box>
+                <Stack direction="row" spacing={1.75} alignItems="center">
+                  <Box
+                    sx={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: '50%',
+                      bgcolor: 'rgba(239,49,36,0.08)',
+                      color: '#EF3124',
+                      display: 'grid',
+                      placeItems: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <AddRoundedIcon />
+                  </Box>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography sx={{ fontWeight: 700, fontSize: 16, color: '#0B1F35' }}>
+                      Добавить компанию по ИНН
+                    </Typography>
+                    <Typography sx={{ color: '#8A96A3', fontSize: 13, mt: 0.35 }}>
+                      Найдём в реестре и подтвердим доступ
+                    </Typography>
+                  </Box>
+                </Stack>
               </Box>
             )}
           </Box>
 
-          {/* Mobile CTA — pinned to bottom of left column */}
-          {selected && (
-            <Box sx={{ display: { xs: 'block', md: 'none' }, flexShrink: 0, pt: 0.5 }}>
-              <Button
-                variant="contained"
-                color="primary"
-                fullWidth
-                onClick={onContinue}
-                sx={{ borderRadius: 2.5, py: 1.4, fontWeight: 700, fontSize: 15 }}
-              >
-                Продолжить как «{shortName(selected.name)}»
-              </Button>
-              <Button
-                fullWidth
-                onClick={onLogout}
-                sx={{ mt: 1, color: '#5A6B7D', fontWeight: 600 }}
-              >
-                Выйти из аккаунта
-              </Button>
-            </Box>
-          )}
+          <Button
+            onClick={onLogout}
+            sx={{
+              display: { xs: 'inline-flex', md: 'none' },
+              flexShrink: 0,
+              color: '#5A6B7D',
+              fontWeight: 600,
+              alignSelf: 'center',
+            }}
+          >
+            Выйти из аккаунта
+          </Button>
         </Box>
 
         {/* Right preview — desktop only */}
@@ -599,6 +513,138 @@ export function SelectCompanyPage() {
           />
         </Box>
       </Box>
+    </Box>
+  )
+}
+
+function CompanyCard({
+  item,
+  selected,
+  onSelect,
+  onContinue,
+}: {
+  item: CompanyListItem
+  selected: boolean
+  onSelect: () => void
+  onContinue: () => void
+}) {
+  const isOOO = item.legalForm === 'OOO'
+  const chips = statusChips(item, selected)
+  const formLabel = isOOO ? 'ООО' : 'ИП'
+  const meta = [
+    `ИНН ${maskInn(item.inn, selected)}`,
+    formLabel,
+    item.region || null,
+    item.membershipRole ? roleLabel(item.membershipRole) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  return (
+    <Box
+      onClick={onSelect}
+      sx={{
+        bgcolor: '#fff',
+        borderRadius: 3.5,
+        p: { xs: 2.25, md: 2.5 },
+        border: selected ? '1.5px solid #EF3124' : '1.5px solid rgba(11,31,53,0.08)',
+        boxShadow: selected
+          ? '0 0 0 3px rgba(239,49,36,0.1), 0 8px 24px rgba(11,31,53,0.06)'
+          : '0 2px 10px rgba(11,31,53,0.04)',
+        cursor: 'pointer',
+        transition: 'border 0.15s, box-shadow 0.15s',
+        '&:hover': {
+          borderColor: selected ? '#EF3124' : 'rgba(11,31,53,0.16)',
+        },
+      }}
+    >
+      <Stack direction="row" spacing={1.75} alignItems="flex-start">
+        <Box
+          sx={{
+            width: 48,
+            height: 48,
+            borderRadius: '50%',
+            bgcolor: selected ? 'rgba(239,49,36,0.1)' : '#EEF1F5',
+            color: selected ? '#EF3124' : '#5A6B7D',
+            display: 'grid',
+            placeItems: 'center',
+            flexShrink: 0,
+          }}
+        >
+          {isOOO ? (
+            <BusinessOutlinedIcon sx={{ fontSize: 24 }} />
+          ) : (
+            <PersonOutlineRoundedIcon sx={{ fontSize: 24 }} />
+          )}
+        </Box>
+
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography
+            sx={{
+              fontFamily: 'Manrope, sans-serif',
+              fontWeight: 800,
+              fontSize: { xs: 16, md: 17 },
+              letterSpacing: '-0.02em',
+              color: '#0B1F35',
+              lineHeight: 1.25,
+              mb: 0.5,
+            }}
+          >
+            {item.name}
+          </Typography>
+          <Typography sx={{ color: '#8A96A3', fontSize: 13, lineHeight: 1.4, mb: 1.25 }}>
+            {meta}
+          </Typography>
+
+          <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+            {chips.map((chip) => (
+              <Box
+                key={chip.label}
+                sx={{
+                  px: 1.15,
+                  py: 0.35,
+                  borderRadius: 999,
+                  bgcolor: chip.bg,
+                  color: chip.color,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  lineHeight: 1.4,
+                }}
+              >
+                {chip.label}
+              </Box>
+            ))}
+          </Stack>
+        </Box>
+      </Stack>
+
+      <Button
+        variant={selected ? 'contained' : 'outlined'}
+        color={selected ? 'primary' : 'inherit'}
+        fullWidth
+        onClick={(e) => {
+          e.stopPropagation()
+          if (selected) onContinue()
+          else onSelect()
+        }}
+        sx={{
+          mt: 2.25,
+          borderRadius: 2.5,
+          py: 1.25,
+          fontWeight: 700,
+          fontSize: 15,
+          ...(selected
+            ? {}
+            : {
+                borderColor: 'rgba(11,31,53,0.18)',
+                color: '#0B1F35',
+                bgcolor: '#fff',
+                '&:hover': { borderColor: '#0B1F35', bgcolor: '#F7F8FA' },
+              }),
+        }}
+      >
+        {selected ? 'Продолжить' : 'Открыть'}
+      </Button>
     </Box>
   )
 }
