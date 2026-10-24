@@ -12,7 +12,6 @@ export default defineConfig({
       '@': path.resolve(rootDir, './src'),
     },
   },
-
   server: {
     port: 5173,
     proxy: {
