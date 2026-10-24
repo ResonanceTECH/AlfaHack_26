@@ -1,12 +1,18 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, Body, HTTPException, Query, Response, status
 
-from app.core.enums import Permission, UserRole, UserStatus
+from app.core.enums import Permission, ProductStatus, ProductType, UserRole, UserStatus
 from app.deps import CorrelationId, CurrentUser, DbDep
 from app.schemas.admin import (
     AdminCompanyBrief,
     AdminCompanyListOut,
+    AdminCreditProductCreate,
+    AdminCreditProductListOut,
+    AdminCreditProductOut,
+    AdminCreditProductPatch,
+    AdminCreditProductPublishIn,
+    AdminCreditProductVersionOut,
     AdminDisableOut,
     AdminMemberOut,
     AdminMemberPut,
@@ -20,6 +26,16 @@ from app.schemas.admin import (
     AdminUserPatch,
 )
 from app.services.access import require_permission, require_roles
+from app.services.admin_products import (
+    archive_product,
+    create_product,
+    get_product,
+    list_products,
+    list_versions,
+    patch_product,
+    publish_product,
+    serialize_product,
+)
 from app.services.admin_users import (
     create_user,
     delete_member,
@@ -48,6 +64,11 @@ def _require_admin(user: CurrentUser) -> None:
 def _require_users_manage(user: CurrentUser) -> None:
     _require_admin(user)
     require_permission(user, Permission.USERS_MANAGE)
+
+
+def _require_catalog_manage(user: CurrentUser) -> None:
+    _require_admin(user)
+    require_permission(user, Permission.CATALOG_MANAGE)
 
 
 @router.get("/roles", response_model=list[AdminRoleOut])
@@ -282,3 +303,150 @@ def admin_delete_member(
     )
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/credit-products", response_model=AdminCreditProductListOut)
+def admin_list_credit_products(
+    db: DbDep,
+    user: CurrentUser,
+    status_filter: ProductStatus | None = Query(default=None, alias="status"),
+    product_type: ProductType | None = Query(default=None, alias="type"),
+    q: str | None = None,
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> AdminCreditProductListOut:
+    _require_catalog_manage(user)
+    items, total = list_products(
+        db, status=status_filter, product_type=product_type, q=q, limit=limit, offset=offset
+    )
+    return AdminCreditProductListOut(items=[AdminCreditProductOut(**i) for i in items], total=total)
+
+
+@router.post(
+    "/credit-products",
+    response_model=AdminCreditProductOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def admin_create_credit_product(
+    body: AdminCreditProductCreate,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+) -> AdminCreditProductOut:
+    _require_catalog_manage(user)
+    created = create_product(db, body.model_dump(exclude_none=True), actor_id=user.id)
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="credit_product",
+        entity_id=created.id,
+        action="admin_create",
+        details={"code": created.code, "status": created.status.value},
+        correlation_id=cid,
+    )
+    db.commit()
+    created = get_product(db, created.id) or created
+    return AdminCreditProductOut(**serialize_product(created, include_versions=True))
+
+
+@router.get("/credit-products/{product_id}", response_model=AdminCreditProductOut)
+def admin_get_credit_product(
+    product_id: str, db: DbDep, user: CurrentUser
+) -> AdminCreditProductOut:
+    _require_catalog_manage(user)
+    product = get_product(db, product_id)
+    if product is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Продукт не найден")
+    return AdminCreditProductOut(**serialize_product(product, include_versions=True))
+
+
+@router.patch("/credit-products/{product_id}", response_model=AdminCreditProductOut)
+def admin_patch_credit_product(
+    product_id: str,
+    body: AdminCreditProductPatch,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+) -> AdminCreditProductOut:
+    _require_catalog_manage(user)
+    product = get_product(db, product_id)
+    if product is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Продукт не найден")
+    patch = body.model_dump(exclude_unset=True)
+    patch_product(db, product, patch)
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="credit_product",
+        entity_id=product.id,
+        action="admin_patch",
+        details={"fields": list(patch.keys()), "status": product.status.value},
+        correlation_id=cid,
+    )
+    db.commit()
+    product = get_product(db, product_id) or product
+    return AdminCreditProductOut(**serialize_product(product, include_versions=True))
+
+
+@router.post("/credit-products/{product_id}/publish", response_model=AdminCreditProductOut)
+def admin_publish_credit_product(
+    product_id: str,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+    body: AdminCreditProductPublishIn = Body(default_factory=AdminCreditProductPublishIn),
+) -> AdminCreditProductOut:
+    _require_catalog_manage(user)
+    product = get_product(db, product_id)
+    if product is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Продукт не найден")
+    publish_product(db, product, actor_id=user.id, changelog=body.changelog)
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="credit_product",
+        entity_id=product.id,
+        action="admin_publish",
+        details={"version": product.version},
+        correlation_id=cid,
+    )
+    db.commit()
+    product = get_product(db, product_id) or product
+    return AdminCreditProductOut(**serialize_product(product, include_versions=True))
+
+
+@router.post("/credit-products/{product_id}/archive", response_model=AdminCreditProductOut)
+def admin_archive_credit_product(
+    product_id: str,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+) -> AdminCreditProductOut:
+    _require_catalog_manage(user)
+    product = get_product(db, product_id)
+    if product is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Продукт не найден")
+    archive_product(db, product)
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="credit_product",
+        entity_id=product.id,
+        action="admin_archive",
+        details={"version": product.version},
+        correlation_id=cid,
+    )
+    db.commit()
+    product = get_product(db, product_id) or product
+    return AdminCreditProductOut(**serialize_product(product, include_versions=True))
+
+
+@router.get(
+    "/credit-products/{product_id}/versions",
+    response_model=list[AdminCreditProductVersionOut],
+)
+def admin_credit_product_versions(
+    product_id: str, db: DbDep, user: CurrentUser
+) -> list[AdminCreditProductVersionOut]:
+    _require_catalog_manage(user)
+    return [AdminCreditProductVersionOut(**v) for v in list_versions(db, product_id)]
