@@ -2,48 +2,42 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query
 from sqlalchemy import select
-from sqlalchemy.orm import joinedload
 
 from app.core.enums import ApplicationStatus, UserRole
 from app.deps import CurrentUser, DbDep
 from app.models.application import CreditApplication
 from app.models.company import Company
 from app.models.finance import FinancialSnapshot
-from app.schemas.application import ApplicationOut
+from app.schemas.analyst import AnalystQueueOut
 from app.schemas.company import CompanyOut, FinancialSnapshotOut
 from app.services.access import require_application_access, require_roles
-from app.services.applications import serialize_application
 
 router = APIRouter(prefix="/manager", tags=["manager"])
 
 
-@router.get("/applications", response_model=list[ApplicationOut])
+@router.get("/applications", response_model=AnalystQueueOut, deprecated=True)
 def manager_queue(
     db: DbDep,
     user: CurrentUser,
     status_filter: ApplicationStatus | None = Query(default=None, alias="status"),
     product_id: str | None = None,
     assigned_to_me: bool = False,
-) -> list[ApplicationOut]:
-    require_roles(user, UserRole.ANALYST)
-    q = (
-        select(CreditApplication)
-        .options(
-            joinedload(CreditApplication.documents),
-            joinedload(CreditApplication.comments),
-            joinedload(CreditApplication.assigned_manager),
-        )
-        .where(CreditApplication.status != ApplicationStatus.DRAFT)
-    )
-    if status_filter:
-        q = q.where(CreditApplication.status == status_filter)
-    if product_id:
-        q = q.where(CreditApplication.product_id == product_id)
-    if assigned_to_me:
-        q = q.where(CreditApplication.assigned_manager_id == user.id)
+) -> AnalystQueueOut:
+    """Deprecated: используйте GET /analyst/applications."""
+    from app.api.v1.analyst import analyst_applications_queue
 
-    apps = db.scalars(q.order_by(CreditApplication.updated_at.desc())).unique().all()
-    return [ApplicationOut(**serialize_application(a)) for a in apps]
+    return analyst_applications_queue(
+        db=db,
+        user=user,
+        status_filter=status_filter,
+        product_id=product_id,
+        assigned_to_me=assigned_to_me,
+        unassigned=False,
+        q=None,
+        include_closed=True,
+        limit=50,
+        offset=0,
+    )
 
 @router.get("/applications/{application_id}/company", response_model=CompanyOut)
 def manager_company(application_id: str, db: DbDep, user: CurrentUser) -> Company:
