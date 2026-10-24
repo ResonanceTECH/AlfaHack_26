@@ -91,6 +91,7 @@ export interface RegistryCompany {
   registrationDate: string
   region: string
   registryStatus: string
+  ogrn?: string
 }
 
 export interface RegistryLookupResult {
@@ -105,9 +106,6 @@ export interface CompanyDashboardSummary {
   company: { id: string; name: string; inn: string; legalForm: LegalForm; region: string }
   applicationsActive: number
   applicationsTotal: number
-  nextTaskTitle?: string
-  nextTaskDue?: string
-  managerHint?: string
 }
 
 export interface FinancialSnapshot {

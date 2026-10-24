@@ -2,15 +2,17 @@
 
 Эндпоинты API, которые дергает фронт. Базовый префикс: `/api/v1` (прокси Vite → backend).
 
-Задокументированы экраны: **логин**, **забыли пароль**, **выбор компании**.
+Экраны: **логин**, **забыли пароль**, **выбор / добавление компании**.
+
+Данные только с бэка — без mock UI и без `?empty=1`.
 
 ## Логин — `/login`
 
 | Method | Path | Когда |
 |--------|------|--------|
-| `POST` | `/auth/login` | Сабмит формы (login = email + password) |
-| `POST` | `/auth/logout` | Выход (если есть refresh-токен) |
-| `GET` | `/auth/me` | Обновление профиля после сессии |
+| `POST` | `/auth/login` | Сабмит формы |
+| `POST` | `/auth/logout` | Выход (если есть refresh) |
+| `GET` | `/auth/me` | Профиль после сессии |
 
 **`POST /auth/login`**
 
@@ -18,13 +20,11 @@
 { "login": "user@company.ru", "password": "••••••••" }
 ```
 
-Ответ: сессия (`accessToken`, `refreshToken`, `user`) — кладётся в `localStorage`.
+Ответ: `accessToken`, `refreshToken`, `user` → `localStorage`.
 
 После успеха предприниматель → `/select-company`.
 
-Код: `src/pages/LoginPage.tsx` → `useAuth().login` → `src/api/auth.ts` (`loginEmailRequest`).
-
-> Drift fixed: раньше в доке был несуществующий `POST /auth/login/email` с `{ email }` — в коде `POST /auth/login` с `{ login }`.
+Код: `LoginPage.tsx` → `useAuth().login` → `api/auth.ts`.
 
 ---
 
@@ -32,44 +32,40 @@
 
 | Method | Path | Когда |
 |--------|------|--------|
-| `POST` | `/auth/password/forgot` | «Отправить ссылку» / «Отправить ещё раз» |
-
-**`POST /auth/password/forgot`**
+| `POST` | `/auth/password/forgot` | «Отправить ссылку» |
 
 ```json
 { "email": "user@company.ru" }
 ```
 
-Ответ (примерно): `{ message, deliveryMode? }` — UI не светит, есть ли аккаунт.
-
-Связанный экран (ссылка из письма, пока без отдельной доки):
-
 | Method | Path | Экран |
 |--------|------|--------|
 | `POST` | `/auth/password/reset` | `/reset-password?token=…` |
 
-Код: `src/pages/ForgotPasswordPage.tsx` → `forgotPasswordRequest` в `src/api/auth.ts`.
+Код: `ForgotPasswordPage.tsx` → `forgotPasswordRequest`.
 
 ---
 
 ## Выбор компании — `/select-company`
 
-Экран: `src/pages/SelectCompanyPage.tsx`.  
-Клиент: `src/api/companies.ts` + `useAuth()` (`logout`, `selectCompany` — локально, без HTTP).
+Код: `SelectCompanyPage.tsx` · клиент: `api/companies.ts` · `useAuth()` (`logout`, `selectCompany` — локально).
+
+Два UI-состояния по ответу `GET /companies`:
+
+| Состояние | Условие | UI |
+|-----------|---------|-----|
+| First visit | `companies.length === 0` | Добавление по ИНН (слева поиск, справа карточка / плейсхолдер) |
+| Список | `companies.length > 0` | Карточки + «Подробнее» → превью справа → «Продолжить» |
 
 | Method | Path | Когда |
 |--------|------|--------|
-| `GET` | `/companies` | Mount: список доступных компаний |
-| `GET` | `/companies/{companyId}/dashboard` | Выбрана компания (превью справа) |
-| `POST` | `/registry/companies/lookup` | «Найти» / «Найти в реестре» по ИНН |
-| `POST` | `/companies` | «Подтвердить и добавить» / «Это моя компания» |
-| `POST` | `/auth/logout` | «Выйти из аккаунта» (если есть refresh) |
+| `GET` | `/companies` | Mount: список memberships |
+| `POST` | `/registry/companies/lookup` | «Найти в реестре» |
+| `POST` | `/companies` | «Подтвердить доступ» после lookup |
+| `GET` | `/companies/{companyId}/dashboard` | «Подробнее» по уже добавленной компании |
+| `POST` | `/auth/logout` | «Выйти из аккаунта» |
 
 ### `GET /companies`
-
-Список memberships текущего юзера.
-
-Ответ (элемент):
 
 ```json
 {
@@ -85,76 +81,93 @@
 }
 ```
 
-Код: `listCompanies()` → карточки / empty-state.
+Код: `listCompanies()`.
 
-Empty: `companies.length === 0` (или `?empty=1` для превью) → first-visit UI без dashboard.
+- `[]` → first-visit (lookup + confirm).
+- непустой → список карточек (кнопка «Подробнее», не «Продолжить»).
 
-### `GET /companies/{companyId}/dashboard`
+### First visit — lookup + confirm
 
-Превью после «Подробнее»: компания / регион / роль из list item; KPI — `applicationsActive`.
-
-Код: `getCompanyDashboard(companyId)`.
-
-### `POST /registry/companies/lookup`
+#### `POST /registry/companies/lookup`
 
 ```json
-{ "inn": "7707083893" }
+{ "inn": "770123456703" }
 ```
 
-Ответ (примерно):
+Ответ:
 
 ```json
 {
   "found": true,
-  "source": "synthetic",
+  "source": "SYNTHETIC_REGISTRY",
   "innValid": true,
   "checkedAt": "…",
   "company": {
-    "inn": "7707083893",
-    "legalForm": "OOO",
-    "name": "ООО «…»",
-    "registrationDate": "2021-04-15",
+    "inn": "770123456703",
+    "legalForm": "IP",
+    "name": "ИП Петров Иван Сергеевич",
+    "registrationDate": "2019-03-15",
     "region": "Москва",
     "registryStatus": "ACTIVE",
-    "ogrn": "1027700000123"
+    "ogrn": "304770100012345"
   }
 }
 ```
 
-UI: справа «Подробнее о компании» (ОГРН/ОГРНИП, регион, статус, роль) → «Подтвердить доступ»; warning если не найдено / ликвидирована / невалидный ИНН.
+UI справа «Подробнее о компании»:
+
+| Поле UI | Источник |
+|---------|----------|
+| Название / Компания | `company.name` |
+| ИНН | `company.inn` |
+| ОГРНИП / ОГРН | `company.ogrn` (IP → ОГРНИП, OOO → ОГРН) |
+| Регион | `company.region` |
+| Статус в реестре | `company.registryStatus` (`ACTIVE` → «Действующий») |
+| Роль после добавления | фиксировано «Владелец» (создаём membership OWNER) |
+
+Ошибки UI: невалидный ИНН / не найдено / `LIQUIDATED`.
 
 Код: `lookupCompanyByInn(inn)`.
 
-### `POST /companies`
+ИНН из реестра бэка (seed / synthetic catalog): `770123456703` (ИП), `7709876545` (ООО), `7701234560` (ООО).
 
-Создание после подтверждения lookup (поля с реестра + дефолты):
+#### `POST /companies`
+
+После «Подтвердить доступ» — тело из ответа lookup + дефолты:
 
 ```json
 {
-  "inn": "7707083893",
-  "name": "ООО «…»",
-  "legalForm": "OOO",
+  "inn": "770123456703",
+  "name": "ИП Петров Иван Сергеевич",
+  "legalForm": "IP",
   "industry": "Не указано",
-  "registrationDate": "2021-04-15",
+  "registrationDate": "2019-03-15",
   "region": "Москва",
-  "employeesCount": 1
+  "employeesCount": 1,
+  "ogrn": "304770100012345"
 }
 ```
 
-После успеха: `selectCompany(id)` (localStorage `alfa_active_company_id`) → остаёмся на `/select-company` с обновлённым списком.
+После успеха: invalidate `['companies']` → экран переключается на список (уже не empty).
 
 Код: `createCompany(…)`.
+
+### Список компаний — «Подробнее» + кабинет
+
+#### `GET /companies/{companyId}/dashboard`
+
+Только после клика «Подробнее» (не автооткрытие).
+
+UI превью: name / region / `membershipRole` из list item; KPI — `applicationsActive` из dashboard.
+
+Код: `getCompanyDashboard(companyId)`.
+
+«Продолжить» в превью → `selectCompany(id)` + `navigate('/app')` (без HTTP).
 
 ### Локально (без HTTP)
 
 | Действие | Что |
 |----------|-----|
-| `selectCompany(id)` | Пишет `alfa_active_company_id` + патчит `user.companyId` |
-| «Продолжить» / «Открыть» | `selectCompany` + `navigate('/app')` |
-
-### Drift vs предыдущая дока
-
-| Было | Стало |
-|------|--------|
-| Секции `/select-company` не было | Добавлена |
-| `POST /auth/login/email` в секции логина | Исправлен на `POST /auth/login` |
+| `selectCompany(id)` | `alfa_active_company_id` + `user.companyId` |
+| «Продолжить» | `selectCompany` + `/app` |
+| «Очистить» (first visit) | сброс ИНН / found / error в state |
