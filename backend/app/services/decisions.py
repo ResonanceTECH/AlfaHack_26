@@ -14,8 +14,16 @@ from app.models.decision import CreditDecision, CreditOffer, OfferAcceptance
 from app.models.policy import CreditPolicyVersion
 from app.models.user import User
 from app.services.finance_engine import annuity_payment, round2
+from app.services.notifications import notify
 from app.services.workflow import transition_application
 from fastapi import status as http_status
+
+_DECISION_NOTIFY = {
+    DecisionType.APPROVED: ("DECISION_APPROVED", "Предварительное одобрение"),
+    DecisionType.REJECTED: ("DECISION_REJECTED", "Предварительный отказ"),
+    DecisionType.COUNTEROFFERED: ("DECISION_COUNTEROFFER", "Альтернативное предложение"),
+    DecisionType.NEED_INFO: ("DECISION_NEED_INFO", "Требуются дополнительные данные"),
+}
 
 DECISION_STATUSES = {
     ApplicationStatus.APPROVED: DecisionType.APPROVED,
@@ -242,6 +250,23 @@ def issue_decision(
     else:
         app.decisions.append(decision)
     db.flush()
+
+    if app.created_by:
+        ntype, ntitle = _DECISION_NOTIFY.get(
+            decision_type, ("DECISION_UPDATE", "Обновление по заявке")
+        )
+        notify(
+            db,
+            user_id=app.created_by,
+            type=ntype,
+            title=ntitle,
+            body=explanation,
+            payload={
+                "application_id": app.id,
+                "company_id": app.company_id,
+                "decision": decision_type.value,
+            },
+        )
     return decision
 
 
@@ -387,6 +412,24 @@ def accept_offer(
         form["accept_idempotency_key"] = idempotency_key
         form["accepted_offer_id"] = offer.id
         app.form_data = form
+
+    notify(
+        db,
+        user_id=user.id,
+        type="OFFER_ACCEPTED",
+        title="Предложение принято",
+        body="Готовим демонстрационный договор. Это не юридически значимое соглашение.",
+        payload={"application_id": app.id, "offer_id": offer.id, "company_id": app.company_id},
+    )
+    if app.assigned_analyst_id and app.assigned_analyst_id != user.id:
+        notify(
+            db,
+            user_id=app.assigned_analyst_id,
+            type="OFFER_ACCEPTED_ANALYST",
+            title="Клиент принял предложение",
+            body=f"Заявка {app.id[:8]}… — предложение принято",
+            payload={"application_id": app.id, "offer_id": offer.id},
+        )
 
     db.flush()
     return {

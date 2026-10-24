@@ -11,6 +11,7 @@ from app.core.enums import ApplicationStatus
 from app.models.application import ApplicationDocument, CreditApplication, DocumentRequest
 from app.models.credit import CreditProduct
 from app.models.user import User
+from app.services.notifications import notify
 from app.services.workflow import transition_application
 
 DEFAULT_REQUIRED_DOCS = [
@@ -340,6 +341,21 @@ def create_document_request(
         app.documents = [placeholder]
     else:
         app.documents.append(placeholder)
+
+    if app.created_by:
+        notify(
+            db,
+            user_id=app.created_by,
+            type="DOCUMENTS_REQUESTED",
+            title="Запрошены дополнительные документы",
+            body=comment or f"Нужен документ: {doc_label(doc_type)}",
+            payload={
+                "application_id": app.id,
+                "company_id": app.company_id,
+                "document_request_id": req.id,
+                "doc_type": doc_type,
+            },
+        )
     return req
 
 

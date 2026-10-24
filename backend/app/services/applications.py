@@ -16,6 +16,7 @@ from app.models.funding import FundingNeed
 from app.models.user import User
 from app.services.readiness import compute_readiness
 from app.services.recommendations import business_age_months
+from app.services.notifications import notify
 from app.services.workflow import (
     active_workflow,
     create_workflow,
@@ -357,4 +358,23 @@ def submit_draft(
 
     db.flush()
     wf = active_workflow(app) or wf
+
+    notify(
+        db,
+        user_id=user.id,
+        type="APPLICATION_SUBMITTED",
+        title="Заявка отправлена",
+        body=f"Заявка {number} принята в обработку. Статус: {app.status.value}",
+        payload={"application_id": app.id, "company_id": app.company_id, "status": app.status.value},
+    )
+    if analyst and analyst.id != user.id:
+        notify(
+            db,
+            user_id=analyst.id,
+            type="APPLICATION_IN_QUEUE",
+            title="Новая заявка в очереди",
+            body=f"Заявка {number} ожидает рассмотрения",
+            payload={"application_id": app.id, "company_id": app.company_id},
+        )
+
     return app, wf, _submit_payload(app, wf)
