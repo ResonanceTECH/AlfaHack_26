@@ -167,8 +167,7 @@ export function SelectCompanyPage() {
       setFound(null)
       setLookupError(null)
       selectCompany(company.id)
-      // leave empty preview / first-visit → filled select or cabinet
-      navigate('/select-company', { replace: true })
+      navigate('/app', { replace: true })
     },
     onError: (err) => setLookupError(apiError(err, 'Не удалось добавить компанию')),
   })
@@ -759,10 +758,10 @@ function FirstVisitEmpty({
             flex: 1,
             minHeight: 0,
             display: 'grid',
-            gridTemplateColumns: { xs: '1fr', md: '340px minmax(0, 1fr)' },
-            gridTemplateRows: { xs: 'auto 1fr', md: '1fr' },
+            gridTemplateColumns: { xs: '1fr', md: '320px minmax(0, 420px)' },
             gap: { xs: 2, md: 2.5 },
-            alignItems: 'stretch',
+            alignItems: 'start',
+            justifyContent: 'start',
           }}
         >
           {/* Left — compact search */}
@@ -770,13 +769,12 @@ function FirstVisitEmpty({
             sx={{
               bgcolor: '#fff',
               borderRadius: 3.5,
-              p: { xs: 2.25, md: 2.5 },
+              p: { xs: 2, md: 2.25 },
               display: 'flex',
               flexDirection: 'column',
-              gap: 1.75,
+              gap: 1.5,
               boxShadow: '0 4px 24px rgba(11,31,53,0.06)',
               border: '1px solid rgba(11,31,53,0.05)',
-              alignSelf: { xs: 'stretch', md: 'start' },
               width: '100%',
             }}
           >
@@ -855,43 +853,45 @@ function FirstVisitEmpty({
             )}
           </Box>
 
-          {/* Right — fills remaining page */}
+          {/* Right — compact holder, height by content */}
           <Box
             sx={{
               bgcolor: '#fff',
               borderRadius: 3.5,
-              minHeight: 0,
-              height: '100%',
-              display: 'flex',
-              flexDirection: 'column',
+              width: '100%',
               boxShadow: '0 4px 24px rgba(11,31,53,0.06)',
               border: '1px solid rgba(11,31,53,0.05)',
-              overflow: 'auto',
-              p: { xs: 2.5, md: 3 },
+              p: { xs: 2, md: 2.25 },
+              ...(found
+                ? {}
+                : {
+                    minHeight: 200,
+                    display: 'grid',
+                    placeItems: 'center',
+                  }),
             }}
           >
             {found ? (
-              <>
+              <Box>
                 <Typography
                   sx={{
                     fontFamily: 'Manrope, sans-serif',
                     fontWeight: 800,
-                    fontSize: { xs: 18, md: 20 },
+                    fontSize: 17,
                     letterSpacing: '-0.02em',
                     color: '#0B1F35',
                     lineHeight: 1.2,
-                    mb: 2.5,
-                    flexShrink: 0,
+                    mb: 1.5,
                   }}
                 >
                   Подробнее о компании
                 </Typography>
 
-                <Stack direction="row" spacing={1.75} alignItems="center" sx={{ mb: 2.5, flexShrink: 0 }}>
+                <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1.5 }}>
                   <Box
                     sx={{
-                      width: 48,
-                      height: 48,
+                      width: 40,
+                      height: 40,
                       borderRadius: '50%',
                       bgcolor: 'rgba(239,49,36,0.1)',
                       color: '#EF3124',
@@ -901,9 +901,9 @@ function FirstVisitEmpty({
                     }}
                   >
                     {isOOO ? (
-                      <BusinessOutlinedIcon sx={{ fontSize: 24 }} />
+                      <BusinessOutlinedIcon sx={{ fontSize: 20 }} />
                     ) : (
-                      <PersonOutlineRoundedIcon sx={{ fontSize: 24 }} />
+                      <PersonOutlineRoundedIcon sx={{ fontSize: 20 }} />
                     )}
                   </Box>
                   <Box sx={{ minWidth: 0 }}>
@@ -911,39 +911,40 @@ function FirstVisitEmpty({
                       sx={{
                         fontFamily: 'Manrope, sans-serif',
                         fontWeight: 800,
-                        fontSize: 16,
+                        fontSize: 15,
                         color: '#0B1F35',
                         lineHeight: 1.25,
                       }}
                     >
                       {found.name}
                     </Typography>
-                    <Typography sx={{ color: '#8A96A3', fontSize: 13, mt: 0.35 }}>
+                    <Typography sx={{ color: '#8A96A3', fontSize: 12, mt: 0.2 }}>
                       ИНН {found.inn}
                     </Typography>
                   </Box>
                 </Stack>
 
-                <Stack spacing={0} sx={{ flexShrink: 0 }}>
+                <Box sx={{ borderTop: '1px solid rgba(11,31,53,0.08)' }}>
                   {detailRows.map((row) => (
                     <Stack
                       key={row.k}
                       direction="row"
                       justifyContent="space-between"
+                      alignItems="baseline"
                       sx={{
-                        py: 1.35,
+                        py: 1,
                         borderBottom: '1px solid rgba(11,31,53,0.06)',
-                        gap: 2,
+                        gap: 1.5,
                       }}
                     >
-                      <Typography sx={{ color: '#8A96A3', fontSize: 14, flexShrink: 0 }}>
+                      <Typography sx={{ color: '#8A96A3', fontSize: 13, flexShrink: 0 }}>
                         {row.k}
                       </Typography>
                       <Typography
                         sx={{
                           color: '#0B1F35',
-                          fontSize: 14,
-                          fontWeight: 600,
+                          fontSize: 13,
+                          fontWeight: 700,
                           textAlign: 'right',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
@@ -954,46 +955,42 @@ function FirstVisitEmpty({
                       </Typography>
                     </Stack>
                   ))}
-                </Stack>
-
-                <Box sx={{ mt: 'auto', pt: 3, flexShrink: 0 }}>
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    fullWidth
-                    disabled={creating}
-                    onClick={onConfirm}
-                    sx={{ borderRadius: 2.5, fontWeight: 700, py: 1.45, fontSize: 15 }}
-                  >
-                    {creating ? <CircularProgress size={20} color="inherit" /> : 'Подтвердить доступ'}
-                  </Button>
-                  <Typography
-                    sx={{
-                      mt: 1.5,
-                      color: '#B0B8C1',
-                      fontSize: 12,
-                      textAlign: 'center',
-                      lineHeight: 1.4,
-                    }}
-                  >
-                    После подтверждения компания появится в списке выбора
-                  </Typography>
                 </Box>
-              </>
-            ) : (
-              <Box sx={{ flex: 1, display: 'grid', placeItems: 'center', px: 3 }}>
+
+                <Button
+                  variant="contained"
+                  color="primary"
+                  fullWidth
+                  disabled={creating}
+                  onClick={onConfirm}
+                  sx={{ mt: 2, borderRadius: 2.5, fontWeight: 700, py: 1.2, fontSize: 14 }}
+                >
+                  {creating ? <CircularProgress size={18} color="inherit" /> : 'Подтвердить доступ'}
+                </Button>
                 <Typography
                   sx={{
+                    mt: 1.25,
                     color: '#B0B8C1',
-                    fontSize: 15,
-                    lineHeight: 1.5,
+                    fontSize: 11,
                     textAlign: 'center',
-                    maxWidth: 280,
+                    lineHeight: 1.35,
                   }}
                 >
-                  После поиска справа появится карточка компании из реестра
+                  После подтверждения компания появится в списке выбора
                 </Typography>
               </Box>
+            ) : (
+              <Typography
+                sx={{
+                  color: '#B0B8C1',
+                  fontSize: 14,
+                  lineHeight: 1.45,
+                  textAlign: 'center',
+                  maxWidth: 240,
+                }}
+              >
+                После поиска справа появится карточка компании из реестра
+              </Typography>
             )}
           </Box>
         </Box>
