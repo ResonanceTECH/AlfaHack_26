@@ -10,11 +10,14 @@ import {
   Box,
   Button,
   CircularProgress,
+  Drawer,
   InputAdornment,
   MenuItem,
   Stack,
   TextField,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
@@ -61,6 +64,8 @@ export function SelectCompanyPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const qc = useQueryClient()
+  const theme = useTheme()
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'))
   const forceEmpty = searchParams.get('empty') === '1'
 
   const [query, setQuery] = useState('')
@@ -79,17 +84,11 @@ export function SelectCompanyPage() {
   const companies = forceEmpty ? [] : (companiesQ.data ?? [])
   const isEmpty = forceEmpty || (!companiesQ.isLoading && companies.length === 0)
 
+  // Drop selection only if company disappeared — never auto-open preview
   useEffect(() => {
-    if (!companies.length) {
-      setSelectedId(null)
-      return
-    }
-    setSelectedId((prev) => {
-      if (prev && companies.some((c) => c.id === prev)) return prev
-      if (user?.companyId && companies.some((c) => c.id === user.companyId)) return user.companyId
-      return companies[0].id
-    })
-  }, [companies, user?.companyId])
+    if (!selectedId) return
+    if (!companies.some((c) => c.id === selectedId)) setSelectedId(null)
+  }, [companies, selectedId])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -101,19 +100,22 @@ export function SelectCompanyPage() {
   }, [companies, query, roleFilter])
 
   const selected = companies.find((c) => c.id === selectedId) ?? null
-
-  // Keep preview in sync with what's visible in the list
-  useEffect(() => {
-    if (!filtered.length) return
-    if (selectedId && filtered.some((c) => c.id === selectedId)) return
-    setSelectedId(filtered[0].id)
-  }, [filtered, selectedId])
+  const detailOpen = Boolean(selected)
 
   const dashQ = useQuery({
     queryKey: ['company-dashboard', selected?.id],
     queryFn: () => getCompanyDashboard(selected!.id),
     enabled: Boolean(selected?.id),
   })
+
+  function openDetails(id: string) {
+    setSelectedId(id)
+    setAdding(false)
+  }
+
+  function closeDetails() {
+    setSelectedId(null)
+  }
 
   const lookupMut = useMutation({
     mutationFn: (value: string) => lookupCompanyByInn(value),
@@ -276,7 +278,7 @@ export function SelectCompanyPage() {
               Выберите компанию
             </Typography>
             <Typography sx={{ color: '#5A6B7D', fontSize: 14, mt: 0.75, lineHeight: 1.4 }}>
-              {user?.fullName || 'Пользователь'} · выберите организацию, с которой продолжите работу
+              Откройте нужную организацию или добавьте новую по ИНН
             </Typography>
           </Box>
 
@@ -380,15 +382,7 @@ export function SelectCompanyPage() {
                   key={item.id}
                   item={item}
                   selected={item.id === selectedId}
-                  onSelect={() => {
-                    setSelectedId(item.id)
-                    setAdding(false)
-                  }}
-                  onContinue={() => {
-                    setSelectedId(item.id)
-                    selectCompany(item.id)
-                    navigate('/app')
-                  }}
+                  onDetails={() => openDetails(item.id)}
                 />
               ))}
 
@@ -495,20 +489,52 @@ export function SelectCompanyPage() {
           </Button>
         </Box>
 
-        {/* Right preview — desktop only */}
+        {/* Right preview — desktop only, only after «Подробнее» */}
         <Box sx={{ display: { xs: 'none', md: 'flex' }, minHeight: 0 }}>
-          {selected && (
+          {detailOpen && selected ? (
             <PreviewPanel
               key={selected.id}
               selected={selected}
               dash={dashQ.data}
               dashLoading={dashQ.isLoading || (dashQ.isFetching && !dashQ.data)}
               onContinue={onContinue}
+              onClose={closeDetails}
               onLogout={onLogout}
             />
+          ) : (
+            <PreviewPlaceholder />
           )}
         </Box>
       </Box>
+
+      {/* Mobile: details as bottom sheet */}
+      <Drawer
+        anchor="bottom"
+        open={isMobile && detailOpen}
+        onClose={closeDetails}
+        sx={{
+          display: { xs: 'block', md: 'none' },
+          '& .MuiDrawer-paper': {
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
+            maxHeight: '88dvh',
+            bgcolor: '#F3F5F8',
+            p: 2,
+          },
+        }}
+      >
+        {selected && (
+          <PreviewPanel
+            key={selected.id}
+            selected={selected}
+            dash={dashQ.data}
+            dashLoading={dashQ.isLoading || (dashQ.isFetching && !dashQ.data)}
+            onContinue={onContinue}
+            onClose={closeDetails}
+            onLogout={onLogout}
+          />
+        )}
+      </Drawer>
     </Box>
   )
 }
@@ -516,20 +542,17 @@ export function SelectCompanyPage() {
 function CompanyCard({
   item,
   selected,
-  onSelect,
-  onContinue,
+  onDetails,
 }: {
   item: CompanyListItem
   selected: boolean
-  onSelect: () => void
-  onContinue: () => void
+  onDetails: () => void
 }) {
   const isOOO = item.legalForm === 'OOO'
   const meta = `ИНН ${maskInn(item.inn, selected)}`
 
   return (
     <Box
-      onClick={onSelect}
       sx={{
         bgcolor: '#fff',
         borderRadius: 3.5,
@@ -538,11 +561,7 @@ function CompanyCard({
         boxShadow: selected
           ? '0 0 0 3px rgba(239,49,36,0.1), 0 8px 24px rgba(11,31,53,0.06)'
           : '0 2px 10px rgba(11,31,53,0.04)',
-        cursor: 'pointer',
         transition: 'border 0.15s, box-shadow 0.15s',
-        '&:hover': {
-          borderColor: selected ? '#EF3124' : 'rgba(11,31,53,0.16)',
-        },
       }}
     >
       <Stack direction="row" spacing={1.75} alignItems="flex-start">
@@ -589,11 +608,7 @@ function CompanyCard({
         variant={selected ? 'contained' : 'outlined'}
         color={selected ? 'primary' : 'inherit'}
         fullWidth
-        onClick={(e) => {
-          e.stopPropagation()
-          if (selected) onContinue()
-          else onSelect()
-        }}
+        onClick={onDetails}
         sx={{
           mt: 2.25,
           borderRadius: 2.5,
@@ -610,8 +625,30 @@ function CompanyCard({
               }),
         }}
       >
-        {selected ? 'Продолжить' : 'Открыть'}
+        Подробнее
       </Button>
+    </Box>
+  )
+}
+
+function PreviewPlaceholder() {
+  return (
+    <Box
+      sx={{
+        flex: 1,
+        width: '100%',
+        borderRadius: 3.5,
+        border: '1.5px dashed rgba(11,31,53,0.12)',
+        bgcolor: 'rgba(255,255,255,0.55)',
+        display: 'grid',
+        placeItems: 'center',
+        px: 3,
+        textAlign: 'center',
+      }}
+    >
+      <Typography sx={{ color: '#8A96A3', fontSize: 14, lineHeight: 1.45, maxWidth: 220 }}>
+        Нажмите «Подробнее» на карточке — справа откроется сводка по компании
+      </Typography>
     </Box>
   )
 }
@@ -1139,12 +1176,14 @@ function PreviewPanel({
   dash,
   dashLoading,
   onContinue,
+  onClose,
   onLogout,
 }: {
   selected: CompanyListItem
   dash: Awaited<ReturnType<typeof getCompanyDashboard>> | undefined
   dashLoading: boolean
   onContinue: () => void
+  onClose: () => void
   onLogout: () => void
 }) {
   return (
@@ -1162,19 +1201,40 @@ function PreviewPanel({
         border: '1px solid rgba(11,31,53,0.05)',
       }}
     >
-      <Typography
-        sx={{
-          fontFamily: 'Manrope, sans-serif',
-          fontWeight: 800,
-          fontSize: { xs: 18, md: 20 },
-          letterSpacing: '-0.02em',
-          color: '#0B1F35',
-          mb: 2,
-          flexShrink: 0,
-        }}
+      <Stack
+        direction="row"
+        alignItems="flex-start"
+        justifyContent="space-between"
+        gap={1}
+        sx={{ mb: 2, flexShrink: 0 }}
       >
-        Что вас ждёт в кабинете
-      </Typography>
+        <Typography
+          sx={{
+            fontFamily: 'Manrope, sans-serif',
+            fontWeight: 800,
+            fontSize: { xs: 18, md: 20 },
+            letterSpacing: '-0.02em',
+            color: '#0B1F35',
+            lineHeight: 1.2,
+          }}
+        >
+          Подробнее о компании
+        </Typography>
+        <Button
+          onClick={onClose}
+          sx={{
+            minWidth: 0,
+            px: 1,
+            py: 0.5,
+            color: '#8A96A3',
+            fontWeight: 600,
+            fontSize: 13,
+            flexShrink: 0,
+          }}
+        >
+          Закрыть
+        </Button>
+      </Stack>
 
       <Stack spacing={0} sx={{ flex: 1, minHeight: 0 }}>
         {(
