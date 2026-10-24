@@ -42,19 +42,6 @@ function apiError(err: unknown, fallback: string): string {
   return fallback
 }
 
-function statusChips(item: CompanyListItem, selected: boolean) {
-  const chips: { label: string; bg: string; color: string }[] = []
-  if (selected) chips.push({ label: 'Выбрана', bg: '#FCE8E6', color: '#C41E14' })
-  if (item.registryStatus === 'ACTIVE' && item.membershipRole !== 'VIEWER') {
-    chips.push({ label: 'Активна', bg: '#E6F6EC', color: '#1B8A5A' })
-  } else if (item.membershipRole === 'VIEWER') {
-    chips.push({ label: 'Просмотр', bg: '#EEF1F5', color: '#5A6B7D' })
-  } else {
-    chips.push({ label: 'Черновик', bg: '#EEF1F5', color: '#5A6B7D' })
-  }
-  return chips
-}
-
 function maskInn(inn: string, full: boolean): string {
   if (full || inn.length < 4) return inn
   return `•••• ${inn.slice(-4)}`
@@ -529,7 +516,6 @@ function CompanyCard({
   onContinue: () => void
 }) {
   const isOOO = item.legalForm === 'OOO'
-  const chips = statusChips(item, selected)
   const formLabel = isOOO ? 'ООО' : 'ИП'
   const meta = [
     `ИНН ${maskInn(item.inn, selected)}`,
@@ -592,29 +578,9 @@ function CompanyCard({
           >
             {item.name}
           </Typography>
-          <Typography sx={{ color: '#8A96A3', fontSize: 13, lineHeight: 1.4, mb: 1.25 }}>
+          <Typography sx={{ color: '#8A96A3', fontSize: 13, lineHeight: 1.4 }}>
             {meta}
           </Typography>
-
-          <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
-            {chips.map((chip) => (
-              <Box
-                key={chip.label}
-                sx={{
-                  px: 1.15,
-                  py: 0.35,
-                  borderRadius: 999,
-                  bgcolor: chip.bg,
-                  color: chip.color,
-                  fontSize: 12,
-                  fontWeight: 700,
-                  lineHeight: 1.4,
-                }}
-              >
-                {chip.label}
-              </Box>
-            ))}
-          </Stack>
         </Box>
       </Stack>
 
@@ -1286,7 +1252,7 @@ function PreviewPanel({
             onClick={onContinue}
             sx={{ borderRadius: 2.5, py: 1.45, fontWeight: 700, fontSize: 15 }}
           >
-            Продолжить как «{shortName(selected.name)}»
+            Продолжить
           </Button>
           <Button
             variant="outlined"
@@ -1306,15 +1272,4 @@ function PreviewPanel({
       </Stack>
     </Box>
   )
-}
-
-function shortName(name: string): string {
-  const quoted = name.match(/[«"]([^»"]+)[»"]/)
-  if (quoted) return quoted[1]
-  if (name.startsWith('ИП ')) {
-    const parts = name.slice(3).trim().split(/\s+/)
-    return parts[0] || name
-  }
-  if (name.length <= 22) return name
-  return `${name.slice(0, 20)}…`
 }
