@@ -1,13 +1,98 @@
 import type {
   BusinessGoal,
   Company,
+  CompanyDashboardSummary,
+  CompanyListItem,
   FinancialSnapshot,
   GoalType,
   LegalForm,
+  MemberRole,
   Obligation,
+  RegistryLookupResult,
 } from '@/types'
 import { api, num, str } from '@/api/client'
 import axios from 'axios'
+
+export function mapCompanyListItem(raw: Record<string, unknown>): CompanyListItem {
+  return {
+    id: str(raw.id),
+    inn: str(raw.inn),
+    name: str(raw.name),
+    legalForm: (raw.legalForm ?? raw.legal_form) as LegalForm,
+    region: str(raw.region),
+    industry: str(raw.industry),
+    registryStatus: str(raw.registryStatus ?? raw.registry_status, 'ACTIVE'),
+    version: num(raw.version, 1),
+    membershipRole: (() => {
+      const r = raw.membershipRole ?? raw.membership_role
+      if (r == null || r === '') return undefined
+      return String(r).toUpperCase() as MemberRole
+    })(),
+  }
+}
+
+export function mapRegistryLookup(raw: Record<string, unknown>): RegistryLookupResult {
+  const companyRaw = raw.company as Record<string, unknown> | null | undefined
+  return {
+    found: Boolean(raw.found),
+    source: str(raw.source),
+    company: companyRaw
+      ? {
+          inn: str(companyRaw.inn),
+          legalForm: (companyRaw.legalForm ?? companyRaw.legal_form) as LegalForm,
+          name: str(companyRaw.name),
+          registrationDate: str(
+            companyRaw.registrationDate ?? companyRaw.registration_date,
+          ).slice(0, 10),
+          region: str(companyRaw.region),
+          registryStatus: str(
+            companyRaw.registryStatus ?? companyRaw.registry_status,
+            'ACTIVE',
+          ),
+        }
+      : null,
+    checkedAt: str(raw.checkedAt ?? raw.checked_at),
+    innValid: Boolean(raw.innValid ?? raw.inn_valid ?? true),
+  }
+}
+
+export function mapCompanyDashboard(raw: Record<string, unknown>): CompanyDashboardSummary {
+  const company = (raw.company ?? {}) as Record<string, unknown>
+  const kpi = (raw.kpi ?? {}) as Record<string, unknown>
+  const tasks = (raw.tasks as Record<string, unknown>[] | undefined) ?? []
+  const next = tasks[0]
+  return {
+    company: {
+      id: str(company.id),
+      name: str(company.name),
+      inn: str(company.inn),
+      legalForm: (company.legalForm ?? company.legal_form) as LegalForm,
+      region: str(company.region),
+    },
+    applicationsActive: num(kpi.applicationsActive ?? kpi.applications_active),
+    applicationsTotal: num(kpi.applicationsTotal ?? kpi.applications_total),
+    nextTaskTitle: next ? str(next.title) : undefined,
+    nextTaskDue: next?.due_at != null || next?.dueAt != null
+      ? str(next.dueAt ?? next.due_at)
+      : undefined,
+    managerHint: undefined,
+  }
+}
+
+export async function listCompanies(): Promise<CompanyListItem[]> {
+  const { data } = await api.get('/companies')
+  return (data as Record<string, unknown>[]).map(mapCompanyListItem)
+}
+
+export async function lookupCompanyByInn(inn: string): Promise<RegistryLookupResult> {
+  const { data } = await api.post('/registry/companies/lookup', { inn })
+  return mapRegistryLookup(data as Record<string, unknown>)
+}
+
+export async function getCompanyDashboard(companyId: string): Promise<CompanyDashboardSummary> {
+  const { data } = await api.get(`/companies/${companyId}/dashboard`)
+  return mapCompanyDashboard(data as Record<string, unknown>)
+}
 
 export function mapCompany(raw: Record<string, unknown>): Company {
   return {

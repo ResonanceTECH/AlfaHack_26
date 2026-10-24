@@ -25,8 +25,11 @@ export function str(v: unknown, fallback = ''): string {
   return String(v)
 }
 
+export const ACTIVE_COMPANY_KEY = 'alfa_active_company_id'
+
 export function clearSession(): void {
   localStorage.removeItem('alfa_access_token')
   localStorage.removeItem('alfa_refresh_token')
   localStorage.removeItem('alfa_user')
+  localStorage.removeItem(ACTIVE_COMPANY_KEY)
 }
