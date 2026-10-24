@@ -11,16 +11,7 @@ import {
   fetchMe,
   getStoredUser,
   loginEmailRequest,
-  loginPhoneStart,
-  loginPhoneVerify,
   logoutRequest,
-  registerEmailRequest,
-  registerPhoneStart,
-  registerPhoneVerify,
-  registerRequest,
-  type ChallengeStart,
-  type EmailAction,
-  type RegisterPayload,
 } from '@/api/auth'
 import axios from 'axios'
 
@@ -28,24 +19,6 @@ interface AuthContextValue {
   user: User | null
   isAuthenticated: boolean
   login: (email: string, password: string) => Promise<User>
-  loginWithPhoneStart: (phone: string) => Promise<ChallengeStart>
-  loginWithPhoneVerify: (challengeId: string, code: string) => Promise<User>
-  register: (payload: RegisterPayload) => Promise<User>
-  registerWithPhoneStart: (payload: {
-    fullName: string
-    phone: string
-    email?: string
-    consent: boolean
-  }) => Promise<ChallengeStart>
-  registerWithPhoneVerify: (challengeId: string, code: string) => Promise<User>
-  registerWithEmail: (payload: {
-    fullName: string
-    email: string
-    password: string
-    passwordConfirm: string
-    phone?: string
-    consent: boolean
-  }) => Promise<EmailAction>
   refreshUser: () => Promise<User>
   logout: () => void
   setUserFromSession: (user: User) => void
@@ -78,73 +51,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const loginWithPhoneStart = useCallback(async (phone: string) => {
-    try {
-      return await loginPhoneStart(phone)
-    } catch (err) {
-      throw new Error(toErrorMessage(err, 'Не удалось отправить код'))
-    }
-  }, [])
-
-  const loginWithPhoneVerify = useCallback(async (challengeId: string, code: string) => {
-    try {
-      const session = await loginPhoneVerify(challengeId, code)
-      setUser(session.user)
-      return session.user
-    } catch (err) {
-      throw new Error(toErrorMessage(err, 'Неверный код'))
-    }
-  }, [])
-
-  const register = useCallback(async (payload: RegisterPayload) => {
-    try {
-      const session = await registerRequest(payload)
-      setUser(session.user)
-      return session.user
-    } catch (err) {
-      throw new Error(toErrorMessage(err, 'Ошибка регистрации'))
-    }
-  }, [])
-
-  const registerWithPhoneStart = useCallback(
-    async (payload: { fullName: string; phone: string; email?: string; consent: boolean }) => {
-      try {
-        return await registerPhoneStart(payload)
-      } catch (err) {
-        throw new Error(toErrorMessage(err, 'Не удалось начать регистрацию'))
-      }
-    },
-    [],
-  )
-
-  const registerWithPhoneVerify = useCallback(async (challengeId: string, code: string) => {
-    try {
-      const session = await registerPhoneVerify(challengeId, code)
-      setUser(session.user)
-      return session.user
-    } catch (err) {
-      throw new Error(toErrorMessage(err, 'Неверный код'))
-    }
-  }, [])
-
-  const registerWithEmail = useCallback(
-    async (payload: {
-      fullName: string
-      email: string
-      password: string
-      passwordConfirm: string
-      phone?: string
-      consent: boolean
-    }) => {
-      try {
-        return await registerEmailRequest(payload)
-      } catch (err) {
-        throw new Error(toErrorMessage(err, 'Ошибка регистрации'))
-      }
-    },
-    [],
-  )
-
   const refreshUser = useCallback(async () => {
     try {
       const me = await fetchMe()
@@ -171,29 +77,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       isAuthenticated: Boolean(user),
       login,
-      loginWithPhoneStart,
-      loginWithPhoneVerify,
-      register,
-      registerWithPhoneStart,
-      registerWithPhoneVerify,
-      registerWithEmail,
       refreshUser,
       logout,
       setUserFromSession,
     }),
-    [
-      user,
-      login,
-      loginWithPhoneStart,
-      loginWithPhoneVerify,
-      register,
-      registerWithPhoneStart,
-      registerWithPhoneVerify,
-      registerWithEmail,
-      refreshUser,
-      logout,
-      setUserFromSession,
-    ],
+    [user, login, refreshUser, logout, setUserFromSession],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
