@@ -1,193 +1,507 @@
 import {
+  Avatar,
+  Badge,
   Box,
+  Button,
   Drawer,
   IconButton,
   List,
   ListItemButton,
   ListItemIcon,
   ListItemText,
-  Toolbar,
-  AppBar,
+  Menu,
+  MenuItem,
+  Stack,
+  Tooltip,
   Typography,
-  Button,
-  Chip,
   useMediaQuery,
   useTheme,
-  Divider,
 } from '@mui/material'
 import MenuIcon from '@mui/icons-material/Menu'
-import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined'
-import BusinessOutlinedIcon from '@mui/icons-material/BusinessOutlined'
-import FlagOutlinedIcon from '@mui/icons-material/FlagOutlined'
-import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined'
-import RecommendOutlinedIcon from '@mui/icons-material/RecommendOutlined'
-import CompareArrowsOutlinedIcon from '@mui/icons-material/CompareArrowsOutlined'
-import CalculateOutlinedIcon from '@mui/icons-material/CalculateOutlined'
-import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
-import AccountBalanceOutlinedIcon from '@mui/icons-material/AccountBalanceOutlined'
-import ShowChartOutlinedIcon from '@mui/icons-material/ShowChartOutlined'
-import ScienceOutlinedIcon from '@mui/icons-material/ScienceOutlined'
-import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined'
-import TrendingUpOutlinedIcon from '@mui/icons-material/TrendingUpOutlined'
-import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined'
-import SupportAgentOutlinedIcon from '@mui/icons-material/SupportAgentOutlined'
-import { useMemo, useState, type ReactNode } from 'react'
+import MenuOpenRoundedIcon from '@mui/icons-material/MenuOpenRounded'
+import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded'
+import HomeRoundedIcon from '@mui/icons-material/HomeRounded'
+import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
+import AccountBalanceRoundedIcon from '@mui/icons-material/AccountBalanceRounded'
+import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
+import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
+import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded'
+import AssignmentRoundedIcon from '@mui/icons-material/AssignmentRounded'
+import TopicRoundedIcon from '@mui/icons-material/TopicRounded'
+import EventNoteRoundedIcon from '@mui/icons-material/EventNoteRounded'
+import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded'
+import SupportAgentRoundedIcon from '@mui/icons-material/SupportAgentRounded'
+import NotificationsNoneRoundedIcon from '@mui/icons-material/NotificationsNoneRounded'
+import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { listCompanies } from '@/api/companies'
 import { useAuth } from '@/contexts/AuthContext'
-import { roleLabels } from '@/data/labels'
 
-const DRAWER_WIDTH = 268
+const DRAWER_WIDTH = 260
+const RAIL_WIDTH = 72
+const COLLAPSE_KEY = 'alfa_nav_collapsed'
 
-type NavItem = { to: string; label: string; icon: ReactNode; roles?: string[] }
+type NavItem = { to: string; label: string; icon: ReactNode; end?: boolean }
+type NavGroup = { title: string; items: NavItem[] }
 
-const entrepreneurNav: NavItem[] = [
-  { to: '/app', label: 'Обзор', icon: <DashboardOutlinedIcon /> },
-  { to: '/app/company', label: 'Профиль компании', icon: <BusinessOutlinedIcon /> },
-  { to: '/app/goals', label: 'Зачем кредит', icon: <FlagOutlinedIcon /> },
-  { to: '/app/ai', label: 'AI-консультант', icon: <SmartToyOutlinedIcon /> },
-  { to: '/app/recommendations', label: 'Подбор кредитов', icon: <RecommendOutlinedIcon /> },
-  { to: '/app/compare', label: 'Сравнение', icon: <CompareArrowsOutlinedIcon /> },
-  { to: '/app/calculator', label: 'Калькулятор', icon: <CalculateOutlinedIcon /> },
-  { to: '/app/applications', label: 'Заявки', icon: <DescriptionOutlinedIcon /> },
-  { to: '/app/statements', label: 'Выписка', icon: <AccountBalanceOutlinedIcon /> },
-  { to: '/app/forecast', label: 'Прогноз cash flow', icon: <ShowChartOutlinedIcon /> },
-  { to: '/app/scenarios', label: 'Scenario Lab', icon: <ScienceOutlinedIcon /> },
-  { to: '/app/readiness', label: 'Готовность', icon: <FactCheckOutlinedIcon /> },
-  { to: '/app/roi', label: 'Окупаемость', icon: <TrendingUpOutlinedIcon /> },
-  { to: '/app/calendar', label: 'Календарь', icon: <CalendarMonthOutlinedIcon /> },
+const iconSx = { fontSize: 22 }
+
+const entrepreneurGroups: NavGroup[] = [
+  {
+    title: 'Бизнес',
+    items: [
+      { to: '/app', label: 'Главная', icon: <HomeRoundedIcon sx={iconSx} />, end: true },
+      { to: '/app/company', label: 'Компания', icon: <ApartmentRoundedIcon sx={iconSx} /> },
+      {
+        to: '/app/statements',
+        label: 'Финансовый профиль',
+        icon: <AccountBalanceRoundedIcon sx={iconSx} />,
+      },
+    ],
+  },
+  {
+    title: 'Подбор кредита',
+    items: [
+      { to: '/app/ai', label: 'AI-консультант', icon: <AutoAwesomeRoundedIcon sx={iconSx} /> },
+      { to: '/app/recommendations', label: 'Подбор', icon: <TuneRoundedIcon sx={iconSx} /> },
+      {
+        to: '/app/scenarios',
+        label: 'Сценарии и расчёты',
+        icon: <InsightsRoundedIcon sx={iconSx} />,
+      },
+    ],
+  },
+  {
+    title: 'Заявки',
+    items: [
+      { to: '/app/applications', label: 'Мои заявки', icon: <AssignmentRoundedIcon sx={iconSx} /> },
+      { to: '/app/documents', label: 'Документы', icon: <TopicRoundedIcon sx={iconSx} /> },
+    ],
+  },
+  {
+    title: 'Сервис',
+    items: [
+      {
+        to: '/app/calendar',
+        label: 'Календарь платежей',
+        icon: <EventNoteRoundedIcon sx={iconSx} />,
+      },
+      { to: '/app/team', label: 'Команда', icon: <PeopleAltRoundedIcon sx={iconSx} /> },
+      { to: '/app/help', label: 'Помощь', icon: <SupportAgentRoundedIcon sx={iconSx} /> },
+    ],
+  },
 ]
 
-const managerNav: NavItem[] = [
-  { to: '/app/manager', label: 'Очередь заявок', icon: <SupportAgentOutlinedIcon /> },
+const managerGroups: NavGroup[] = [
+  {
+    title: 'Работа',
+    items: [
+      {
+        to: '/app/manager',
+        label: 'Очередь заявок',
+        icon: <AssignmentRoundedIcon sx={iconSx} />,
+      },
+    ],
+  },
 ]
+
+function initials(name?: string): string {
+  if (!name) return '·'
+  const parts = name.trim().split(/\s+/)
+  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || '·'
+}
+
+function AlfaMark({ size = 32 }: { size?: number }) {
+  return (
+    <Box
+      aria-hidden
+      sx={{
+        width: size,
+        height: size,
+        borderRadius: 1.25,
+        bgcolor: '#EF3124',
+        display: 'grid',
+        placeItems: 'center',
+        flexShrink: 0,
+      }}
+    >
+      <Box
+        component="span"
+        sx={{
+          color: '#fff',
+          fontFamily: 'Manrope, sans-serif',
+          fontWeight: 800,
+          fontSize: size * 0.55,
+          lineHeight: 1,
+          letterSpacing: '-0.04em',
+          borderBottom: '2px solid #fff',
+          pb: '1px',
+        }}
+      >
+        A
+      </Box>
+    </Box>
+  )
+}
 
 export function AppLayout() {
-  const { user, logout } = useAuth()
+  const { user, logout, selectCompany } = useAuth()
   const navigate = useNavigate()
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down('md'))
-  const [open, setOpen] = useState(false)
-
-  const items = useMemo(() => {
-    if (!user) return []
-    if (user.role === 'manager') return managerNav
-    if (user.role === 'accountant') {
-      return entrepreneurNav.filter((i) =>
-        ['/app', '/app/company', '/app/statements', '/app/forecast', '/app/calendar', '/app/roi'].includes(i.to),
-      )
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(COLLAPSE_KEY) === '1'
+    } catch {
+      return false
     }
-    return entrepreneurNav
+  })
+  const [companyAnchor, setCompanyAnchor] = useState<null | HTMLElement>(null)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+  }, [collapsed])
+
+  const rail = !isMobile && collapsed
+  const navWidth = rail ? RAIL_WIDTH : DRAWER_WIDTH
+
+  const companiesQ = useQuery({
+    queryKey: ['companies'],
+    queryFn: listCompanies,
+    enabled: Boolean(user) && user?.role !== 'manager',
+  })
+
+  const groups = useMemo(() => {
+    if (!user) return []
+    if (user.role === 'manager') return managerGroups
+    if (user.role === 'accountant') {
+      return entrepreneurGroups
+        .map((g) => ({
+          ...g,
+          items: g.items.filter((i) =>
+            ['/app', '/app/company', '/app/statements', '/app/calendar', '/app/help'].includes(i.to),
+          ),
+        }))
+        .filter((g) => g.items.length > 0)
+    }
+    return entrepreneurGroups
   }, [user])
 
+  const activeCompany =
+    companiesQ.data?.find((c) => c.id === user?.companyId) ?? companiesQ.data?.[0] ?? null
+
+  function toggleCollapsed() {
+    setCollapsed((v) => !v)
+  }
+
   const drawer = (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <Toolbar sx={{ gap: 1.5, px: 2 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', bgcolor: '#F7F8FA' }}>
+      {/* Logo ↔ rail toggle */}
+      <Box
+        sx={{
+          px: rail ? 0 : 1.5,
+          pt: 1.75,
+          pb: 1.25,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: rail ? 'center' : 'space-between',
+          gap: 0.5,
+        }}
+      >
+        {rail ? (
+          <Tooltip title="Развернуть меню" placement="right">
+            <IconButton
+              onClick={toggleCollapsed}
+              aria-label="Развернуть меню"
+              sx={{
+                p: 0.75,
+                borderRadius: 2,
+                '&:hover': { bgcolor: 'rgba(11,31,53,0.04)' },
+              }}
+            >
+              <AlfaMark size={34} />
+            </IconButton>
+          </Tooltip>
+        ) : (
+          <>
+            <Stack direction="row" alignItems="center" spacing={1.25} sx={{ minWidth: 0, pl: 0.5 }}>
+              <AlfaMark size={32} />
+              <Box sx={{ minWidth: 0 }}>
+                <Typography
+                  sx={{
+                    fontFamily: 'Manrope, sans-serif',
+                    fontWeight: 800,
+                    fontSize: 15,
+                    color: '#0B1F35',
+                    letterSpacing: '-0.02em',
+                    lineHeight: 1.15,
+                  }}
+                >
+                  Альфа‑Банк
+                </Typography>
+                <Typography sx={{ fontSize: 11, color: '#8A96A3', fontWeight: 600 }}>
+                  Бизнес Кредит
+                </Typography>
+              </Box>
+            </Stack>
+            <Tooltip title="Свернуть в панель">
+              <IconButton
+                onClick={toggleCollapsed}
+                size="small"
+                aria-label="Свернуть меню"
+                sx={{
+                  color: '#5A6B7D',
+                  borderRadius: 1.5,
+                  border: '1px solid rgba(11,31,53,0.08)',
+                  bgcolor: '#fff',
+                  width: 32,
+                  height: 32,
+                  '&:hover': { bgcolor: '#fff', borderColor: 'rgba(11,31,53,0.16)' },
+                }}
+              >
+                <ChevronLeftRoundedIcon sx={{ fontSize: 20 }} />
+              </IconButton>
+            </Tooltip>
+          </>
+        )}
+      </Box>
+
+      <Box sx={{ flex: 1, overflow: 'auto', px: rail ? 0.75 : 1.25, pb: 1 }}>
+        {groups.map((group) => (
+          <Box key={group.title} sx={{ mb: rail ? 1 : 1.75 }}>
+            {!rail && (
+              <Typography
+                sx={{
+                  px: 1.25,
+                  mb: 0.5,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  color: '#A0AAB4',
+                }}
+              >
+                {group.title}
+              </Typography>
+            )}
+            {rail && (
+              <Box
+                sx={{
+                  height: 1,
+                  bgcolor: 'rgba(11,31,53,0.06)',
+                  mx: 1,
+                  mb: 0.75,
+                  mt: 0.25,
+                }}
+              />
+            )}
+            <List disablePadding>
+              {group.items.map((item) => {
+                const btn = (
+                  <ListItemButton
+                    key={item.to}
+                    component={NavLink}
+                    to={item.to}
+                    end={item.end}
+                    onClick={() => setMobileOpen(false)}
+                    sx={{
+                      borderRadius: 2,
+                      py: rail ? 1.1 : 0.85,
+                      px: rail ? 0 : 1.25,
+                      mb: 0.2,
+                      justifyContent: rail ? 'center' : 'flex-start',
+                      color: '#5A6B7D',
+                      minHeight: rail ? 44 : undefined,
+                      '&.active': {
+                        bgcolor: '#fff',
+                        color: '#0B1F35',
+                        boxShadow: '0 1px 4px rgba(11,31,53,0.06)',
+                        '& .MuiListItemIcon-root': { color: '#EF3124' },
+                      },
+                      '&:hover': { bgcolor: 'rgba(255,255,255,0.7)' },
+                    }}
+                  >
+                    <ListItemIcon
+                      sx={{
+                        minWidth: rail ? 0 : 40,
+                        color: 'inherit',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      {item.icon}
+                    </ListItemIcon>
+                    {!rail && (
+                      <ListItemText
+                        primary={item.label}
+                        primaryTypographyProps={{ fontSize: 13.5, fontWeight: 600 }}
+                      />
+                    )}
+                  </ListItemButton>
+                )
+                return rail ? (
+                  <Tooltip key={item.to} title={item.label} placement="right" enterDelay={300}>
+                    <Box>{btn}</Box>
+                  </Tooltip>
+                ) : (
+                  btn
+                )
+              })}
+            </List>
+          </Box>
+        ))}
+      </Box>
+
+      {user?.role !== 'manager' && (
         <Box
           sx={{
-            width: 32,
-            height: 32,
-            borderRadius: 1,
-            bgcolor: 'primary.main',
-            color: '#fff',
-            display: 'grid',
-            placeItems: 'center',
-            fontFamily: 'Manrope, sans-serif',
-            fontWeight: 800,
-            fontSize: 18,
+            m: rail ? 1 : 1.5,
+            p: rail ? 1 : 1.75,
+            borderRadius: 2.5,
+            bgcolor: '#fff',
+            border: '1px solid rgba(11,31,53,0.06)',
+            boxShadow: '0 2px 10px rgba(11,31,53,0.04)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: rail ? 'center' : 'stretch',
           }}
         >
-          A
+          {rail ? (
+            <Tooltip title="Иванова А.С. · Написать" placement="right">
+              <IconButton
+                onClick={() => navigate('/app/help')}
+                sx={{
+                  p: 0.5,
+                  '&:hover': { bgcolor: 'rgba(239,49,36,0.06)' },
+                }}
+              >
+                <Avatar
+                  sx={{
+                    width: 36,
+                    height: 36,
+                    bgcolor: 'rgba(239,49,36,0.12)',
+                    color: '#EF3124',
+                    fontSize: 13,
+                    fontWeight: 700,
+                  }}
+                >
+                  ИА
+                </Avatar>
+              </IconButton>
+            </Tooltip>
+          ) : (
+            <>
+              <Typography sx={{ fontSize: 11, color: '#8A96A3', fontWeight: 600, mb: 0.75 }}>
+                Ваш менеджер
+              </Typography>
+              <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.25 }}>
+                <Avatar
+                  sx={{
+                    width: 36,
+                    height: 36,
+                    bgcolor: 'rgba(239,49,36,0.12)',
+                    color: '#EF3124',
+                    fontSize: 13,
+                    fontWeight: 700,
+                  }}
+                >
+                  ИА
+                </Avatar>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#0B1F35', lineHeight: 1.2 }}>
+                    Иванова А.С.
+                  </Typography>
+                  <Typography sx={{ fontSize: 11, color: '#8A96A3' }}>Персональный менеджер</Typography>
+                </Box>
+              </Stack>
+              <Button
+                fullWidth
+                size="small"
+                variant="outlined"
+                onClick={() => navigate('/app/help')}
+                sx={{
+                  borderRadius: 2,
+                  borderColor: 'rgba(11,31,53,0.14)',
+                  color: '#0B1F35',
+                  fontWeight: 600,
+                  fontSize: 12,
+                  py: 0.85,
+                }}
+              >
+                Написать менеджеру
+              </Button>
+            </>
+          )}
         </Box>
-        <Box>
-          <Typography variant="subtitle1" sx={{ fontFamily: 'Manrope, sans-serif', fontWeight: 800, lineHeight: 1.1 }}>
-            Alfa Credit
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Business
-          </Typography>
+      )}
+
+      {rail && (
+        <Box sx={{ pb: 1.5, display: 'grid', placeItems: 'center' }}>
+          <Tooltip title="Развернуть меню" placement="right">
+            <IconButton
+              onClick={toggleCollapsed}
+              size="small"
+              aria-label="Развернуть меню"
+              sx={{
+                color: '#5A6B7D',
+                border: '1px solid rgba(11,31,53,0.08)',
+                bgcolor: '#fff',
+                width: 32,
+                height: 32,
+              }}
+            >
+              <MenuOpenRoundedIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </Tooltip>
         </Box>
-      </Toolbar>
-      <Divider />
-      <List sx={{ px: 1, py: 1.5, flex: 1, overflow: 'auto' }}>
-        {items.map((item) => (
-          <ListItemButton
-            key={item.to}
-            component={NavLink}
-            to={item.to}
-            end={item.to === '/app'}
-            onClick={() => setOpen(false)}
-            sx={{
-              borderRadius: 1.5,
-              mb: 0.25,
-              '&.active': {
-                bgcolor: 'rgba(239,49,36,0.08)',
-                color: 'primary.main',
-                '& .MuiListItemIcon-root': { color: 'primary.main' },
-              },
-            }}
-          >
-            <ListItemIcon sx={{ minWidth: 40 }}>{item.icon}</ListItemIcon>
-            <ListItemText primary={item.label} primaryTypographyProps={{ fontSize: 14, fontWeight: 550 }} />
-          </ListItemButton>
-        ))}
-      </List>
-      <Box sx={{ p: 2 }}>
-        <Typography variant="caption" color="text.secondary" display="block">
-          {user?.fullName}
-        </Typography>
-        <Chip size="small" label={user ? roleLabels[user.role] : ''} sx={{ mt: 0.5, mb: 1 }} />
-        <Button
-          fullWidth
-          variant="outlined"
-          color="secondary"
-          onClick={() => {
-            logout()
-            navigate('/login')
-          }}
-        >
-          Выйти
-        </Button>
-      </Box>
+      )}
     </Box>
   )
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-      <AppBar position="fixed" sx={{ zIndex: (t) => t.zIndex.drawer + 1 }}>
-        <Toolbar>
-          {isMobile && (
-            <IconButton edge="start" onClick={() => setOpen(true)} sx={{ mr: 1 }}>
-              <MenuIcon />
-            </IconButton>
-          )}
-          <Typography variant="h6" sx={{ flexGrow: 1, fontFamily: 'Manrope, sans-serif', fontWeight: 700 }}>
-            {isMobile ? 'Alfa Credit' : 'Кабинет'}
-          </Typography>
-          <Chip
-            size="small"
-            color="primary"
-            variant="outlined"
-            label="MVP demo · не оферта банка"
-          />
-        </Toolbar>
-      </AppBar>
-
-      <Box component="nav" sx={{ width: { md: DRAWER_WIDTH }, flexShrink: { md: 0 } }}>
+    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: '#F3F5F8' }}>
+      <Box
+        component="nav"
+        sx={{
+          width: { md: navWidth },
+          flexShrink: { md: 0 },
+          transition: theme.transitions.create('width', {
+            easing: theme.transitions.easing.sharp,
+            duration: theme.transitions.duration.enteringScreen,
+          }),
+        }}
+      >
         {isMobile ? (
-          <Drawer open={open} onClose={() => setOpen(false)} ModalProps={{ keepMounted: true }}>
-            <Box sx={{ width: DRAWER_WIDTH }}>{drawer}</Box>
+          <Drawer
+            open={mobileOpen}
+            onClose={() => setMobileOpen(false)}
+            ModalProps={{ keepMounted: true }}
+          >
+            <Box sx={{ width: DRAWER_WIDTH, height: '100%' }}>{drawer}</Box>
           </Drawer>
         ) : (
           <Drawer
             variant="permanent"
             open
             sx={{
+              width: navWidth,
+              flexShrink: 0,
               '& .MuiDrawer-paper': {
-                width: DRAWER_WIDTH,
+                width: navWidth,
                 boxSizing: 'border-box',
-                borderRight: '1px solid',
-                borderColor: 'divider',
-                bgcolor: 'rgba(255,255,255,0.92)',
+                borderRight: '1px solid rgba(11,31,53,0.06)',
+                bgcolor: '#F7F8FA',
+                overflowX: 'hidden',
+                transition: theme.transitions.create('width', {
+                  easing: theme.transitions.easing.sharp,
+                  duration: theme.transitions.duration.enteringScreen,
+                }),
               },
             }}
           >
@@ -200,12 +514,123 @@ export function AppLayout() {
         component="main"
         sx={{
           flexGrow: 1,
-          width: { md: `calc(100% - ${DRAWER_WIDTH}px)` },
-          p: { xs: 2, md: 3 },
+          width: { md: `calc(100% - ${navWidth}px)` },
+          minWidth: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          transition: theme.transitions.create('width', {
+            easing: theme.transitions.easing.sharp,
+            duration: theme.transitions.duration.enteringScreen,
+          }),
         }}
       >
-        <Toolbar />
-        <Outlet />
+        <Box
+          sx={{
+            position: 'sticky',
+            top: 0,
+            zIndex: 10,
+            bgcolor: 'rgba(243,245,248,0.92)',
+            backdropFilter: 'blur(8px)',
+            borderBottom: '1px solid rgba(11,31,53,0.05)',
+            px: { xs: 2, md: 3 },
+            py: 1.25,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1.5,
+          }}
+        >
+          {isMobile && (
+            <IconButton edge="start" onClick={() => setMobileOpen(true)} size="small">
+              <MenuIcon />
+            </IconButton>
+          )}
+          <Box sx={{ flex: 1 }} />
+
+          <IconButton size="small" sx={{ color: '#5A6B7D' }}>
+            <Badge badgeContent={4} color="error" overlap="circular">
+              <NotificationsNoneRoundedIcon />
+            </Badge>
+          </IconButton>
+
+          {activeCompany && (
+            <>
+              <Button
+                onClick={(e) => setCompanyAnchor(e.currentTarget)}
+                endIcon={<KeyboardArrowDownRoundedIcon sx={{ fontSize: 18 }} />}
+                sx={{
+                  maxWidth: 220,
+                  borderRadius: 2,
+                  px: 1.25,
+                  py: 0.6,
+                  bgcolor: '#fff',
+                  border: '1px solid rgba(11,31,53,0.08)',
+                  color: '#0B1F35',
+                  fontWeight: 600,
+                  fontSize: 13,
+                  textTransform: 'none',
+                  '& .MuiButton-endIcon': { ml: 0.5 },
+                }}
+              >
+                <Typography
+                  noWrap
+                  sx={{ fontSize: 13, fontWeight: 600, maxWidth: 160, textAlign: 'left' }}
+                >
+                  {activeCompany.name}
+                </Typography>
+              </Button>
+              <Menu
+                anchorEl={companyAnchor}
+                open={Boolean(companyAnchor)}
+                onClose={() => setCompanyAnchor(null)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+              >
+                {(companiesQ.data ?? []).map((c) => (
+                  <MenuItem
+                    key={c.id}
+                    selected={c.id === user?.companyId}
+                    onClick={() => {
+                      selectCompany(c.id)
+                      setCompanyAnchor(null)
+                    }}
+                  >
+                    {c.name}
+                  </MenuItem>
+                ))}
+                <MenuItem
+                  onClick={() => {
+                    setCompanyAnchor(null)
+                    navigate('/select-company')
+                  }}
+                >
+                  + Добавить компанию
+                </MenuItem>
+              </Menu>
+            </>
+          )}
+
+          <Avatar
+            onClick={() => {
+              logout()
+              navigate('/login')
+            }}
+            title="Выйти"
+            sx={{
+              width: 34,
+              height: 34,
+              bgcolor: '#0B1F35',
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            {initials(user?.fullName)}
+          </Avatar>
+        </Box>
+
+        <Box sx={{ flex: 1, p: { xs: 2, md: 3 }, pt: { xs: 2, md: 2.5 } }}>
+          <Outlet />
+        </Box>
       </Box>
     </Box>
   )

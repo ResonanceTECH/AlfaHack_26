@@ -30,6 +30,7 @@ class RegistryCompanyOut(APIModel):
     registration_date: date
     region: str
     registry_status: str = "ACTIVE"
+    ogrn: str | None = None
 
 
 class RegistryLookupOut(APIModel):

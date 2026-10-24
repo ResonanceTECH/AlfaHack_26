@@ -7,6 +7,7 @@ import { VerifyEmailPage } from '@/pages/VerifyEmailPage'
 import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage'
 import { ResetPasswordPage } from '@/pages/ResetPasswordPage'
 import { CompanyCreatePage } from '@/pages/CompanyCreatePage'
+import { SelectCompanyPage } from '@/pages/SelectCompanyPage'
 import { OnboardingFinancesPage } from '@/pages/OnboardingFinancesPage'
 import { OnboardingConfirmPage } from '@/pages/OnboardingConfirmPage'
 import { DashboardPage } from '@/pages/DashboardPage'
@@ -26,6 +27,7 @@ import { ScenarioLabPage } from '@/pages/ScenarioLabPage'
 import { ReadinessPage } from '@/pages/ReadinessPage'
 import { RoiPage } from '@/pages/RoiPage'
 import { CalendarPage } from '@/pages/CalendarPage'
+import { StubSectionPage } from '@/pages/StubSectionPage'
 import type { ReactNode } from 'react'
 
 function Protected({
@@ -48,7 +50,7 @@ function Protected({
     user.role !== 'manager' &&
     user.role !== 'risk_analyst' &&
     user.role !== 'admin'
-  if (needsCompany) return <Navigate to="/onboarding/company" replace />
+  if (needsCompany) return <Navigate to="/select-company" replace />
   return children
 }
 
@@ -60,6 +62,14 @@ export function AppRouter() {
       <Route path="/verify-email" element={<VerifyEmailPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route
+        path="/select-company"
+        element={
+          <Protected allowWithoutCompany roles={['entrepreneur', 'accountant', 'admin']}>
+            <SelectCompanyPage />
+          </Protected>
+        }
+      />
       <Route
         path="/onboarding/company"
         element={
@@ -116,6 +126,9 @@ export function AppRouter() {
         <Route path="readiness" element={<ReadinessPage />} />
         <Route path="roi" element={<RoiPage />} />
         <Route path="calendar" element={<CalendarPage />} />
+        <Route path="documents" element={<StubSectionPage />} />
+        <Route path="team" element={<StubSectionPage />} />
+        <Route path="help" element={<StubSectionPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -16,16 +16,18 @@ function persistSession(session: AuthSession): AuthSession {
 }
 
 function mapUser(raw: Record<string, unknown>): User {
+  const roleRaw = String(raw.role ?? 'entrepreneur').toLowerCase()
+  const statusRaw = String(raw.status ?? 'active').toLowerCase()
   return {
     id: String(raw.id),
     email: (raw.email as string | null | undefined) ?? undefined,
     phone: (raw.phone as string | null | undefined) ?? undefined,
     fullName: String(raw.fullName ?? raw.full_name ?? ''),
-    role: (raw.role as User['role']) ?? 'entrepreneur',
+    role: (roleRaw as User['role']) || 'entrepreneur',
     companyId: (raw.companyId ?? raw.company_id) as string | undefined,
     emailVerified: Boolean(raw.emailVerified ?? raw.email_verified),
     phoneVerified: Boolean(raw.phoneVerified ?? raw.phone_verified),
-    status: (raw.status as User['status']) ?? 'active',
+    status: (statusRaw as User['status']) || 'active',
   }
 }
 
@@ -49,7 +51,7 @@ export function getStoredUser(): User | null {
 }
 
 export async function loginEmailRequest(email: string, password: string): Promise<AuthSession> {
-  const { data } = await api.post('/auth/login/email', { email, password })
+  const { data } = await api.post('/auth/login', { login: email, password })
   return persistSession(mapSession(data as Record<string, unknown>))
 }
 

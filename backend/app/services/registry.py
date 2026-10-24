@@ -37,6 +37,7 @@ class RegistryCompany:
             "registration_date": self.registration_date.isoformat(),
             "region": self.region,
             "registry_status": self.registry_status,
+            "ogrn": self.ogrn,
         }
 
 

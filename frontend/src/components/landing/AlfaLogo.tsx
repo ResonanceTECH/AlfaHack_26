@@ -4,10 +4,12 @@ import { Link as RouterLink } from 'react-router-dom'
 type AlfaLogoProps = {
   to?: string
   compact?: boolean
+  /** Light surfaces (cabinet sidebar) vs dark hero */
+  ink?: boolean
 }
 
 /** Red square + white A — classic Alfa mark */
-export function AlfaLogo({ to = '/', compact = false }: AlfaLogoProps) {
+export function AlfaLogo({ to = '/', compact = false, ink = false }: AlfaLogoProps) {
   const mark = (
     <Stack direction="row" alignItems="center" spacing={1.25} sx={{ textDecoration: 'none' }}>
       <Box
@@ -40,7 +42,7 @@ export function AlfaLogo({ to = '/', compact = false }: AlfaLogoProps) {
       </Box>
       <Typography
         sx={{
-          color: '#fff',
+          color: ink ? '#0B1F35' : '#fff',
           fontFamily: 'Manrope, sans-serif',
           fontWeight: 700,
           fontSize: compact ? 15 : 17,

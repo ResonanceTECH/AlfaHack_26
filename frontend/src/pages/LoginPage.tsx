@@ -36,10 +36,8 @@ export function LoginPage() {
   function goAfterAuth(user: { role: string; companyId?: string }) {
     if (user.role === 'manager' || user.role === 'risk_analyst') {
       navigate('/app/manager')
-    } else if (!user.companyId) {
-      navigate('/onboarding/company')
     } else {
-      navigate('/app')
+      navigate('/select-company')
     }
   }
 
