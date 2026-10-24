@@ -91,9 +91,7 @@ Empty: `companies.length === 0` (или `?empty=1` для превью) → firs
 
 ### `GET /companies/{companyId}/dashboard`
 
-Превью «Что вас ждёт в кабинете» для выбранной карточки.
-
-Используется: `applicationsActive`, `applicationsTotal`, первая task (`title`, `dueAt`).
+Превью после «Подробнее»: компания / регион / роль из list item; KPI — `applicationsActive`.
 
 Код: `getCompanyDashboard(companyId)`.
 
@@ -117,12 +115,13 @@ Empty: `companies.length === 0` (или `?empty=1` для превью) → firs
     "name": "ООО «…»",
     "registrationDate": "2021-04-15",
     "region": "Москва",
-    "registryStatus": "ACTIVE"
+    "registryStatus": "ACTIVE",
+    "ogrn": "1027700000123"
   }
 }
 ```
 
-UI: карточка «Найдено в реестре» или warning (не найдено / ликвидирована / невалидный ИНН).
+UI: справа «Подробнее о компании» (ОГРН/ОГРНИП, регион, статус, роль) → «Подтвердить доступ»; warning если не найдено / ликвидирована / невалидный ИНН.
 
 Код: `lookupCompanyByInn(inn)`.
 
