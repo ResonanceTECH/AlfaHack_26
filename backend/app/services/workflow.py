@@ -346,8 +346,12 @@ def public_checks(app: CreditApplication) -> list[ApplicationCheck]:
     return [c for c in (app.checks or []) if c.audience == CheckAudience.PUBLIC.value]
 
 
-def serialize_check(check: ApplicationCheck) -> dict[str, Any]:
-    return {
+def analyst_visible_checks(app: CreditApplication) -> list[ApplicationCheck]:
+    return list(app.checks or [])
+
+
+def serialize_check(check: ApplicationCheck, *, include_internal: bool = False) -> dict[str, Any]:
+    data: dict[str, Any] = {
         "id": check.id,
         "check_key": check.check_key,
         "status": check.status,
@@ -356,3 +360,8 @@ def serialize_check(check: ApplicationCheck) -> dict[str, Any]:
         "explanation": check.explanation,
         "created_at": check.created_at,
     }
+    if include_internal:
+        data["audience"] = check.audience
+        data["workflow_id"] = check.workflow_id
+        data["payload"] = check.payload or {}
+    return data

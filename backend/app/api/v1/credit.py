@@ -7,19 +7,18 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import or_, select
 from sqlalchemy.orm import joinedload
 
-from app.core.enums import GoalType, ProductStatus, ScheduleType
+from app.core.enums import ProductStatus, ScheduleType
 from app.core.jsonutil import jsonable
 from app.deps import CorrelationId, CurrentUser, DbDep
 from app.models.company import Company
 from app.models.credit import CreditProduct, CreditRecommendation
-from app.models.finance import CreditScenario, FinancialSnapshot
+from app.models.finance import FinancialSnapshot
 from app.models.funding import FundingNeed
 from app.models.policy import CreditPolicy
 from app.schemas.credit import (
     CATALOG_VERSION,
     POLICY_VERSION_DEFAULT,
     SCORE_MEANING,
-    CalculateRequest,
     CreditCalculationRequest,
     CreditCalculationResponse,
     CreditCompareRequest,
@@ -32,18 +31,9 @@ from app.schemas.credit import (
     CreditProductListItem,
     CreditProductOut,
     CreditProductRuleOut,
-    CreditRecommendationOut,
     CreditScheduleItem,
-    PaymentRowOut,
-    PaymentScheduleOut,
     ProjectEvaluateOut,
     ProjectEvaluateRequest,
-    ReadinessRequest,
-    ReadinessResultOut,
-    RecommendationsRequest,
-    RecommendationsResponse,
-    ScenarioRequest,
-    ScenarioResultOut,
 )
 from app.services.access import require_company_access
 from app.services.audit import write_audit
@@ -52,9 +42,7 @@ from app.services.finance_engine import (
     build_payment_schedule,
     evaluate_project,
     round2,
-    run_credit_scenario,
 )
-from app.services.readiness import compute_readiness
 from app.services.recommendations import business_age_months, rank_products
 
 router = APIRouter(tags=["credit"])
@@ -161,16 +149,6 @@ def list_credit_products(db: DbDep, user: CurrentUser) -> CreditProductCatalogOu
 def get_credit_product(product_id: str, db: DbDep, user: CurrentUser) -> CreditProductOut:
     _ = user
     return _serialize_product(_get_published_product(db, product_id))
-
-
-@router.get("/credit/products", response_model=list[CreditProductListItem], deprecated=True)
-def list_products_legacy(db: DbDep, user: CurrentUser) -> list[CreditProductListItem]:
-    return list_credit_products(db, user).items
-
-
-@router.get("/credit/products/{product_id}", response_model=CreditProductOut, deprecated=True)
-def get_product_legacy(product_id: str, db: DbDep, user: CurrentUser) -> CreditProductOut:
-    return get_credit_product(product_id, db, user)
 
 
 def _active_policy_version(db: DbDep) -> str:
@@ -454,158 +432,7 @@ def credit_calculations(
     )
 
 
-@router.post("/credit/recommendations", response_model=RecommendationsResponse, deprecated=True)
-def recommendations(
-    body: RecommendationsRequest, db: DbDep, user: CurrentUser, cid: CorrelationId
-) -> RecommendationsResponse:
-    match = credit_matches(
-        company_id=body.company_id,
-        body=CreditMatchRequest(
-            funding_need_id=body.business_goal_id,
-            requested_amount=body.amount,
-            term_months=body.term_months,
-        ),
-        db=db,
-        user=user,
-        cid=cid,
-    )
-    return RecommendationsResponse(
-        company_id=match.company_id,
-        business_goal=match.goal_type or GoalType.OTHER,
-        requested_amount=match.requested_amount,
-        currency=match.currency,
-        recommendations=[
-            CreditRecommendationOut(
-                product_id=r.product_id,
-                product_type=r.product_type,
-                product_name=r.product_name,
-                match_score=r.ranking_score,
-                eligible_by_basic_rules=r.eligible_by_basic_rules,
-                estimated_monthly_payment=r.estimated_monthly_payment or Decimal("0"),
-                estimated_rate=r.estimated_rate or Decimal("0"),
-                recommended_amount=r.recommended_amount or match.requested_amount,
-                recommended_term=r.recommended_term or match.term_months,
-                reasons=r.reasons,
-                warnings=r.limitations,
-            )
-            for r in match.recommendations
-        ],
-        is_official_offer=False,
-        model_version=match.model_version,
-    )
-
-
-@router.post("/credit/calculate", response_model=PaymentScheduleOut, deprecated=True)
-def calculate(body: CalculateRequest, db: DbDep, user: CurrentUser) -> PaymentScheduleOut:
-    calc = credit_calculations(
-        body=CreditCalculationRequest(
-            product_id=body.product_id,
-            amount=body.amount,
-            currency=body.currency,
-            term_months=body.term_months,
-            annual_rate_percent=body.annual_rate,
-            repayment_type=body.schedule_type.value,
-            start_date=body.start_date,
-        ),
-        db=db,
-        user=user,
-    )
-    interest = round2(Decimal(str(calc.overpayment)) - Decimal(str(calc.total_fees)))
-    return PaymentScheduleOut(
-        schedule_type=calc.repayment_type,
-        amount=calc.amount,
-        term_months=calc.term_months,
-        annual_rate=calc.annual_rate_percent,
-        monthly_payment=calc.monthly_payment,
-        total_payment=calc.total_payments,
-        total_interest=interest,
-        total_fees=calc.total_fees,
-        rows=[
-            PaymentRowOut(
-                month=s.month,
-                date=s.date,
-                payment=s.payment,
-                principal=s.principal,
-                interest=s.interest,
-                fees=s.fees,
-                balance=s.remaining_principal,
-            )
-            for s in calc.schedule
-        ],
-        currency=calc.currency,
-    )
-
-@router.post("/credit/scenarios", response_model=ScenarioResultOut)
-def scenarios(body: ScenarioRequest, db: DbDep, user: CurrentUser) -> dict:
-    require_company_access(db, user, body.company_id, write=True)
-    params = body.params.model_dump()
-    result = run_credit_scenario(body.name, params)
-    if body.persist:
-        row = CreditScenario(
-            id=result["id"],
-            company_id=body.company_id,
-            name=body.name,
-            parameters=jsonable(result["params"]),
-            result=jsonable({k: v for k, v in result.items() if k != "params"}),
-        )
-        db.add(row)
-        db.commit()
-    return result
-
-@router.get("/credit/scenarios", response_model=list[ScenarioResultOut])
-def list_scenarios(company_id: str, db: DbDep, user: CurrentUser) -> list[dict]:
-    require_company_access(db, user, company_id)
-    rows = db.scalars(
-        select(CreditScenario)
-        .where(CreditScenario.company_id == company_id)
-        .order_by(CreditScenario.created_at.desc())
-    ).all()
-    out = []
-    for r in rows:
-        out.append(
-            {
-                "id": r.id,
-                "name": r.name,
-                "params": r.parameters,
-                **{k: v for k, v in r.result.items() if k not in ("id", "name")},
-                "created_at": r.created_at.isoformat() + "Z",
-            }
-        )
-    return out
-
-@router.post("/credit/readiness", response_model=ReadinessResultOut)
-def readiness(body: ReadinessRequest, db: DbDep, user: CurrentUser) -> dict:
-    require_company_access(db, user, body.company_id)
-    company = db.get(Company, body.company_id)
-    if company is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
-    financials = db.scalar(
-        select(FinancialSnapshot)
-        .where(FinancialSnapshot.company_id == body.company_id)
-        .order_by(FinancialSnapshot.updated_at.desc())
-    )
-    product = db.get(CreditProduct, body.product_id) if body.product_id else None
-    documents = []
-    if body.application_id:
-        from app.models.application import CreditApplication
-
-        app = db.get(CreditApplication, body.application_id)
-        if app is None or app.company_id != body.company_id:
-            from fastapi import HTTPException, status as http_status
-
-            raise HTTPException(http_status.HTTP_404_NOT_FOUND, detail="Заявка не найдена")
-        documents = list(app.documents)
-        if product is None:
-            product = db.get(CreditProduct, app.product_id)
-
-    return compute_readiness(
-        company=company,
-        financials=financials,
-        product=product,
-        documents=documents,
-        business_age_months=business_age_months(company.registration_date),
-    )
-
 @router.post("/projects/evaluate", response_model=ProjectEvaluateOut)
 def evaluate(body: ProjectEvaluateRequest, user: CurrentUser) -> dict:
+    _ = user
     return evaluate_project(body.model_dump())

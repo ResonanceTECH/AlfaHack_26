@@ -142,7 +142,9 @@ STATUS_TRANSITIONS: dict[ApplicationStatus, set[ApplicationStatus]] = {
         ApplicationStatus.VALIDATING,
         ApplicationStatus.IN_REVIEW,
         ApplicationStatus.DOCS_REQUESTED,
+        ApplicationStatus.APPROVED,
         ApplicationStatus.REJECTED,
+        ApplicationStatus.COUNTEROFFERED,
     },
     ApplicationStatus.VALIDATING: {
         ApplicationStatus.IN_REVIEW,
@@ -160,16 +162,20 @@ STATUS_TRANSITIONS: dict[ApplicationStatus, set[ApplicationStatus]] = {
     ApplicationStatus.DOCS_REQUESTED: {
         ApplicationStatus.IN_REVIEW,
         ApplicationStatus.VALIDATING,
+        ApplicationStatus.APPROVED,
         ApplicationStatus.REJECTED,
+        ApplicationStatus.COUNTEROFFERED,
     },
     ApplicationStatus.APPROVED: {
         ApplicationStatus.OFFER_ACCEPTED,
         ApplicationStatus.AGREEMENT_PREPARATION,
         ApplicationStatus.ISSUED,
         ApplicationStatus.REJECTED,
+        ApplicationStatus.COUNTEROFFERED,
     },
     ApplicationStatus.COUNTEROFFERED: {
         ApplicationStatus.OFFER_ACCEPTED,
+        ApplicationStatus.APPROVED,
         ApplicationStatus.REJECTED,
         ApplicationStatus.IN_REVIEW,
     },
