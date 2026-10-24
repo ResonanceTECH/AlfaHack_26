@@ -37,6 +37,7 @@ def load_application(db: Session, app_id: str) -> CreditApplication | None:
             joinedload(CreditApplication.assigned_manager),
             joinedload(CreditApplication.workflows),
             joinedload(CreditApplication.checks),
+            joinedload(CreditApplication.document_requests),
         )
         .where(CreditApplication.id == app_id)
     )

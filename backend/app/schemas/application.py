@@ -19,6 +19,49 @@ class DocumentOut(APIModel):
     status: str
 
 
+class DocumentMetaOut(APIModel):
+    id: str
+    doc_type: str
+    type: str
+    name: str
+    file_name: str | None = None
+    size: int = 0
+    mime_type: str | None = None
+    status: str
+    uploaded_at: datetime | None = None
+    review_status: str | None = None
+
+
+class RequiredDocumentSlot(APIModel):
+    doc_type: str
+    label: str
+    required: bool = True
+    status: str
+    document_id: str | None = None
+
+
+class ApplicationDocumentsOut(APIModel):
+    application_id: str
+    required: list[RequiredDocumentSlot] = []
+    documents: list[DocumentMetaOut] = []
+
+
+class DocumentRequestOut(APIModel):
+    id: str
+    doc_type: str
+    label: str | None = None
+    comment: str | None = None
+    status: str
+    due_at: datetime | None = None
+    created_at: datetime | None = None
+    satisfied_document_id: str | None = None
+
+
+class DocumentRequestRespondIn(APIModel):
+    document_ids: list[str] = Field(default_factory=list)
+    comment: str | None = None
+
+
 class CommentOut(APIModel):
     id: str
     author_id: str | None

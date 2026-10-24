@@ -1,23 +1,22 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
-from uuid import uuid4
 
-from fastapi import APIRouter, File, Header, HTTPException, Query, Response, UploadFile, status
+from fastapi import APIRouter, File, Form, Header, HTTPException, Query, Response, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
-from app.config import get_settings
 from app.core.enums import ApplicationStatus, ProductStatus, UserRole
 from app.deps import CorrelationId, CurrentUser, DbDep
-from app.models.application import ApplicationComment, ApplicationDocument, CreditApplication
+from app.models.application import ApplicationComment, CreditApplication
 from app.models.credit import CreditProduct
 from app.models.funding import FundingNeed
 from app.models.user import User
 from app.schemas.application import (
     ApplicationChecksOut,
     ApplicationCreate,
+    ApplicationDocumentsOut,
     ApplicationDraftCreate,
     ApplicationDraftCreated,
     ApplicationOut,
@@ -26,7 +25,11 @@ from app.schemas.application import (
     ApplicationUpdate,
     ApplicationValidationOut,
     DocsRequestIn,
+    DocumentMetaOut,
+    DocumentRequestOut,
+    DocumentRequestRespondIn,
     PublicCheckOut,
+    RequiredDocumentSlot,
     StatusUpdate,
     ValidationIssue,
 )
@@ -45,6 +48,15 @@ from app.services.applications import (
     validate_application,
 )
 from app.services.audit import write_audit
+from app.services.documents import (
+    create_document_request,
+    list_documents_bundle,
+    resolve_download_path,
+    respond_document_request,
+    serialize_document,
+    serialize_document_request,
+    upload_document as store_application_document,
+)
 from app.services.workflow import public_checks, serialize_check, transition_application
 
 router = APIRouter(tags=["applications"])
@@ -421,6 +433,190 @@ def application_public_checks(
     )
 
 
+@router.get(
+    "/companies/{company_id}/applications/{application_id}/documents",
+    response_model=ApplicationDocumentsOut,
+)
+def list_application_documents(
+    company_id: str, application_id: str, db: DbDep, user: CurrentUser
+) -> ApplicationDocumentsOut:
+    app = _company_app(db, company_id, application_id, user)
+    raw = list_documents_bundle(db, app)
+    return ApplicationDocumentsOut(
+        application_id=raw["application_id"],
+        required=[RequiredDocumentSlot(**s) for s in raw["required"]],
+        documents=[DocumentMetaOut(**d) for d in raw["documents"]],
+    )
+
+
+@router.post(
+    "/companies/{company_id}/applications/{application_id}/documents",
+    response_model=DocumentMetaOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_company_document(
+    company_id: str,
+    application_id: str,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+    file: UploadFile = File(...),
+    doc_type: str = Form(default="OTHER"),
+    document_request_id: str | None = Form(default=None),
+) -> DocumentMetaOut:
+    require_company_access(db, user, company_id, write=True)
+    app = _load_app(db, application_id)
+    if app.company_id != company_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Заявка не найдена")
+    require_application_access(db, user, app, write=True)
+
+    content = await file.read()
+    try:
+        doc = store_application_document(
+            db,
+            app=app,
+            user=user,
+            content=content,
+            filename=file.filename,
+            content_type=file.content_type,
+            doc_type=doc_type,
+            document_request_id=document_request_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="application_document",
+        entity_id=doc.id,
+        action="upload",
+        details={"application_id": app.id, "doc_type": doc.doc_type},
+        correlation_id=cid,
+    )
+    db.commit()
+    db.refresh(doc)
+    return DocumentMetaOut(**serialize_document(doc))
+
+
+@router.get(
+    "/companies/{company_id}/applications/{application_id}/documents/{document_id}",
+    response_model=DocumentMetaOut,
+)
+def get_application_document(
+    company_id: str, application_id: str, document_id: str, db: DbDep, user: CurrentUser
+) -> DocumentMetaOut:
+    app = _company_app(db, company_id, application_id, user)
+    doc = next((d for d in (app.documents or []) if d.id == document_id), None)
+    if doc is None or (doc.status or "") == "requested":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Документ не найден")
+    return DocumentMetaOut(**serialize_document(doc))
+
+
+@router.get(
+    "/companies/{company_id}/applications/{application_id}/documents/{document_id}/download",
+)
+def download_application_document(
+    company_id: str, application_id: str, document_id: str, db: DbDep, user: CurrentUser
+) -> Response:
+    app = _company_app(db, company_id, application_id, user)
+    doc = next((d for d in (app.documents or []) if d.id == document_id), None)
+    if doc is None or (doc.status or "") == "requested":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Документ не найден")
+    path = resolve_download_path(doc)
+    if path is None:
+        body = (
+            f"Demo stub for document {doc.id}\n"
+            f"type={doc.document_type or doc.doc_type}\n"
+            f"name={doc.file_name or doc.name}\n"
+        ).encode("utf-8")
+        return Response(
+            content=body,
+            media_type="text/plain; charset=utf-8",
+            headers={
+                "Content-Disposition": f'attachment; filename="stub-{document_id[:8]}.txt"',
+            },
+        )
+    return FileResponse(
+        path,
+        filename=doc.file_name or doc.name or path.name,
+        media_type=doc.mime_type or "application/octet-stream",
+    )
+
+
+@router.get(
+    "/companies/{company_id}/applications/{application_id}/document-requests",
+    response_model=list[DocumentRequestOut],
+)
+def list_document_requests(
+    company_id: str, application_id: str, db: DbDep, user: CurrentUser
+) -> list[DocumentRequestOut]:
+    app = _company_app(db, company_id, application_id, user)
+    reqs = sorted(
+        app.document_requests or [],
+        key=lambda r: r.created_at or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    return [DocumentRequestOut(**serialize_document_request(r)) for r in reqs]
+
+
+@router.post(
+    "/companies/{company_id}/applications/{application_id}/document-requests/{request_id}/respond",
+    response_model=DocumentRequestOut,
+)
+def respond_to_document_request(
+    company_id: str,
+    application_id: str,
+    request_id: str,
+    body: DocumentRequestRespondIn,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+) -> DocumentRequestOut:
+    require_company_access(db, user, company_id, write=True)
+    app = _load_app(db, application_id)
+    if app.company_id != company_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Заявка не найдена")
+    require_application_access(db, user, app, write=True)
+    try:
+        req = respond_document_request(
+            db,
+            app=app,
+            user=user,
+            request_id=request_id,
+            document_ids=body.document_ids,
+            comment=body.comment,
+        )
+    except LookupError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    if body.comment:
+        db.add(
+            ApplicationComment(
+                application_id=app.id,
+                author_id=user.id,
+                author_name=user.full_name,
+                author_role=user.role.value,
+                text=body.comment,
+            )
+        )
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="document_request",
+        entity_id=req.id,
+        action="respond",
+        details={"document_ids": body.document_ids},
+        correlation_id=cid,
+    )
+    db.commit()
+    return DocumentRequestOut(**serialize_document_request(req))
+
+
 # --- Legacy + analyst ---
 
 
@@ -501,67 +697,27 @@ def submit_application(
     return ApplicationOut(**serialize_application(_load_app(db, application_id)))
 
 
-@router.post("/applications/{application_id}/documents", response_model=ApplicationOut)
+@router.post("/applications/{application_id}/documents", response_model=ApplicationOut, deprecated=True)
 async def upload_document(
     application_id: str,
     db: DbDep,
     user: CurrentUser,
+    cid: CorrelationId,
     file: UploadFile = File(...),
-    document_type: str = "other",
+    document_type: str = Form(default="OTHER"),
 ) -> ApplicationOut:
     app = _load_app(db, application_id)
-    require_application_access(db, user, app, write=True)
-    settings = get_settings()
-    content = await file.read()
-    max_bytes = settings.max_upload_mb * 1024 * 1024
-    if len(content) > max_bytes:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"Файл больше {settings.max_upload_mb} МБ")
-
-    upload_dir = Path(settings.upload_dir) / application_id
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    ext = Path(file.filename or "file.bin").suffix
-    key = f"{uuid4().hex}{ext}"
-    path = upload_dir / key
-    path.write_bytes(content)
-
-    requested = next(
-        (d for d in app.documents if (d.document_type or d.doc_type) == document_type and d.status == "requested"),
-        None,
+    await upload_company_document(
+        company_id=app.company_id,
+        application_id=application_id,
+        db=db,
+        user=user,
+        cid=cid,
+        file=file,
+        doc_type=document_type,
+        document_request_id=None,
     )
-    if requested:
-        requested.name = file.filename or key
-        requested.file_name = file.filename or key
-        requested.file_path = str(path)
-        requested.size = len(content)
-        requested.size_bytes = len(content)
-        requested.status = "uploaded"
-    else:
-        db.add(
-            ApplicationDocument(
-                application_id=app.id,
-                doc_type=document_type,
-                document_type=document_type,
-                name=file.filename or key,
-                file_name=file.filename or key,
-                file_path=str(path),
-                size=len(content),
-                size_bytes=len(content),
-                status="uploaded",
-                uploaded_by=user.id,
-            )
-        )
-
-    if app.status == ApplicationStatus.DOCS_REQUESTED:
-        transition_application(
-            db,
-            app,
-            ApplicationStatus.IN_REVIEW,
-            actor=user,
-            comment="Документы загружены",
-        )
-
-    db.commit()
-    return ApplicationOut(**serialize_application(_load_app(db, app.id)))
+    return ApplicationOut(**serialize_application(_load_app(db, application_id)))
 
 
 @router.patch("/applications/{application_id}/status", response_model=ApplicationOut)
@@ -617,26 +773,12 @@ def request_documents(
 ) -> ApplicationOut:
     require_roles(user, UserRole.ANALYST)
     app = _load_app(db, application_id)
-    transition_application(
+    create_document_request(
         db,
-        app,
-        ApplicationStatus.DOCS_REQUESTED,
-        actor=user,
-        comment=body.comment or f"Запрошен документ: {body.document_type}",
-    )
-
-    db.add(
-        ApplicationDocument(
-            application_id=app.id,
-            doc_type=body.document_type,
-            document_type=body.document_type,
-            name=f"Запрошено: {body.document_type}",
-            file_name=f"Запрошено: {body.document_type}",
-            file_path="",
-            size=0,
-            status="requested",
-            uploaded_by=user.id,
-        )
+        app=app,
+        analyst=user,
+        doc_type=body.document_type,
+        comment=body.comment,
     )
     db.add(
         ApplicationComment(
