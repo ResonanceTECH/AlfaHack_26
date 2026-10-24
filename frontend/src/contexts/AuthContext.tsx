@@ -13,6 +13,7 @@ import {
   loginEmailRequest,
   logoutRequest,
 } from '@/api/auth'
+import { ACTIVE_COMPANY_KEY } from '@/api/client'
 import axios from 'axios'
 
 interface AuthContextValue {
@@ -22,6 +23,8 @@ interface AuthContextValue {
   refreshUser: () => Promise<User>
   logout: () => void
   setUserFromSession: (user: User) => void
+  /** Persist active company for multi-membership sessions */
+  selectCompany: (companyId: string) => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -38,12 +41,22 @@ function toErrorMessage(err: unknown, fallback: string): string {
   return fallback
 }
 
+function withActiveCompany(u: User): User {
+  const active = localStorage.getItem(ACTIVE_COMPANY_KEY) || undefined
+  if (active) return { ...u, companyId: active }
+  return u
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(() => getStoredUser())
+  const [user, setUser] = useState<User | null>(() => {
+    const stored = getStoredUser()
+    return stored ? withActiveCompany(stored) : null
+  })
 
   const login = useCallback(async (email: string, password: string) => {
     try {
       const session = await loginEmailRequest(email, password)
+      localStorage.removeItem(ACTIVE_COMPANY_KEY)
       setUser(session.user)
       return session.user
     } catch (err) {
@@ -54,9 +67,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshUser = useCallback(async () => {
     try {
       const me = await fetchMe()
-      localStorage.setItem('alfa_user', JSON.stringify(me))
-      setUser(me)
-      return me
+      const next = withActiveCompany(me)
+      localStorage.setItem('alfa_user', JSON.stringify(next))
+      setUser(next)
+      return next
     } catch (err) {
       throw new Error(toErrorMessage(err, 'Не удалось обновить профиль'))
     }
@@ -68,8 +82,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const setUserFromSession = useCallback((u: User) => {
-    localStorage.setItem('alfa_user', JSON.stringify(u))
-    setUser(u)
+    const next = withActiveCompany(u)
+    localStorage.setItem('alfa_user', JSON.stringify(next))
+    setUser(next)
+  }, [])
+
+  const selectCompany = useCallback((companyId: string) => {
+    localStorage.setItem(ACTIVE_COMPANY_KEY, companyId)
+    setUser((prev) => {
+      if (!prev) return prev
+      const next = { ...prev, companyId }
+      localStorage.setItem('alfa_user', JSON.stringify(next))
+      return next
+    })
   }, [])
 
   const value = useMemo(
@@ -80,8 +105,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       refreshUser,
       logout,
       setUserFromSession,
+      selectCompany,
     }),
-    [user, login, refreshUser, logout, setUserFromSession],
+    [user, login, refreshUser, logout, setUserFromSession, selectCompany],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
