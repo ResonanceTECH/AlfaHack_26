@@ -13,6 +13,9 @@ from app.schemas.admin import (
     AdminCreditProductPatch,
     AdminCreditProductPublishIn,
     AdminCreditProductVersionOut,
+    AdminDemoJobOut,
+    AdminDemoResetIn,
+    AdminDemoScenarioOut,
     AdminDisableOut,
     AdminMemberOut,
     AdminMemberPut,
@@ -45,6 +48,15 @@ from app.schemas.admin import (
     AdminUserPatch,
 )
 from app.services.access import require_permission, require_roles
+from app.services.admin_demo import (
+    get_job as get_demo_job,
+    get_scenario,
+    list_scenarios,
+    load_scenario,
+    reset_demo,
+    serialize_job,
+    serialize_scenario,
+)
 from app.services.admin_models import (
     activate_model,
     get_model,
@@ -127,6 +139,11 @@ def _require_policy_publish(user: CurrentUser) -> None:
 def _require_models_manage(user: CurrentUser) -> None:
     _require_admin(user)
     require_permission(user, Permission.MODELS_MANAGE)
+
+
+def _require_demo_reset(user: CurrentUser) -> None:
+    _require_admin(user)
+    require_permission(user, Permission.DEMO_RESET)
 
 
 @router.get("/roles", response_model=list[AdminRoleOut])
@@ -806,3 +823,96 @@ def admin_patch_runtime_config(
     )
     db.commit()
     return AdminRuntimeConfigOut(**result)
+
+
+@router.get("/demo/scenarios", response_model=list[AdminDemoScenarioOut])
+def admin_demo_scenarios(db: DbDep, user: CurrentUser) -> list[AdminDemoScenarioOut]:
+    _require_demo_reset(user)
+    return [AdminDemoScenarioOut(**s) for s in list_scenarios(db)]
+
+
+@router.get("/demo/scenarios/{scenario_id}", response_model=AdminDemoScenarioOut)
+def admin_demo_scenario(
+    scenario_id: str, db: DbDep, user: CurrentUser
+) -> AdminDemoScenarioOut:
+    _require_demo_reset(user)
+    sc = get_scenario(db, scenario_id)
+    if sc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Сценарий не найден")
+    return AdminDemoScenarioOut(**serialize_scenario(sc))
+
+
+@router.post(
+    "/demo/scenarios/{scenario_id}/load",
+    response_model=AdminDemoJobOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def admin_demo_load_scenario(
+    scenario_id: str,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+) -> AdminDemoJobOut:
+    _require_demo_reset(user)
+    sc = get_scenario(db, scenario_id)
+    if sc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Сценарий не найден")
+    job = load_scenario(db, sc, actor_id=user.id)
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="demo_job",
+        entity_id=job.id,
+        action="admin_demo_load",
+        details={"scenario_id": sc.id, "scenario_code": sc.code, "status": job.status},
+        correlation_id=cid,
+    )
+    db.commit()
+    return AdminDemoJobOut(**serialize_job(job))
+
+
+@router.post(
+    "/demo/reset",
+    response_model=AdminDemoJobOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def admin_demo_reset(
+    body: AdminDemoResetIn,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+) -> AdminDemoJobOut:
+    _require_demo_reset(user)
+    # actor id сохраняем до wipe (сессии/аудит обнулятся)
+    actor_id = user.id
+    job = reset_demo(
+        db,
+        actor_id=actor_id,
+        workspace=body.workspace,
+        confirm_phrase=body.confirm_phrase,
+        requested_seed_version=body.seed_version,
+    )
+    write_audit(
+        db,
+        actor_id=actor_id,
+        entity_type="demo_job",
+        entity_id=job.id,
+        action="admin_demo_reset",
+        details={
+            "workspace": body.workspace,
+            "seed_version": body.seed_version,
+            "status": job.status,
+        },
+        correlation_id=cid,
+    )
+    db.commit()
+    return AdminDemoJobOut(**serialize_job(job))
+
+
+@router.get("/demo/jobs/{job_id}", response_model=AdminDemoJobOut)
+def admin_demo_job(job_id: str, db: DbDep, user: CurrentUser) -> AdminDemoJobOut:
+    _require_demo_reset(user)
+    job = get_demo_job(db, job_id)
+    if job is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Job не найден")
+    return AdminDemoJobOut(**serialize_job(job))

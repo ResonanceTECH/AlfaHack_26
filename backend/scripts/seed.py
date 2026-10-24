@@ -1025,33 +1025,48 @@ def _seed_scenarios_and_notifications(db, now: datetime) -> None:
     )
 
 
+def wipe_all_tables(db) -> None:
+    from sqlalchemy import text
+
+    table_names = [t.name for t in Base.metadata.sorted_tables]
+    if not table_names:
+        return
+    quoted = ", ".join(f'"{name}"' for name in table_names)
+    db.execute(text(f"TRUNCATE {quoted} RESTART IDENTITY CASCADE"))
+    db.flush()
+
+
+def populate(db, *, now: datetime | None = None) -> None:
+    pwd = hash_password(DEMO_PASSWORD)
+    now = now or datetime.now(timezone.utc)
+    _seed_users(db, pwd, now)
+    db.flush()
+    _seed_rbac(db)
+    _seed_catalog(db, now)
+    db.flush()
+    _seed_company_ip(db, now)
+    _seed_company_ooo(db, now)
+    db.flush()
+    _seed_applications(db, now)
+    db.flush()
+    _seed_scenarios_and_notifications(db, now)
+
+
 def seed(*, force: bool = False) -> None:
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
-        pwd = hash_password(DEMO_PASSWORD)
         existing = db.get(User, USER_ENT_01)
         if existing and not force:
             print(f"Seed уже применён (seed_version={SEED_VERSION}) — пропуск")
-            print("  Перезапуск с wipe: alembic upgrade head после 002, либо docker compose down -v")
+            print("  force: python -m scripts.seed --force  или POST /admin/demo/reset")
             return
 
         if existing and force:
-            raise RuntimeError("force-seed не реализован: сделайте wipe БД (002 / volume reset)")
+            print(f"Force reseed: wipe + seed_version={SEED_VERSION}")
+            wipe_all_tables(db)
 
-        now = datetime.now(timezone.utc)
-        _seed_users(db, pwd, now)
-        db.flush()  # users должны быть в БД до FK (memberships / notifications / apps)
-        _seed_rbac(db)
-        _seed_catalog(db, now)
-        db.flush()
-        _seed_company_ip(db, now)
-        _seed_company_ooo(db, now)
-        db.flush()
-        _seed_applications(db, now)
-        db.flush()
-        _seed_scenarios_and_notifications(db, now)
-
+        populate(db)
         db.commit()
         print(f"Seed OK  seed_version={SEED_VERSION}")
         print(f"  INN IP  = {INN_IP}")
@@ -1071,4 +1086,9 @@ def seed(*, force: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    seed()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--force", action="store_true", help="Wipe all tables and reseed")
+    args = parser.parse_args()
+    seed(force=args.force)

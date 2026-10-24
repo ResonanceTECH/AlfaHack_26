@@ -402,3 +402,39 @@ class AdminRuntimeConfigOut(APIModel):
 
 class AdminRuntimeConfigPatch(APIModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdminDemoScenarioOut(APIModel):
+    id: str
+    code: str
+    title: str
+    description: str | None = None
+    persona: str
+    seed_version: str | None = None
+    seed_payload: dict[str, Any] = Field(default_factory=dict)
+    company_id: str | None = None
+    application_id: str | None = None
+    expected_status: str | None = None
+    expected_decision: str | None = None
+    expected_offer_id: str | None = None
+    created_at: datetime | None = None
+
+
+class AdminDemoResetIn(APIModel):
+    workspace: str = "demo"
+    confirm_phrase: str
+    seed_version: str | None = None
+
+
+class AdminDemoJobOut(APIModel):
+    id: str
+    job_id: str | None = None
+    scenario_id: str | None = None
+    job_type: str
+    status: str
+    requested_by: str | None = None
+    result: dict[str, Any] = Field(default_factory=dict)
+    error_message: str | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    created_at: datetime | None = None
