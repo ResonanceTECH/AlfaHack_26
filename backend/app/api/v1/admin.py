@@ -47,6 +47,7 @@ from app.schemas.admin import (
     AdminUserOut,
     AdminUserPatch,
 )
+from app.schemas.finance_p1 import AuditEventListOut, AuditEventOut
 from app.services.access import require_permission, require_roles
 from app.services.admin_demo import (
     get_job as get_demo_job,
@@ -144,6 +145,11 @@ def _require_models_manage(user: CurrentUser) -> None:
 def _require_demo_reset(user: CurrentUser) -> None:
     _require_admin(user)
     require_permission(user, Permission.DEMO_RESET)
+
+
+def _require_audit_read(user: CurrentUser) -> None:
+    _require_admin(user)
+    require_permission(user, Permission.AUDIT_READ)
 
 
 @router.get("/roles", response_model=list[AdminRoleOut])
@@ -916,3 +922,96 @@ def admin_demo_job(job_id: str, db: DbDep, user: CurrentUser) -> AdminDemoJobOut
     if job is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Job не найден")
     return AdminDemoJobOut(**serialize_job(job))
+
+
+@router.get("/audit/events", response_model=AuditEventListOut)
+def admin_audit_events(
+    db: DbDep,
+    user: CurrentUser,
+    action: str | None = None,
+    entity_type: str | None = None,
+    actor_id: str | None = None,
+    q: str | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> AuditEventListOut:
+    _require_audit_read(user)
+    from sqlalchemy import func, or_, select
+
+    from app.models.audit import AuditEvent
+    from app.models.user import User
+
+    stmt = select(AuditEvent)
+    count_stmt = select(func.count(AuditEvent.id))
+    if action:
+        stmt = stmt.where(AuditEvent.action == action)
+        count_stmt = count_stmt.where(AuditEvent.action == action)
+    if entity_type:
+        stmt = stmt.where(AuditEvent.entity_type == entity_type)
+        count_stmt = count_stmt.where(AuditEvent.entity_type == entity_type)
+    if actor_id:
+        stmt = stmt.where(AuditEvent.actor_id == actor_id)
+        count_stmt = count_stmt.where(AuditEvent.actor_id == actor_id)
+    if q:
+        like = f"%{q.strip()}%"
+        filt = or_(AuditEvent.action.ilike(like), AuditEvent.entity_type.ilike(like), AuditEvent.entity_id.ilike(like))
+        stmt = stmt.where(filt)
+        count_stmt = count_stmt.where(filt)
+
+    total = db.scalar(count_stmt) or 0
+    rows = list(
+        db.scalars(stmt.order_by(AuditEvent.created_at.desc()).offset(offset).limit(limit)).all()
+    )
+    items = []
+    for ev in rows:
+        actor = db.get(User, ev.actor_id) if ev.actor_id else None
+        details = dict(ev.details or {})
+        # mask secrets
+        for k in list(details.keys()):
+            if any(s in k.lower() for s in ("password", "token", "secret", "hash")):
+                details[k] = "***"
+        items.append(
+            AuditEventOut(
+                id=ev.id,
+                actor_id=ev.actor_id,
+                actor_login=actor.login if actor else None,
+                actor_role=actor.role.value if actor else None,
+                action=ev.action,
+                entity_type=ev.entity_type,
+                entity_id=ev.entity_id,
+                company_id=ev.company_id,
+                correlation_id=ev.correlation_id,
+                details=details,
+                created_at=ev.created_at,
+            )
+        )
+    return AuditEventListOut(items=items, total=int(total))
+
+
+@router.get("/audit/events/{event_id}", response_model=AuditEventOut)
+def admin_audit_event(event_id: str, db: DbDep, user: CurrentUser) -> AuditEventOut:
+    _require_audit_read(user)
+    from app.models.audit import AuditEvent
+    from app.models.user import User
+
+    ev = db.get(AuditEvent, event_id)
+    if ev is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Событие не найдено")
+    actor = db.get(User, ev.actor_id) if ev.actor_id else None
+    details = dict(ev.details or {})
+    for k in list(details.keys()):
+        if any(s in k.lower() for s in ("password", "token", "secret", "hash")):
+            details[k] = "***"
+    return AuditEventOut(
+        id=ev.id,
+        actor_id=ev.actor_id,
+        actor_login=actor.login if actor else None,
+        actor_role=actor.role.value if actor else None,
+        action=ev.action,
+        entity_type=ev.entity_type,
+        entity_id=ev.entity_id,
+        company_id=ev.company_id,
+        correlation_id=ev.correlation_id,
+        details=details,
+        created_at=ev.created_at,
+    )
