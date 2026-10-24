@@ -1,17 +1,12 @@
-import AccountBalanceOutlinedIcon from '@mui/icons-material/AccountBalanceOutlined'
-import PsychologyOutlinedIcon from '@mui/icons-material/PsychologyOutlined'
-import RecommendOutlinedIcon from '@mui/icons-material/RecommendOutlined'
-import SupportAgentOutlinedIcon from '@mui/icons-material/SupportAgentOutlined'
 import { Box, Button, Container, Stack, Typography } from '@mui/material'
-import type { SvgIconComponent } from '@mui/icons-material'
 import { Link as RouterLink } from 'react-router-dom'
-import { CabinetPreview } from './CabinetPreview'
+import { landingAssets } from '@/assets/landing'
 
-const STATS: { value: string; label: string; Icon: SvgIconComponent }[] = [
-  { value: 'AI', label: 'Подбор под цель бизнеса', Icon: PsychologyOutlinedIcon },
-  { value: '1 клик', label: 'Выписка и cash flow', Icon: AccountBalanceOutlinedIcon },
-  { value: '4+', label: 'Продукта в сравнении', Icon: RecommendOutlinedIcon },
-  { value: '24/7', label: 'Заявка менеджеру', Icon: SupportAgentOutlinedIcon },
+const STATS = [
+  { value: 'От 14%*', label: 'Ставка со скидкой' },
+  { value: 'До 10 лет', label: 'Срок' },
+  { value: 'До 150 млн ₽', label: 'Сумма' },
+  { value: '0 ₽', label: 'Комиссия за выдачу' },
 ]
 
 export function HeroSection() {
@@ -20,8 +15,8 @@ export function HeroSection() {
       sx={{
         bgcolor: '#1A1A1A',
         color: '#fff',
-        pt: { xs: 5, md: 7 },
-        pb: { xs: 6, md: 8 },
+        pt: { xs: 4, md: 6 },
+        pb: { xs: 5, md: 7 },
         overflow: 'hidden',
       }}
     >
@@ -29,61 +24,61 @@ export function HeroSection() {
         <Box
           sx={{
             display: 'grid',
-            gridTemplateColumns: { xs: '1fr', md: '1.05fr 0.95fr' },
-            gap: { xs: 4, md: 3 },
+            gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+            gap: { xs: 3, md: 4 },
             alignItems: 'center',
             mb: { xs: 4, md: 5 },
           }}
         >
-          <Stack spacing={2.5} sx={{ maxWidth: 560 }}>
+          <Stack spacing={2.5} sx={{ maxWidth: 540 }}>
             <Typography
               component="h1"
               sx={{
                 fontFamily: 'Manrope, sans-serif',
                 fontWeight: 800,
-                fontSize: { xs: 32, sm: 42, md: 50 },
-                lineHeight: 1.08,
+                fontSize: { xs: 32, sm: 42, md: 48 },
+                lineHeight: 1.1,
                 letterSpacing: '-0.035em',
               }}
             >
-              Кредитный кабинет предпринимателя
+              Кредит на развитие малого бизнеса
             </Typography>
             <Typography
               sx={{
                 color: 'rgba(255,255,255,0.62)',
-                fontSize: { xs: 16, md: 18 },
-                lineHeight: 1.45,
+                fontSize: { xs: 15, md: 17 },
+                lineHeight: 1.5,
                 maxWidth: 460,
               }}
             >
-              От бизнес-цели до заявки менеджеру: подбор продукта, прогноз cash flow, Scenario Lab и
-              оформление в одном месте
+              Растите вместе с Альфа‑Банком: подберите продукт под цель бизнеса, сравните
+              условия и оформите заявку в одном кабинете
             </Typography>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
               <Button
-                href="#apply"
+                component={RouterLink}
+                to="/login"
                 variant="contained"
                 color="primary"
                 size="large"
                 sx={{
-                  borderRadius: 2.5,
+                  borderRadius: 2,
                   px: 3.5,
-                  py: 1.5,
+                  py: 1.4,
                   fontSize: 16,
                   fontWeight: 700,
                 }}
               >
-                Открыть кабинет
+                Оформить заявку
               </Button>
               <Button
-                component={RouterLink}
-                to="/login"
+                href="#how"
                 variant="outlined"
                 size="large"
                 sx={{
-                  borderRadius: 2.5,
+                  borderRadius: 2,
                   px: 3,
-                  py: 1.5,
+                  py: 1.4,
                   fontSize: 16,
                   fontWeight: 600,
                   color: '#fff',
@@ -91,12 +86,31 @@ export function HeroSection() {
                   '&:hover': { borderColor: '#fff', bgcolor: 'rgba(255,255,255,0.06)' },
                 }}
               >
-                Демо-вход
+                Как работает
               </Button>
             </Stack>
           </Stack>
 
-          <CabinetPreview />
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: { xs: 'center', md: 'flex-end' },
+              alignItems: 'center',
+            }}
+          >
+            <Box
+              component="img"
+              src={landingAssets.hero}
+              alt="Финансовый дашборд с портфелем и ростом"
+              sx={{
+                width: '100%',
+                maxWidth: { xs: 420, md: 520 },
+                height: 'auto',
+                display: 'block',
+                filter: 'drop-shadow(0 28px 48px rgba(0,0,0,0.55))',
+              }}
+            />
+          </Box>
         </Box>
 
         <Box
@@ -106,17 +120,17 @@ export function HeroSection() {
             gap: 1.5,
           }}
         >
-          {STATS.map(({ value, label, Icon }) => (
+          {STATS.map(({ value, label }) => (
             <Box
               key={label}
               sx={{
                 bgcolor: '#2A2A2A',
                 borderRadius: 3,
                 p: { xs: 2, md: 2.5 },
-                minHeight: { xs: 110, md: 124 },
+                minHeight: { xs: 96, md: 112 },
                 display: 'flex',
                 flexDirection: 'column',
-                position: 'relative',
+                justifyContent: 'center',
               }}
             >
               <Typography
@@ -126,30 +140,12 @@ export function HeroSection() {
                   fontSize: { xs: 22, md: 28 },
                   letterSpacing: '-0.03em',
                   lineHeight: 1.15,
-                  mb: 0.75,
+                  mb: 0.5,
                 }}
               >
                 {value}
               </Typography>
-              <Typography sx={{ color: 'rgba(255,255,255,0.55)', fontSize: 14, pr: 4 }}>
-                {label}
-              </Typography>
-              <Box
-                sx={{
-                  position: 'absolute',
-                  right: 14,
-                  bottom: 14,
-                  width: 36,
-                  height: 36,
-                  borderRadius: 1.5,
-                  bgcolor: '#1F1F1F',
-                  display: 'grid',
-                  placeItems: 'center',
-                  color: 'rgba(255,255,255,0.7)',
-                }}
-              >
-                <Icon sx={{ fontSize: 18 }} />
-              </Box>
+              <Typography sx={{ color: 'rgba(255,255,255,0.55)', fontSize: 14 }}>{label}</Typography>
             </Box>
           ))}
         </Box>

@@ -1,94 +1,141 @@
-import { Box, Container, Stack, Typography } from '@mui/material'
-import { landingAssets } from '@/assets/landing'
-import { LandingIllustration } from './SvgPlaceholder'
+import { Box, Container, Typography } from '@mui/material'
 
-const FEATURES = [
+const STEPS = [
   {
-    title: 'AI-консультант',
-    description: 'Отвечает по продуктам, документам и сценариям — без ожидания менеджера',
-    asset: landingAssets.featureAi,
-    file: 'feature-ai.svg',
+    n: 1,
+    title: 'Цель и бюджет',
+    description: 'Укажите задачу бизнеса, сумму и желаемый срок — кабинет зафиксирует рамки подбора',
   },
   {
-    title: 'Прогноз cash flow',
-    description: 'Сезонный baseline по выписке: увидите, потянете ли платёж до выдачи',
-    asset: landingAssets.featureForecast,
-    file: 'feature-forecast.svg',
+    n: 2,
+    title: 'Подбор и сравнение',
+    description: 'Сравните продукты по ставке, платежу и условиям — получите рекомендацию с объяснением',
   },
   {
-    title: 'Scenario Lab',
-    description: 'Смоделируйте рост выручки, задержку оплаты или доп. точку — и влияние на кредит',
-    asset: landingAssets.featureScenario,
-    file: 'feature-scenario.svg',
-  },
-  {
-    title: 'Окупаемость и ROI',
-    description: 'Свяжите цель кредита с возвратом инвестиций и графиком платежей',
-    asset: landingAssets.featureRoi,
-    file: 'feature-roi.svg',
+    n: 3,
+    title: 'Заявка и решение',
+    description: 'Соберите документы, отправьте менеджеру и следите за статусом в едином конвейере',
   },
 ]
 
 export function FeaturesSection() {
   return (
-    <Box id="features" sx={{ bgcolor: '#F7F8FA', pt: { xs: 6, md: 8 }, pb: { xs: 6, md: 8 } }}>
+    <Box id="how" sx={{ bgcolor: '#F7F8FA', pt: { xs: 6, md: 8 }, pb: { xs: 6, md: 8 } }}>
       <Container maxWidth="lg">
-        <Stack spacing={1.5} sx={{ mb: { xs: 3, md: 4 }, maxWidth: 640 }}>
-          <Typography
-            component="h2"
+        <Typography
+          component="h2"
+          sx={{
+            fontFamily: 'Manrope, sans-serif',
+            fontWeight: 800,
+            fontSize: { xs: 28, md: 40 },
+            letterSpacing: '-0.03em',
+            lineHeight: 1.15,
+            color: '#0B1F35',
+            mb: { xs: 4, md: 5 },
+            textAlign: 'center',
+          }}
+        >
+          Как это работает
+        </Typography>
+
+        {/* Timeline connectors (desktop) */}
+        <Box
+          sx={{
+            position: 'relative',
+            display: { xs: 'none', md: 'block' },
+            maxWidth: 720,
+            mx: 'auto',
+            mb: 3,
+          }}
+        >
+          <Box
             sx={{
-              fontFamily: 'Manrope, sans-serif',
-              fontWeight: 800,
-              fontSize: { xs: 28, md: 40 },
-              letterSpacing: '-0.03em',
-              lineHeight: 1.15,
-              color: '#0B1F35',
+              position: 'absolute',
+              top: 18,
+              left: '16.66%',
+              right: '16.66%',
+              height: 2,
+              bgcolor: 'rgba(239,49,36,0.25)',
+            }}
+          />
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              position: 'relative',
             }}
           >
-            Инструменты кабинета
-          </Typography>
-          <Typography sx={{ color: '#5A6B7D', fontSize: 16, lineHeight: 1.5 }}>
-            Не просто форма заявки — аналитика, которую предприниматель использует до и после кредита
-          </Typography>
-        </Stack>
+            {STEPS.map((s) => (
+              <Box key={s.n} sx={{ display: 'grid', placeItems: 'center' }}>
+                <Box
+                  sx={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: '50%',
+                    bgcolor: '#EF3124',
+                    color: '#fff',
+                    display: 'grid',
+                    placeItems: 'center',
+                    fontWeight: 700,
+                    fontSize: 15,
+                    fontFamily: 'Manrope, sans-serif',
+                    boxShadow: '0 0 0 6px rgba(239,49,36,0.12)',
+                  }}
+                >
+                  {s.n}
+                </Box>
+              </Box>
+            ))}
+          </Box>
+        </Box>
 
         <Box
           sx={{
             display: 'grid',
-            gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: 'repeat(4, 1fr)' },
-            gap: 2,
+            gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' },
+            gap: { xs: 3, md: 3 },
           }}
         >
-          {FEATURES.map((item) => (
-            <Box
-              key={item.title}
-              sx={{
-                bgcolor: '#fff',
-                borderRadius: 4,
-                p: 2.5,
-                display: 'flex',
-                flexDirection: 'column',
-                minHeight: 220,
-                border: '1px solid rgba(11,31,53,0.06)',
-              }}
-            >
-              <Box sx={{ width: 64, height: 64, mb: 2 }}>
-                <LandingIllustration src={item.asset} label={item.file} tone="light" />
+          {STEPS.map((s) => (
+            <Box key={s.n} sx={{ textAlign: 'center', px: { md: 2 } }}>
+              <Box
+                sx={{
+                  display: { xs: 'grid', md: 'none' },
+                  placeItems: 'center',
+                  mb: 1.5,
+                }}
+              >
+                <Box
+                  sx={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: '50%',
+                    bgcolor: '#EF3124',
+                    color: '#fff',
+                    display: 'grid',
+                    placeItems: 'center',
+                    fontWeight: 700,
+                    fontSize: 15,
+                    fontFamily: 'Manrope, sans-serif',
+                  }}
+                >
+                  {s.n}
+                </Box>
               </Box>
               <Typography
                 sx={{
                   fontFamily: 'Manrope, sans-serif',
                   fontWeight: 700,
-                  fontSize: 18,
+                  fontSize: { xs: 18, md: 20 },
                   color: '#0B1F35',
-                  mb: 1,
                   letterSpacing: '-0.02em',
+                  mb: 1,
                 }}
               >
-                {item.title}
+                {s.title}
               </Typography>
-              <Typography sx={{ color: '#5A6B7D', fontSize: 14, lineHeight: 1.45 }}>
-                {item.description}
+              <Typography sx={{ color: '#5A6B7D', fontSize: 14, lineHeight: 1.5, maxWidth: 280, mx: 'auto' }}>
+                {s.description}
               </Typography>
             </Box>
           ))}

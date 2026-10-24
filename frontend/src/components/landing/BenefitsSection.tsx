@@ -1,35 +1,29 @@
-import { Box, Container, Stack, Typography } from '@mui/material'
-import { landingAssets } from '@/assets/landing'
-import { LandingIllustration } from './SvgPlaceholder'
+import { Box, Container, Typography } from '@mui/material'
 
 const BENEFITS = [
   {
-    title: 'От цели — к продукту',
+    num: '01',
+    title: 'Быстрый подбор',
     description:
-      'Укажите закупку, точку, оборудование или кассовый разрыв — кабинет подберёт подходящий кредит',
-    asset: landingAssets.benefitGoal,
-    file: 'benefit-goal.svg',
+      'Цель и бюджет — и сразу shortlist продуктов с платежом, ставкой и сроком под ваш профиль',
   },
   {
-    title: 'Умный подбор, не каталог',
+    num: '02',
+    title: 'Прозрачные причины',
     description:
-      'Сравнение ставок, сроков и платежей по продуктам Альфа-Банка с рекомендацией под ваш профиль',
-    asset: landingAssets.benefitMatch,
-    file: 'benefit-match.svg',
+      'Понятно, почему рекомендован продукт: выручка, нагрузка, залог и готовность документов',
   },
   {
-    title: 'Выписка и прогноз',
+    num: '03',
+    title: 'Единый конвейер',
     description:
-      'Загрузите движение средств — увидите cash flow, нагрузку по кредиту и окупаемость цели',
-    asset: landingAssets.benefitStatement,
-    file: 'benefit-statement.svg',
+      'От сравнения до заявки менеджеру в одном кабинете — без переключения между сервисами',
   },
   {
+    num: '04',
     title: 'Готовность к заявке',
     description:
-      'Чеклист документов, индекс готовности и передача заявки кредитному менеджеру в один клик',
-    asset: landingAssets.benefitReady,
-    file: 'benefit-ready.svg',
+      'Чеклист документов, индекс готовности и передача менеджеру — без лишних шагов',
   },
 ]
 
@@ -50,7 +44,7 @@ export function BenefitsSection() {
             maxWidth: 640,
           }}
         >
-          Кабинет, который ведёт к кредиту
+          Почему предприниматели выбирают сервис
         </Typography>
 
         <Box
@@ -62,39 +56,44 @@ export function BenefitsSection() {
         >
           {BENEFITS.map((item) => (
             <Box
-              key={item.title}
+              key={item.num}
               sx={{
-                bgcolor: '#E8F3FA',
-                borderRadius: 4,
+                bgcolor: '#fff',
+                borderRadius: 3.5,
                 p: { xs: 2.5, md: 3 },
-                display: 'grid',
-                gridTemplateColumns: '1fr auto',
-                gap: 2,
-                alignItems: 'center',
-                minHeight: { xs: 140, md: 168 },
+                border: '1px solid rgba(11,31,53,0.08)',
+                boxShadow: '0 1px 2px rgba(11,31,53,0.03)',
+                minHeight: { xs: 140, md: 156 },
               }}
             >
-              <Stack spacing={1} sx={{ minWidth: 0 }}>
-                <Typography
-                  sx={{
-                    fontFamily: 'Manrope, sans-serif',
-                    fontWeight: 700,
-                    fontSize: { xs: 18, md: 22 },
-                    letterSpacing: '-0.02em',
-                    color: '#0B1F35',
-                    lineHeight: 1.25,
-                  }}
-                >
-                  {item.title}
-                </Typography>
-                <Typography sx={{ color: '#5A6B7D', fontSize: 14, lineHeight: 1.45 }}>
-                  {item.description}
-                </Typography>
-              </Stack>
-
-              <Box sx={{ width: { xs: 72, md: 96 }, height: { xs: 72, md: 96 }, flexShrink: 0 }}>
-                <LandingIllustration src={item.asset} label={item.file} tone="light" />
-              </Box>
+              <Typography
+                sx={{
+                  fontFamily: 'Manrope, sans-serif',
+                  fontWeight: 700,
+                  fontSize: 13,
+                  color: '#EF3124',
+                  letterSpacing: '0.04em',
+                  mb: 1.25,
+                }}
+              >
+                {item.num}
+              </Typography>
+              <Typography
+                sx={{
+                  fontFamily: 'Manrope, sans-serif',
+                  fontWeight: 700,
+                  fontSize: { xs: 18, md: 20 },
+                  letterSpacing: '-0.02em',
+                  color: '#0B1F35',
+                  lineHeight: 1.25,
+                  mb: 1,
+                }}
+              >
+                {item.title}
+              </Typography>
+              <Typography sx={{ color: '#5A6B7D', fontSize: 14, lineHeight: 1.5 }}>
+                {item.description}
+              </Typography>
             </Box>
           ))}
         </Box>

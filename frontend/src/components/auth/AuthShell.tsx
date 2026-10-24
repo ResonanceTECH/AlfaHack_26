@@ -6,11 +6,13 @@ import buildingsImg from '@/assets/alfa-buildings.png'
 
 type AuthShellProps = {
   title: string
+  subtitle?: ReactNode
+  beforeTitle?: ReactNode
   children: ReactNode
   footer?: ReactNode
 }
 
-export function AuthShell({ title, children, footer }: AuthShellProps) {
+export function AuthShell({ title, subtitle, beforeTitle, children, footer }: AuthShellProps) {
   return (
     <Box
       sx={{
@@ -37,7 +39,7 @@ export function AuthShell({ title, children, footer }: AuthShellProps) {
       >
         <Box
           sx={{
-            p: { xs: 3, sm: 4.5 },
+            p: { xs: 3.25, sm: 5 },
             display: 'flex',
             flexDirection: 'column',
           }}
@@ -48,16 +50,16 @@ export function AuthShell({ title, children, footer }: AuthShellProps) {
             sx={{
               textDecoration: 'none',
               width: 'fit-content',
-              mb: 3.5,
+              mb: 4,
               '&:hover': { opacity: 0.85 },
             }}
           >
             <Typography
               sx={{
-                color: 'primary.main',
+                color: '#EF3124',
                 fontWeight: 700,
-                fontSize: 16,
-                letterSpacing: '-0.01em',
+                fontSize: 17,
+                letterSpacing: '-0.02em',
                 lineHeight: 1.1,
               }}
             >
@@ -65,31 +67,47 @@ export function AuthShell({ title, children, footer }: AuthShellProps) {
             </Typography>
             <Box
               sx={{
-                width: 36,
+                width: 40,
                 height: 3,
-                bgcolor: 'primary.main',
+                bgcolor: '#EF3124',
                 borderRadius: 1,
-                mt: 0.35,
+                mt: 0.4,
               }}
             />
           </Box>
+
+          {beforeTitle ? <Box sx={{ mb: 2 }}>{beforeTitle}</Box> : null}
 
           <Typography
             variant="h4"
             sx={{
               fontFamily: 'Manrope, sans-serif',
               fontWeight: 800,
-              letterSpacing: '-0.03em',
-              mb: 3,
-              lineHeight: 1.2,
-              fontSize: { xs: '1.5rem', sm: '1.8rem' },
+              letterSpacing: '-0.035em',
+              mb: subtitle ? 1.25 : 3.5,
+              lineHeight: 1.15,
+              fontSize: { xs: '1.65rem', sm: '1.95rem' },
               color: '#0B1F35',
             }}
           >
             {title}
           </Typography>
 
-          <Box sx={{ flex: 1 }}>{children}</Box>
+          {subtitle ? (
+            <Typography
+              sx={{
+                mb: 3.5,
+                color: '#8A94A6',
+                fontSize: 14.5,
+                lineHeight: 1.45,
+                maxWidth: 360,
+              }}
+            >
+              {subtitle}
+            </Typography>
+          ) : null}
+
+          <Box sx={{ flex: 1, maxWidth: 400 }}>{children}</Box>
 
           {footer ? <Box sx={{ mt: 3 }}>{footer}</Box> : null}
         </Box>
@@ -107,25 +125,7 @@ export function AuthShell({ title, children, footer }: AuthShellProps) {
             minHeight: 560,
           }}
         >
-          <Stack spacing={1.75} sx={{ position: 'relative', zIndex: 2, p: 4.5, maxWidth: 340 }}>
-            <Box
-              aria-hidden
-              sx={{
-                width: 52,
-                height: 52,
-                borderRadius: '50%',
-                border: '2.5px solid #fff',
-                display: 'grid',
-                placeItems: 'center',
-                fontFamily: 'Manrope, sans-serif',
-                fontWeight: 800,
-                fontSize: 26,
-                lineHeight: 1,
-                mb: 0.5,
-              }}
-            >
-              A
-            </Box>
+          <Stack spacing={1.5} sx={{ position: 'relative', zIndex: 2, pt: 3.5, px: 4.5, pb: 4.5, maxWidth: 340 }}>
             <Typography
               sx={{
                 fontFamily: 'Manrope, sans-serif',

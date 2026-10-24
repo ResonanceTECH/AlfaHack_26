@@ -1,5 +1,25 @@
 import { Box, Container, Link, Stack, Typography } from '@mui/material'
 import { Link as RouterLink } from 'react-router-dom'
+import { AlfaLogo } from './AlfaLogo'
+
+const COLUMNS = [
+  {
+    title: 'Продукт',
+    links: [{ label: 'Подбор', to: '/login' }],
+  },
+  {
+    title: 'Кабинет',
+    links: [{ label: 'Заявки', to: '/app/applications' }],
+  },
+  {
+    title: 'Банк',
+    links: [{ label: 'Очередь', to: '/app/manager' }],
+  },
+  {
+    title: 'Админ',
+    links: [{ label: 'Политики', to: '/login' }],
+  },
+]
 
 export function LandingFooter() {
   return (
@@ -8,53 +28,61 @@ export function LandingFooter() {
       sx={{
         bgcolor: '#1A1A1A',
         color: 'rgba(255,255,255,0.65)',
-        py: 4,
-        borderTop: '1px solid rgba(255,255,255,0.06)',
+        pt: { xs: 5, md: 6 },
+        pb: 4,
       }}
     >
       <Container maxWidth="lg">
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          justifyContent="space-between"
-          spacing={2}
-          alignItems={{ xs: 'flex-start', sm: 'center' }}
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', sm: '1.4fr repeat(4, 1fr)' },
+            gap: { xs: 3, md: 2 },
+            mb: 4,
+          }}
         >
           <Box>
-            <Typography
-              sx={{
-                color: '#EF3124',
-                fontFamily: 'Manrope, sans-serif',
-                fontWeight: 800,
-                fontSize: 16,
-                letterSpacing: '-0.02em',
-                mb: 0.5,
-              }}
-            >
-              Alfa Credit
-            </Typography>
-            <Typography sx={{ fontSize: 13, maxWidth: 420, lineHeight: 1.45 }}>
-              Демо кредитного кабинета для ИП и МСБ — хакатон AlfaHack26, кейс подбора и оформления
-              кредитов.
+            <AlfaLogo compact />
+            <Typography sx={{ mt: 1.5, fontSize: 13, lineHeight: 1.45, maxWidth: 260 }}>
+              Кредитный кабинет для ИП и малого бизнеса
             </Typography>
           </Box>
-          <Stack direction="row" spacing={2.5}>
-            <Link component={RouterLink} to="/login" underline="hover" color="inherit" sx={{ fontSize: 14 }}>
-              Войти
-            </Link>
-            <Link
-              component={RouterLink}
-              to="/register"
-              underline="hover"
-              color="inherit"
-              sx={{ fontSize: 14 }}
-            >
-              Регистрация
-            </Link>
-            <Link href="/docs" underline="hover" color="inherit" sx={{ fontSize: 14 }}>
-              API
-            </Link>
-          </Stack>
-        </Stack>
+
+          {COLUMNS.map((col) => (
+            <Stack key={col.title} spacing={1.25}>
+              <Typography
+                sx={{
+                  color: 'rgba(255,255,255,0.45)',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                }}
+              >
+                {col.title}
+              </Typography>
+              {col.links.map((link) => (
+                <Link
+                  key={link.label}
+                  component={RouterLink}
+                  to={link.to}
+                  underline="hover"
+                  sx={{ color: 'rgba(255,255,255,0.78)', fontSize: 14, width: 'fit-content' }}
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </Stack>
+          ))}
+        </Box>
+
+        <Box sx={{ borderTop: '1px solid rgba(255,255,255,0.08)', pt: 3 }}>
+          <Typography sx={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', lineHeight: 1.5, maxWidth: 720 }}>
+            © {new Date().getFullYear()} Альфа‑Банк. Не является публичной офертой. Условия
+            кредитования определяются банком индивидуально. *Ставка со скидкой при подключении
+            сервисов банка.
+          </Typography>
+        </Box>
       </Container>
     </Box>
   )
