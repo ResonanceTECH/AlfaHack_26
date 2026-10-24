@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
 
 from pydantic import Field
 
 from app.core.enums import ApplicationStatus, UserRole
+from app.core.money import Money
 from app.schemas.common import APIModel
+
 
 class DocumentOut(APIModel):
     id: str
@@ -16,6 +17,7 @@ class DocumentOut(APIModel):
     uploaded_at: datetime
     status: str
 
+
 class CommentOut(APIModel):
     id: str
     author_id: str | None
@@ -24,34 +26,41 @@ class CommentOut(APIModel):
     text: str
     created_at: datetime
 
+
 class StatusHistoryItem(APIModel):
     status: ApplicationStatus
     at: datetime | str
     by: str
 
+
 class ApplicationCreate(APIModel):
     company_id: str
     product_id: str
-    amount: Decimal = Field(gt=0)
+    amount: Money = Field(gt=0)
     term_months: int = Field(ge=1)
-    rate: Decimal
+    rate: Money
     purpose: str = ""
     idempotency_key: str | None = None
+    currency: str = "RUB"
+
 
 class ApplicationUpdate(APIModel):
-    amount: Decimal | None = None
+    amount: Money | None = None
     term_months: int | None = None
-    rate: Decimal | None = None
+    rate: Money | None = None
     purpose: str | None = None
+
 
 class StatusUpdate(APIModel):
     status: ApplicationStatus
     comment: str | None = None
     idempotency_key: str | None = None
 
+
 class DocsRequestIn(APIModel):
     document_type: str
     comment: str | None = None
+
 
 class ApplicationOut(APIModel):
     id: str
@@ -59,9 +68,9 @@ class ApplicationOut(APIModel):
     product_id: str
     product_name: str
     status: ApplicationStatus
-    amount: Decimal
+    amount: Money
     term_months: int
-    rate: Decimal
+    rate: Money
     purpose: str
     assigned_manager_id: str | None = None
     assigned_manager_name: str | None = None
@@ -72,3 +81,4 @@ class ApplicationOut(APIModel):
     created_at: datetime
     updated_at: datetime
     ai_summary: str | None = None
+    currency: str = "RUB"

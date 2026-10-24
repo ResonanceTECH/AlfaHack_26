@@ -59,7 +59,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             if len(q) >= limit:
                 return JSONResponse(
                     status_code=429,
-                    content={"detail": "Слишком много запросов, попробуйте позже"},
+                    content={
+                        "error": {
+                            "code": "HTTP_429",
+                            "message": "Слишком много запросов, попробуйте позже",
+                            "request_id": getattr(request.state, "correlation_id", None),
+                        }
+                    },
                 )
             q.append(now)
 

@@ -6,7 +6,9 @@ from decimal import Decimal
 from pydantic import Field, field_validator
 
 from app.core.enums import GoalType, LegalForm
+from app.core.money import Money
 from app.schemas.common import APIModel
+
 
 class CompanyOut(APIModel):
     id: str
@@ -55,69 +57,77 @@ class CompanyUpdate(APIModel):
             raise ValueError("Число сотрудников не может быть отрицательным")
         return v
 
+
 class FinancialSnapshotOut(APIModel):
     id: str
     company_id: str
     period: str
-    avg_monthly_revenue: Decimal
-    operating_expenses: Decimal
-    cash_balance: Decimal
-    liabilities: Decimal
-    active_credits: Decimal
+    avg_monthly_revenue: Money
+    operating_expenses: Money
+    cash_balance: Money
+    liabilities: Money
+    active_credits: Money
     source: str
     confirmed: bool
     updated_at: datetime
+    currency: str = "RUB"
+
 
 class FinancialSnapshotUpdate(APIModel):
     period: str | None = None
-    avg_monthly_revenue: Decimal | None = None
-    operating_expenses: Decimal | None = None
-    cash_balance: Decimal | None = None
-    liabilities: Decimal | None = None
-    active_credits: Decimal | None = None
+    avg_monthly_revenue: Money | None = None
+    operating_expenses: Money | None = None
+    cash_balance: Money | None = None
+    liabilities: Money | None = None
+    active_credits: Money | None = None
     source: str | None = None
     confirmed: bool | None = None
+
 
 class ObligationOut(APIModel):
     id: str
     company_id: str
     type: str
     title: str
-    amount: Decimal
+    amount: Money
     due_date: date
     recurring: bool
     status: str
     currency: str = "RUB"
 
+
 class ObligationCreate(APIModel):
     type: str
     title: str
-    amount: Decimal = Field(gt=0)
+    amount: Money = Field(gt=0)
     due_date: date
     recurring: bool = False
     status: str = "planned"
     currency: str = "RUB"
     company_id: str | None = None
 
+
 class ObligationUpdate(APIModel):
     type: str | None = None
     title: str | None = None
-    amount: Decimal | None = None
+    amount: Money | None = None
     due_date: date | None = None
     recurring: bool | None = None
     status: str | None = None
+
 
 class BusinessGoalCreate(APIModel):
     company_id: str
     goal_type: GoalType
     title: str
     description: str | None = None
-    costs: dict[str, Decimal] = Field(default_factory=dict)
-    reserve: Decimal = Decimal("0")
-    own_funds: Decimal = Decimal("0")
-    other_funding: Decimal = Decimal("0")
+    costs: dict[str, Money] = Field(default_factory=dict)
+    reserve: Money = Decimal("0")
+    own_funds: Money = Decimal("0")
+    other_funding: Money = Decimal("0")
     target_date: date
     term_months: int = Field(ge=1, le=120)
+
 
 class BusinessGoalOut(APIModel):
     id: str
@@ -125,11 +135,12 @@ class BusinessGoalOut(APIModel):
     goal_type: GoalType
     title: str
     description: str | None = None
-    costs: dict[str, Decimal]
-    reserve: Decimal
-    own_funds: Decimal
-    other_funding: Decimal
-    required_amount: Decimal
+    costs: dict[str, Money]
+    reserve: Money
+    own_funds: Money
+    other_funding: Money
+    required_amount: Money
     target_date: date
     term_months: int
     created_at: datetime
+    currency: str = "RUB"
