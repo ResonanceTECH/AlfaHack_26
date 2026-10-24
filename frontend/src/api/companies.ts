@@ -49,6 +49,7 @@ export function mapRegistryLookup(raw: Record<string, unknown>): RegistryLookupR
             companyRaw.registryStatus ?? companyRaw.registry_status,
             'ACTIVE',
           ),
+          ogrn: companyRaw.ogrn != null && companyRaw.ogrn !== '' ? str(companyRaw.ogrn) : undefined,
         }
       : null,
     checkedAt: str(raw.checkedAt ?? raw.checked_at),
@@ -59,8 +60,6 @@ export function mapRegistryLookup(raw: Record<string, unknown>): RegistryLookupR
 export function mapCompanyDashboard(raw: Record<string, unknown>): CompanyDashboardSummary {
   const company = (raw.company ?? {}) as Record<string, unknown>
   const kpi = (raw.kpi ?? {}) as Record<string, unknown>
-  const tasks = (raw.tasks as Record<string, unknown>[] | undefined) ?? []
-  const next = tasks[0]
   return {
     company: {
       id: str(company.id),
@@ -71,11 +70,6 @@ export function mapCompanyDashboard(raw: Record<string, unknown>): CompanyDashbo
     },
     applicationsActive: num(kpi.applicationsActive ?? kpi.applications_active),
     applicationsTotal: num(kpi.applicationsTotal ?? kpi.applications_total),
-    nextTaskTitle: next ? str(next.title) : undefined,
-    nextTaskDue: next?.due_at != null || next?.dueAt != null
-      ? str(next.dueAt ?? next.due_at)
-      : undefined,
-    managerHint: undefined,
   }
 }
 
