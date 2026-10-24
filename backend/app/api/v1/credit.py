@@ -9,7 +9,8 @@ from sqlalchemy import select
 from app.deps import CorrelationId, CurrentUser, DbDep
 from app.models.company import Company
 from app.models.credit import CreditProduct, CreditRecommendation
-from app.models.finance import BusinessGoal, CreditScenario, FinancialSnapshot
+from app.models.finance import CreditScenario, FinancialSnapshot
+from app.models.funding import BusinessGoal
 from app.schemas.credit import (
     CalculateRequest,
     CreditProductOut,

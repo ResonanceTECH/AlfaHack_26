@@ -44,14 +44,45 @@ class ProductType(str, enum.Enum):
     CREDIT_LINE = "credit_line"
 
 
+class ProductStatus(str, enum.Enum):
+    DRAFT = "DRAFT"
+    PUBLISHED = "PUBLISHED"
+    ARCHIVED = "ARCHIVED"
+
+
+class PolicyStatus(str, enum.Enum):
+    DRAFT = "DRAFT"
+    PUBLISHED = "PUBLISHED"
+    ARCHIVED = "ARCHIVED"
+
+
 class ApplicationStatus(str, enum.Enum):
-    DRAFT = "draft"
-    SUBMITTED = "submitted"
-    IN_REVIEW = "in_review"
-    DOCS_REQUESTED = "docs_requested"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    ISSUED = "issued"
+    DRAFT = "DRAFT"
+    SUBMITTED = "SUBMITTED"
+    VALIDATING = "VALIDATING"
+    IN_REVIEW = "IN_REVIEW"
+    DOCS_REQUESTED = "DOCS_REQUESTED"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    COUNTEROFFERED = "COUNTEROFFERED"
+    OFFER_ACCEPTED = "OFFER_ACCEPTED"
+    AGREEMENT_PREPARATION = "AGREEMENT_PREPARATION"
+    ISSUED = "ISSUED"
+
+
+class DecisionType(str, enum.Enum):
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    COUNTEROFFERED = "COUNTEROFFERED"
+    NEED_INFO = "NEED_INFO"
+
+
+class OfferStatus(str, enum.Enum):
+    ACTIVE = "ACTIVE"
+    ACCEPTED = "ACCEPTED"
+    DECLINED = "DECLINED"
+    EXPIRED = "EXPIRED"
+    SUPERSEDED = "SUPERSEDED"
 
 
 class ScheduleType(str, enum.Enum):
@@ -84,35 +115,66 @@ class UserStatus(str, enum.Enum):
     DISABLED = "DISABLED"
 
 
-class ChallengePurpose(str, enum.Enum):
-    REGISTRATION = "registration"
-    LOGIN = "login"
-    PASSWORD_RESET = "password_reset"
-    CONTACT_CHANGE = "contact_change"
+class StatementStatus(str, enum.Enum):
+    QUEUED = "QUEUED"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CONFIRMED = "CONFIRMED"
 
 
-class ChallengeChannel(str, enum.Enum):
-    SMS = "sms"
-    EMAIL = "email"
+class WorkflowStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class CheckAudience(str, enum.Enum):
+    PUBLIC = "PUBLIC"
+    ANALYST = "ANALYST"
+    INTERNAL = "INTERNAL"
 
 
 STATUS_TRANSITIONS: dict[ApplicationStatus, set[ApplicationStatus]] = {
     ApplicationStatus.DRAFT: {ApplicationStatus.SUBMITTED},
     ApplicationStatus.SUBMITTED: {
+        ApplicationStatus.VALIDATING,
         ApplicationStatus.IN_REVIEW,
         ApplicationStatus.DOCS_REQUESTED,
         ApplicationStatus.REJECTED,
+    },
+    ApplicationStatus.VALIDATING: {
+        ApplicationStatus.IN_REVIEW,
+        ApplicationStatus.DOCS_REQUESTED,
+        ApplicationStatus.APPROVED,
+        ApplicationStatus.REJECTED,
+        ApplicationStatus.COUNTEROFFERED,
     },
     ApplicationStatus.IN_REVIEW: {
         ApplicationStatus.DOCS_REQUESTED,
         ApplicationStatus.APPROVED,
         ApplicationStatus.REJECTED,
+        ApplicationStatus.COUNTEROFFERED,
     },
     ApplicationStatus.DOCS_REQUESTED: {
         ApplicationStatus.IN_REVIEW,
+        ApplicationStatus.VALIDATING,
         ApplicationStatus.REJECTED,
     },
-    ApplicationStatus.APPROVED: {ApplicationStatus.ISSUED, ApplicationStatus.REJECTED},
+    ApplicationStatus.APPROVED: {
+        ApplicationStatus.OFFER_ACCEPTED,
+        ApplicationStatus.AGREEMENT_PREPARATION,
+        ApplicationStatus.ISSUED,
+        ApplicationStatus.REJECTED,
+    },
+    ApplicationStatus.COUNTEROFFERED: {
+        ApplicationStatus.OFFER_ACCEPTED,
+        ApplicationStatus.REJECTED,
+        ApplicationStatus.IN_REVIEW,
+    },
+    ApplicationStatus.OFFER_ACCEPTED: {ApplicationStatus.AGREEMENT_PREPARATION, ApplicationStatus.ISSUED},
+    ApplicationStatus.AGREEMENT_PREPARATION: {ApplicationStatus.ISSUED},
     ApplicationStatus.REJECTED: set(),
     ApplicationStatus.ISSUED: set(),
 }

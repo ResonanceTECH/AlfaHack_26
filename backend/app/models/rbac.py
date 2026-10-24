@@ -16,7 +16,12 @@ class RolePermission(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     role: Mapped[UserRole] = mapped_column(
-        Enum(UserRole, name="user_role", values_callable=lambda x: [e.value for e in x]),
+        Enum(
+            UserRole,
+            name="user_role",
+            create_constraint=False,
+            values_callable=lambda x: [e.value for e in x],
+        ),
         nullable=False,
         index=True,
     )

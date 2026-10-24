@@ -6,7 +6,8 @@ from sqlalchemy import select
 from app.core.enums import LegalForm, MemberRole
 from app.deps import CorrelationId, CurrentUser, DbDep
 from app.models.company import Company, CompanyMember
-from app.models.finance import BusinessGoal, FinancialObligation, FinancialSnapshot
+from app.models.finance import FinancialObligation, FinancialSnapshot
+from app.models.funding import BusinessGoal
 from app.schemas.company import (
     BusinessGoalCreate,
     BusinessGoalOut,

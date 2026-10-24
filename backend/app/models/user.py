@@ -15,6 +15,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    login: Mapped[Optional[str]] = mapped_column(String(255), unique=True, index=True, nullable=True)
     email: Mapped[Optional[str]] = mapped_column(String(255), unique=True, index=True, nullable=True)
     phone: Mapped[Optional[str]] = mapped_column(String(20), unique=True, index=True, nullable=True)
     password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -28,20 +29,16 @@ class User(Base):
         nullable=False,
         default=UserStatus.ACTIVE,
     )
-    email_verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    phone_verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True)
+    email_verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    memberships = relationship("CompanyMember", back_populates="user", cascade="all, delete-orphan")
-    refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
-    verification_challenges = relationship(
-        "VerificationChallenge", back_populates="user", cascade="all, delete-orphan"
-    )
+    memberships = relationship("CompanyMembership", back_populates="user", cascade="all, delete-orphan")
+    sessions = relationship("AuthSession", back_populates="user", cascade="all, delete-orphan")
 
     @property
     def company_id(self) -> Optional[str]:
@@ -53,9 +50,5 @@ class User(Base):
         return self.memberships[0].company_id
 
     @property
-    def email_verified(self) -> bool:
-        return self.email_verified_at is not None
-
-    @property
-    def phone_verified(self) -> bool:
-        return self.phone_verified_at is not None
+    def display_name(self) -> str:
+        return self.full_name

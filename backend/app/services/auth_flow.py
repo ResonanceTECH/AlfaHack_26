@@ -11,7 +11,7 @@ from app.config import get_settings
 from app.core.enums import UserRole, UserStatus
 from app.core.otp import hash_token
 from app.core.security import create_access_token, create_refresh_token, decode_token, verify_password
-from app.models.finance import RefreshToken
+from app.models.session import RefreshToken
 from app.models.user import User
 from app.services.audit import write_audit
 from app.services.rate_limit import RateLimitExceeded, hit
@@ -71,7 +71,7 @@ def login(
     user = db.scalar(
         select(User)
         .options(joinedload(User.memberships))
-        .where(or_(User.email == login_norm, User.id == login))
+        .where(or_(User.email == login_norm, User.login == login_norm, User.id == login))
     )
     bad = HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Неверный логин или пароль")
     if user is None or not user.password_hash or not verify_password(password, user.password_hash):

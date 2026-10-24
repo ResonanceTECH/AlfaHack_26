@@ -138,6 +138,7 @@ def _ensure_isolation_tenant(db, pwd: str) -> None:
     db.add(
         User(
             id="user_ent_02",
+            login="ooo@demo.alfa",
             email="ooo@demo.alfa",
             password_hash=pwd,
             full_name="Мария Козлова",
@@ -198,6 +199,7 @@ def seed() -> None:
         users = [
             User(
                 id="user_ent_01",
+                login="ip@demo.alfa",
                 email="ip@demo.alfa",
                 password_hash=pwd,
                 full_name="Иван Петров",
@@ -207,6 +209,7 @@ def seed() -> None:
             ),
             User(
                 id="user_analyst_01",
+                login="analyst@demo.alfa",
                 email="analyst@demo.alfa",
                 password_hash=pwd,
                 full_name="Анна Соколова",
@@ -216,6 +219,7 @@ def seed() -> None:
             ),
             User(
                 id="user_admin_01",
+                login="admin@demo.alfa",
                 email="admin@demo.alfa",
                 password_hash=pwd,
                 full_name="Елена Васильева",
@@ -290,7 +294,9 @@ def seed() -> None:
             )
 
         for p in PRODUCTS:
-            db.add(CreditProduct(**p))
+            row = dict(p)
+            row["code"] = p["id"]
+            db.add(CreditProduct(**row))
             db.add(
                 CreditProductRule(
                     product_id=p["id"],

@@ -11,7 +11,7 @@ from app.config import get_settings
 from app.core.rbac import permission_codes
 from app.core.security import decode_token
 from app.deps import CorrelationId, CurrentUser, DbDep, client_ip
-from app.models.finance import RefreshToken
+from app.models.session import RefreshToken
 from app.models.user import User
 from app.schemas.auth import AuthSessionOut, LoginRequest, RefreshRequest, TokenPairOut, UserOut
 from app.schemas.common import MessageOut
