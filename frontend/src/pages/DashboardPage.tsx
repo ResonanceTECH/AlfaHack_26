@@ -14,6 +14,7 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import { useMemo } from 'react'
 import { Link as RouterLink, Navigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { fetchApplicationOffers, isLiveOffer } from '@/api/applications'
 import { listCompanies } from '@/api/companies'
 import { fetchReadiness } from '@/api/credit'
 import { loadLocalApps, mergeApplications } from '@/features/applications/localApps'
@@ -38,19 +39,35 @@ function pipelineStep(status: ApplicationStatus): number {
   switch (status) {
     case 'draft':
     case 'submitted':
+    case 'validating':
       return 0
     case 'docs_requested':
       return 1
     case 'in_review':
       return 2
     case 'approved':
+    case 'counteroffered':
       return 3
+    case 'offer_accepted':
+    case 'agreement_preparation':
     case 'rejected':
     case 'issued':
       return 4
     default:
       return 0
   }
+}
+
+function pipelineDone(status: ApplicationStatus, index: number, current: number): boolean {
+  if (index < current) return true
+  if (index !== current) return false
+  return [
+    'approved',
+    'counteroffered',
+    'offer_accepted',
+    'agreement_preparation',
+    'issued',
+  ].includes(status)
 }
 
 function greeting(): string {
@@ -69,7 +86,16 @@ function estimateMonthly(amount: number, termMonths: number, annualRate: number)
 
 function pickActiveApp(apps: CreditApplication[]): CreditApplication | null {
   const active = apps.find((a) =>
-    ['submitted', 'in_review', 'docs_requested', 'approved'].includes(a.status),
+    [
+      'submitted',
+      'validating',
+      'in_review',
+      'docs_requested',
+      'approved',
+      'counteroffered',
+      'offer_accepted',
+      'agreement_preparation',
+    ].includes(a.status),
   )
   return active ?? apps.find((a) => a.status === 'draft') ?? apps[0] ?? null
 }
@@ -129,6 +155,18 @@ export function DashboardPage() {
     enabled: Boolean(companyId) && user?.role !== 'admin',
   })
 
+  const offersQ = useQuery({
+    queryKey: ['application', activeApp?.id, 'offers', companyId],
+    queryFn: () => fetchApplicationOffers(companyId!, activeApp!.id),
+    enabled: Boolean(companyId && activeApp?.id) && user?.role !== 'admin',
+    retry: false,
+  })
+
+  const bankOffer = useMemo(() => {
+    const list = offersQ.data ?? []
+    return list.find((o) => isLiveOffer(o)) ?? null
+  }, [offersQ.data])
+
   if (user?.role === 'admin') {
     return <Navigate to="/app/admin" replace />
   }
@@ -174,9 +212,11 @@ export function DashboardPage() {
       ? financials.liabilities / financials.avgMonthlyRevenue
       : 0
   const step = activeApp ? pipelineStep(activeApp.status) : -1
-  const offerAmount = activeApp ? Math.round(activeApp.amount * 0.6) : 0
-  const monthly = activeApp
-    ? estimateMonthly(offerAmount || activeApp.amount, activeApp.termMonths, activeApp.rate || 17.9)
+  const offerAmount = bankOffer?.amount ?? null
+  const offerRate = bankOffer?.rate ?? null
+  const monthly = bankOffer
+    ? bankOffer.monthlyPayment ||
+      estimateMonthly(bankOffer.amount, bankOffer.termMonths, bankOffer.rate || 0)
     : 0
   const firstName = user?.fullName.split(' ')[0] ?? ''
   const appCode = activeApp
@@ -331,13 +371,26 @@ export function DashboardPage() {
                 <Meta
                   label="Предложение банка"
                   value={
-                    activeApp.rate
-                      ? `${shortMoney(offerAmount)} · ${activeApp.rate.toFixed(1)}%`
-                      : shortMoney(offerAmount)
+                    offersQ.isLoading
+                      ? '…'
+                      : bankOffer && offerAmount != null
+                        ? offerRate != null
+                          ? `${shortMoney(offerAmount)} · ${offerRate.toFixed(1)}%`
+                          : shortMoney(offerAmount)
+                        : 'Нет предложения'
                   }
-                  accent
+                  accent={Boolean(bankOffer)}
                 />
-                <Meta label="Ежемес. платёж" value={monthly ? `≈ ${shortMoney(monthly)}` : '—'} />
+                <Meta
+                  label="Ежемес. платёж"
+                  value={
+                    offersQ.isLoading
+                      ? '…'
+                      : bankOffer && monthly
+                        ? `≈ ${shortMoney(monthly)}`
+                        : '—'
+                  }
+                />
               </Box>
 
               <Stack direction="row" spacing={1.25} sx={{ mb: 2.5 }} flexWrap="wrap" useFlexGap>
@@ -684,8 +737,16 @@ function Pipeline({ current, status }: { current: number; status: ApplicationSta
     <Box sx={{ mt: 'auto' }}>
       <Stack direction="row" alignItems="flex-start" spacing={0.5}>
         {labels.map((label, i) => {
-          const done = i < current || (i === current && ['approved', 'issued'].includes(status))
-          const active = i === current && !['approved', 'issued', 'rejected'].includes(status)
+          const done = pipelineDone(status, i, current)
+          const settled = [
+            'approved',
+            'counteroffered',
+            'offer_accepted',
+            'agreement_preparation',
+            'issued',
+            'rejected',
+          ].includes(status)
+          const active = i === current && !settled
           const failed = status === 'rejected' && i === current
           return (
             <Box key={label} sx={{ flex: 1, minWidth: 0 }}>

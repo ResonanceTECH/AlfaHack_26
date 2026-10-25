@@ -509,21 +509,38 @@ def get_forecast(db: Session, company_id: str, forecast_id: str) -> CashflowFore
     return fc
 
 
+def _pick(src: dict[str, Any], *keys: str, default: Any = None) -> Any:
+    for k in keys:
+        if k in src and src[k] is not None:
+            return src[k]
+    return default
+
+
 def create_scenario(db: Session, company_id: str, data: dict[str, Any]) -> CreditScenario:
+    from app.services.finance_engine import annuity_payment, run_credit_scenario
+
     summary = finance_summary(db, company_id, period="6m")
     base_rev = Decimal(str(summary["revenue"]))
     base_out = Decimal(str(summary["outflow"]))
-    rev_pct = float(data.get("revenue_change_pct") or 0)
-    exp_pct = float(data.get("expense_change_pct") or 0)
-    stress = bool(data.get("stress"))
+    merged = {**(data.get("parameters") or {}), **(data.get("params") or {})}
+    rev_pct = float(
+        _pick(merged, "revenue_change_pct", "revenueChangePct", default=data.get("revenue_change_pct") or 0)
+    )
+    exp_pct = float(
+        _pick(merged, "expense_change_pct", "expenseChangePct", default=data.get("expense_change_pct") or 0)
+    )
+    stress = bool(_pick(merged, "stress", default=data.get("stress")))
     if stress:
         rev_pct = min(rev_pct, -15)
         exp_pct = max(exp_pct, 10)
     new_rev = round2(base_rev * Decimal(str(1 + rev_pct / 100)))
     new_out = round2(base_out * Decimal(str(1 + exp_pct / 100)))
-    loan = data.get("loan_amount")
+    loan = _pick(merged, "amount", "loan_amount", "loanAmount", default=data.get("loan_amount"))
     loan_d = Decimal(str(loan)) if loan is not None else Decimal("0")
-    result = {
+    term = _pick(merged, "term_months", "termMonths")
+    rate = _pick(merged, "annual_rate", "annualRate")
+
+    result: dict[str, Any] = {
         "base": {
             "revenue": str(summary["revenue"]),
             "outflow": str(summary["outflow"]),
@@ -545,8 +562,76 @@ def create_scenario(db: Session, company_id: str, data: dict[str, Any]) -> Credi
         "expense_change_pct": exp_pct,
         "stress": stress,
         "loan_amount": str(round2(loan_d)) if loan is not None else None,
-        **(data.get("parameters") or {}),
+        **merged,
     }
+
+    if loan is not None and term and rate:
+        months = max(1, int(term))
+        monthly_rev = _pick(merged, "base_monthly_revenue", "baseMonthlyRevenue")
+        monthly_exp = _pick(merged, "base_monthly_expenses", "baseMonthlyExpenses")
+        engine_params = {
+            "amount": loan_d,
+            "term_months": months,
+            "annual_rate": Decimal(str(rate)),
+            "schedule_type": _pick(merged, "schedule_type", "scheduleType", default="annuity"),
+            "disbursement_date": _pick(
+                merged, "disbursement_date", "disbursementDate", default=date.today().isoformat()
+            ),
+            "repayment_start_date": _pick(
+                merged, "repayment_start_date", "repaymentStartDate", default=date.today().isoformat()
+            ),
+            "revenue_change_pct": rev_pct,
+            "expense_change_pct": exp_pct,
+            "one_time_investment": _pick(merged, "one_time_investment", "oneTimeInvestment", default=0),
+            "own_funds": _pick(merged, "own_funds", "ownFunds", default=0),
+            "seasonal_swing_pct": _pick(merged, "seasonal_swing_pct", "seasonalSwingPct", default=0),
+            "base_monthly_revenue": Decimal(str(monthly_rev)) if monthly_rev is not None else round2(base_rev / 6),
+            "base_monthly_expenses": Decimal(str(monthly_exp)) if monthly_exp is not None else round2(base_out / 6),
+        }
+        computed = run_credit_scenario(data.get("name") or "Сценарий", engine_params)
+        params = {**params, **(computed.get("params") or {})}
+        result.update(
+            {
+                "monthly_payment": str(computed.get("monthly_payment")),
+                "cash_flow_after_payment": str(computed.get("cash_flow_after_payment")),
+                "min_balance": str(computed.get("min_balance")),
+                "deficit_months": computed.get("deficit_months") or [],
+                "explanation": computed.get("explanation"),
+                "series": [
+                    {
+                        "month": p.get("month"),
+                        "balance": str(p.get("balance")),
+                        "payment": str(p.get("payment")),
+                        "net_flow": str(p.get("net_flow")),
+                    }
+                    for p in (computed.get("series") or [])
+                ],
+                "note": computed.get("explanation") or result.get("note"),
+            }
+        )
+    else:
+        months = max(1, int(term or 12))
+        rate_d = Decimal(str(rate or 18))
+        monthly = annuity_payment(loan_d, rate_d, months) if loan_d else Decimal("0")
+        series = []
+        cash = Decimal(str(summary["cash_balance"]))
+        for m in range(1, months + 1):
+            net = round2(new_rev / months - new_out / months - monthly)
+            cash = round2(cash + net)
+            series.append(
+                {"month": m, "balance": str(cash), "payment": str(monthly), "net_flow": str(net)}
+            )
+        result.update(
+            {
+                "monthly_payment": str(monthly),
+                "cash_flow_after_payment": str(round2(new_rev / months - new_out / months - monthly)),
+                "min_balance": str(min((Decimal(p["balance"]) for p in series), default=Decimal("0"))),
+                "deficit_months": [p["month"] for p in series if Decimal(p["balance"]) < 0],
+                "explanation": result.get("note"),
+                "series": series,
+            }
+        )
+
     sc = CreditScenario(
         company_id=company_id,
         name=data.get("name") or "Сценарий",
@@ -569,12 +654,22 @@ def list_scenarios(db: Session, company_id: str) -> list[CreditScenario]:
 
 
 def serialize_scenario(sc: CreditScenario) -> dict[str, Any]:
+    params = dict(sc.parameters or {})
+    result = dict(sc.result or {})
+    series = result.get("series") or params.get("series") or []
     return {
         "id": sc.id,
         "company_id": sc.company_id,
         "name": sc.name,
-        "parameters": sc.parameters or {},
-        "result": sc.result or {},
+        "parameters": params,
+        "params": params,
+        "result": result,
+        "series": series,
+        "monthly_payment": result.get("monthly_payment"),
+        "cash_flow_after_payment": result.get("cash_flow_after_payment"),
+        "min_balance": result.get("min_balance"),
+        "deficit_months": result.get("deficit_months") or [],
+        "explanation": result.get("explanation") or result.get("note"),
         "created_at": sc.created_at,
     }
 

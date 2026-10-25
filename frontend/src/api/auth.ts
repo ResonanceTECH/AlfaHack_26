@@ -1,5 +1,5 @@
 import type { AuthSession, User } from '@/types'
-import { api, clearSession } from '@/api/client'
+import { ACTIVE_COMPANY_KEY, api, clearSession } from '@/api/client'
 
 export type EmailAction = {
   message: string
@@ -15,20 +15,41 @@ function persistSession(session: AuthSession): AuthSession {
   return session
 }
 
+/** Backend: ENTREPRENEUR | ANALYST | ADMIN (+ legacy manager / risk_analyst / accountant). */
+function normalizeRole(raw: unknown): User['role'] {
+  const r = String(raw ?? 'entrepreneur')
+    .trim()
+    .toLowerCase()
+  if (r === 'analyst' || r === 'manager' || r === 'risk_analyst') return r as User['role']
+  if (r === 'admin') return 'admin'
+  if (r === 'accountant') return 'accountant'
+  return 'entrepreneur'
+}
+
 function mapUser(raw: Record<string, unknown>): User {
-  const roleRaw = String(raw.role ?? 'entrepreneur').toLowerCase()
   const statusRaw = String(raw.status ?? 'active').toLowerCase()
   return {
     id: String(raw.id),
     email: (raw.email as string | null | undefined) ?? undefined,
     phone: (raw.phone as string | null | undefined) ?? undefined,
     fullName: String(raw.fullName ?? raw.full_name ?? ''),
-    role: (roleRaw as User['role']) || 'entrepreneur',
+    role: normalizeRole(raw.role),
     companyId: (raw.companyId ?? raw.company_id) as string | undefined,
     emailVerified: Boolean(raw.emailVerified ?? raw.email_verified),
     phoneVerified: Boolean(raw.phoneVerified ?? raw.phone_verified),
     status: (statusRaw as User['status']) || 'active',
+    mfaEnabled:
+      raw.mfaEnabled != null || raw.mfa_enabled != null
+        ? Boolean(raw.mfaEnabled ?? raw.mfa_enabled)
+        : undefined,
   }
+}
+
+function persistUser(user: User): User {
+  const active = localStorage.getItem(ACTIVE_COMPANY_KEY) || undefined
+  const next = active ? { ...user, companyId: active } : user
+  localStorage.setItem('alfa_user', JSON.stringify(next))
+  return next
 }
 
 function mapSession(data: Record<string, unknown>): AuthSession {
@@ -109,5 +130,69 @@ export async function logoutRequest(): Promise<void> {
 
 export async function fetchMe(): Promise<User> {
   const { data } = await api.get('/auth/me')
-  return mapUser(data as Record<string, unknown>)
+  return persistUser(mapUser(data as Record<string, unknown>))
+}
+
+export async function patchMe(input: {
+  fullName?: string
+  email?: string
+  phone?: string
+}): Promise<User> {
+  const { data } = await api.patch('/auth/me', input)
+  return persistUser(mapUser(data as Record<string, unknown>))
+}
+
+export type UserSession = {
+  id: string
+  deviceInfo: string
+  createdAt?: string
+  expiresAt?: string
+  current: boolean
+  revoked: boolean
+}
+
+function mapUserSession(raw: Record<string, unknown>): UserSession {
+  return {
+    id: String(raw.id),
+    deviceInfo: String(raw.deviceInfo ?? raw.device_info ?? 'Устройство'),
+    createdAt:
+      raw.createdAt != null || raw.created_at != null
+        ? String(raw.createdAt ?? raw.created_at)
+        : undefined,
+    expiresAt:
+      raw.expiresAt != null || raw.expires_at != null
+        ? String(raw.expiresAt ?? raw.expires_at)
+        : undefined,
+    current: Boolean(raw.current),
+    revoked: Boolean(raw.revoked),
+  }
+}
+
+function asSessionList(data: unknown): Record<string, unknown>[] {
+  if (Array.isArray(data)) return data as Record<string, unknown>[]
+  if (data && typeof data === 'object') {
+    const raw = data as Record<string, unknown>
+    if (Array.isArray(raw.items)) return raw.items as Record<string, unknown>[]
+    if (Array.isArray(raw.sessions)) return raw.sessions as Record<string, unknown>[]
+  }
+  return []
+}
+
+export async function listSessions(): Promise<UserSession[]> {
+  const { data } = await api.get('/auth/sessions')
+  return asSessionList(data).map(mapUserSession)
+}
+
+export async function revokeSession(id: string): Promise<void> {
+  await api.delete(`/auth/sessions/${encodeURIComponent(id)}`)
+}
+
+/** POST /auth/logout-all — revoke every refresh session, then clear local tokens. */
+export async function logoutAllRequest(): Promise<void> {
+  try {
+    await api.post('/auth/logout-all')
+  } catch {
+    /* ignore network errors on logout */
+  }
+  clearSession()
 }

@@ -1,3 +1,5 @@
+"""Shared fixtures: in-process TestClient + optional live QA API base."""
+
 from __future__ import annotations
 
 import os
@@ -30,13 +32,18 @@ from app.main import create_app
 from app.models.user import User
 from app.services.rate_limit import reset_rate_limits
 
-
-
+API_BASE = os.environ.get("QA_API_BASE", "http://127.0.0.1:8000/api/v1")
 DEMO_PASSWORD = "demo1234"
 COMPANY_IP = "company_001"
 COMPANY_OOO = "company_002"
 PRODUCT_WC = "working_capital_01"
 NEED_IP = "need_001"
+
+
+@pytest.fixture(scope="session")
+def api_base() -> str:
+    """Live docker/QA API — integration/security/httpx tests."""
+    return API_BASE
 
 
 def _db_reachable(url: str) -> bool:

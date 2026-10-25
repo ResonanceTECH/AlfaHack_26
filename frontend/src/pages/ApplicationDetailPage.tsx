@@ -24,6 +24,7 @@ import {
   fetchApplicationOffers,
   fetchDocumentRequests,
   getApplication,
+  isLiveOffer,
   postApplicationComment,
   uploadApplicationDocument,
   uploadCompanyApplicationDocument,
@@ -31,6 +32,14 @@ import {
   type DocumentRequest,
   type PublicDecision,
 } from '@/api/applications'
+import {
+  fetchApplicationExplanation,
+  formatAiError,
+  type AiAgentResponse,
+} from '@/api/ai'
+import { AiAgentReply } from '@/components/ai/AiAgentReply'
+import { useAuth } from '@/contexts/AuthContext'
+import { useAppStore } from '@/hooks/useAppStore'
 import {
   formatBytesLabel,
   loadAppDocuments,
@@ -92,10 +101,13 @@ const DOC_STATUS_UI: Record<
 const APP_STATUS_CHIP: Record<ApplicationStatus, { bg: string; color: string }> = {
   draft: { bg: '#EEF1F4', color: '#5A6B7D' },
   submitted: { bg: '#E8F1FB', color: '#1A4A7A' },
+  validating: { bg: '#E8F1FB', color: '#1A4A7A' },
   in_review: { bg: '#FFF0E0', color: '#C45A12' },
   docs_requested: { bg: '#FDE8E6', color: '#C41E14' },
   approved: { bg: '#E6F5EE', color: '#1B8A5A' },
   counteroffered: { bg: '#FFF0E0', color: '#C45A12' },
+  offer_accepted: { bg: '#E6F5EE', color: '#1B8A5A' },
+  agreement_preparation: { bg: '#E6F5EE', color: '#1B8A5A' },
   rejected: { bg: '#FDE8E6', color: '#C41E14' },
   issued: { bg: '#E6F5EE', color: '#1B8A5A' },
 }
@@ -104,6 +116,7 @@ function pipelineStep(status: ApplicationStatus): number {
   switch (status) {
     case 'draft':
     case 'submitted':
+    case 'validating':
       return 0
     case 'docs_requested':
       return 1
@@ -112,6 +125,8 @@ function pipelineStep(status: ApplicationStatus): number {
     case 'approved':
     case 'counteroffered':
       return 3
+    case 'offer_accepted':
+    case 'agreement_preparation':
     case 'rejected':
     case 'issued':
       return 4
@@ -140,11 +155,14 @@ function shortMoney(n: number): string {
 export function ApplicationDetailPage() {
   const { id } = useParams()
   const qc = useQueryClient()
+  const { user } = useAuth()
+  const { companyId: storeCompanyId } = useAppStore()
   const editable = Boolean(id && isEditableApplication(id))
+  const companyIdHint = storeCompanyId || user?.companyId
 
   const appQ = useQuery({
-    queryKey: ['application', id],
-    queryFn: () => getApplication(id!),
+    queryKey: ['application', id, companyIdHint],
+    queryFn: () => getApplication(id!, companyIdHint),
     enabled: Boolean(id) && !editable,
     retry: false,
   })
@@ -154,7 +172,11 @@ export function ApplicationDetailPage() {
     [id, appQ.dataUpdatedAt],
   )
   const app = appQ.data ?? localApp
-  const companyId = app?.companyId
+  const companyId = app?.companyId || companyIdHint
+
+  const [explanation, setExplanation] = useState<AiAgentResponse | null>(null)
+  const [explanationLoading, setExplanationLoading] = useState(false)
+  const [explanationError, setExplanationError] = useState<string | null>(null)
 
   const decisionQ = useQuery({
     queryKey: ['application', id, 'decision'],
@@ -204,6 +226,52 @@ export function ApplicationDetailPage() {
     })
   }, [app])
 
+  function showFlash(msg: string) {
+    setFlash(msg)
+    window.setTimeout(() => setFlash(null), 2200)
+  }
+
+  // hooks must stay above early returns (React #310)
+  const acceptM = useMutation({
+    mutationFn: (offer: CreditOffer) =>
+      acceptApplicationOffer(companyId!, id!, offer.id, offer.offerVersion),
+    onSuccess: async () => {
+      showFlash('Предложение банка принято')
+      await qc.invalidateQueries({ queryKey: ['application', id] })
+      await qc.invalidateQueries({ queryKey: ['application', id, 'offers'] })
+      await qc.invalidateQueries({ queryKey: ['application', id, 'decision'] })
+      await qc.invalidateQueries({ queryKey: ['applications'] })
+    },
+    onError: (e: unknown) => {
+      setError(
+        (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
+          ?.message || 'Не удалось принять предложение',
+      )
+    },
+  })
+
+  const declineM = useMutation({
+    mutationFn: (offer: CreditOffer) =>
+      declineApplicationOffer(companyId!, id!, offer.id, 'Отклонено клиентом'),
+    onSuccess: async () => {
+      showFlash('Предложение отклонено')
+      await qc.invalidateQueries({ queryKey: ['application', id, 'offers'] })
+      await qc.invalidateQueries({ queryKey: ['application', id] })
+    },
+    onError: () => setError('Не удалось отклонить предложение'),
+  })
+
+  const chatM = useMutation({
+    mutationFn: () => postApplicationComment(companyId!, id!, chatText.trim()),
+    onSuccess: async () => {
+      setChatText('')
+      showFlash('Сообщение отправлено банку')
+      await qc.invalidateQueries({ queryKey: ['application', id, 'comments'] })
+      await qc.invalidateQueries({ queryKey: ['application', id] })
+    },
+    onError: () => setError('Не удалось отправить сообщение'),
+  })
+
   const required = slots.filter((s) => s.required)
   const doneRequired = required.filter(
     (s) => s.status === 'uploaded' || s.status === 'review',
@@ -245,11 +313,6 @@ export function ApplicationDetailPage() {
   function persist(next: AppDocSlot[]) {
     setSlots(next)
     if (id) saveAppDocuments(id, next)
-  }
-
-  function showFlash(msg: string) {
-    setFlash(msg)
-    window.setTimeout(() => setFlash(null), 2200)
   }
 
   async function attachFile(slotId: string, file: File) {
@@ -311,46 +374,6 @@ export function ApplicationDetailPage() {
     }
   }
 
-  const acceptM = useMutation({
-    mutationFn: (offer: CreditOffer) =>
-      acceptApplicationOffer(companyId!, id!, offer.id, offer.offerVersion),
-    onSuccess: async () => {
-      showFlash('Предложение банка принято')
-      await qc.invalidateQueries({ queryKey: ['application', id] })
-      await qc.invalidateQueries({ queryKey: ['application', id, 'offers'] })
-      await qc.invalidateQueries({ queryKey: ['application', id, 'decision'] })
-      await qc.invalidateQueries({ queryKey: ['applications'] })
-    },
-    onError: (e: unknown) => {
-      setError(
-        (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
-          ?.message || 'Не удалось принять предложение',
-      )
-    },
-  })
-
-  const declineM = useMutation({
-    mutationFn: (offer: CreditOffer) =>
-      declineApplicationOffer(companyId!, id!, offer.id, 'Отклонено клиентом'),
-    onSuccess: async () => {
-      showFlash('Предложение отклонено')
-      await qc.invalidateQueries({ queryKey: ['application', id, 'offers'] })
-      await qc.invalidateQueries({ queryKey: ['application', id] })
-    },
-    onError: () => setError('Не удалось отклонить предложение'),
-  })
-
-  const chatM = useMutation({
-    mutationFn: () => postApplicationComment(companyId!, id!, chatText.trim()),
-    onSuccess: async () => {
-      setChatText('')
-      showFlash('Сообщение отправлено банку')
-      await qc.invalidateQueries({ queryKey: ['application', id, 'comments'] })
-      await qc.invalidateQueries({ queryKey: ['application', id] })
-    },
-    onError: () => setError('Не удалось отправить сообщение'),
-  })
-
   function onPick(slotId: string, files: FileList | null) {
     const file = files?.[0]
     if (!file) return
@@ -370,24 +393,46 @@ export function ApplicationDetailPage() {
   }
 
   const code = appCode(app.id)
-  const activeOffers = (offersQ.data ?? []).filter((o) => o.status.toUpperCase() === 'ACTIVE')
+  const activeOffers = (offersQ.data ?? []).filter((o) => isLiveOffer(o))
   const bankOffer = activeOffers[0]
   const decision = decisionQ.data as PublicDecision | null | undefined
   const openDocReqs = (docReqsQ.data ?? []).filter((r) =>
     ['OPEN', 'PENDING', 'REQUESTED'].includes(r.status.toUpperCase()),
   )
-  const offerAmount = bankOffer?.amount ?? app.amount
-  const offerRate = bankOffer?.rate ?? app.rate ?? 17.9
-  const offerTerm = bankOffer?.termMonths ?? app.termMonths
-  const monthly =
-    bankOffer?.monthlyPayment ||
-    estimateMonthly(offerAmount || app.amount, offerTerm, offerRate)
+  const requestedAmount = app.amount
+  const offerAmount = bankOffer?.amount
+  const offerRate = bankOffer?.rate
+  const offerTerm = bankOffer?.termMonths
+  const monthly = bankOffer
+    ? bankOffer.monthlyPayment ||
+      estimateMonthly(bankOffer.amount, bankOffer.termMonths, bankOffer.rate || 0)
+    : 0
   const step = pipelineStep(app.status)
   const statusChip = APP_STATUS_CHIP[app.status] ?? APP_STATUS_CHIP.submitted
   const statusLabel = statusLabels[app.status] ?? String(app.status)
   const blockMsg = !docsReady
     ? `Нужны ещё: ${missingTitles.slice(0, 2).join(' и ')}${missingTitles.length > 2 ? '…' : ''}`
     : null
+  const decisionReady = Boolean(
+    decision ||
+      activeOffers.length > 0 ||
+      ['approved', 'counteroffered', 'rejected', 'in_review', 'docs_requested'].includes(app.status),
+  )
+
+  async function loadExplanation() {
+    if (!id || explanationLoading) return
+    setExplanationLoading(true)
+    setExplanationError(null)
+    try {
+      const res = await fetchApplicationExplanation(id)
+      setExplanation(res)
+    } catch (e) {
+      setExplanation(null)
+      setExplanationError(formatAiError(e, 'Не удалось загрузить объяснение'))
+    } finally {
+      setExplanationLoading(false)
+    }
+  }
 
   return (
     <Box sx={{ maxWidth: 1180, mx: 'auto', pb: 3 }}>
@@ -548,24 +593,36 @@ export function ApplicationDetailPage() {
                 display: 'grid',
                 gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(4, 1fr)' },
                 gap: 1.5,
-                mb: 2.25,
+                mb: 1.5,
               }}
             >
-              <Meta label="Запрошено" value={shortMoney(app.amount)} />
-              <Meta label="Срок" value={`${app.termMonths} мес.`} />
+              <Meta label="Запрошено" value={shortMoney(requestedAmount)} />
+              <Meta label="Срок запроса" value={`${app.termMonths} мес.`} />
               <Meta
-                label="Предложение банка"
+                label="Предложено"
                 value={
-                  bankOffer
-                    ? `${shortMoney(offerAmount)} · ${offerRate.toFixed(1)}%`
+                  bankOffer && offerAmount != null
+                    ? shortMoney(offerAmount)
                     : decision
                       ? String(decision.decision)
                       : 'Ожидает решения'
                 }
                 accent={Boolean(bankOffer)}
               />
-              <Meta label="Ежемес. платёж" value={monthly ? `≈ ${shortMoney(monthly)}` : '—'} />
+              <Meta
+                label="Условия оффера"
+                value={
+                  bankOffer
+                    ? `${offerTerm ?? '—'} мес · ${(offerRate ?? 0).toFixed(1)}% · ≈ ${shortMoney(monthly)}`
+                    : '—'
+                }
+              />
             </Box>
+            {bankOffer && offerAmount != null && offerAmount !== requestedAmount && (
+              <Typography sx={{ fontSize: 13, color: '#C45A12', fontWeight: 650, mb: 1.5 }}>
+                Запрошено {shortMoney(requestedAmount)}, предложено {shortMoney(offerAmount)}
+              </Typography>
+            )}
             <Pipeline current={step} status={app.status} />
           </Box>
 
@@ -623,6 +680,11 @@ export function ApplicationDetailPage() {
                     {shortMoney(offer.amount)} · {offer.termMonths} мес · {offer.rate.toFixed(1)}% ·
                     платёж ≈ {shortMoney(offer.monthlyPayment || 0)}
                   </Typography>
+                  {offer.expiresAt && (
+                    <Typography sx={{ mt: 0.35, fontSize: 12, color: '#8A96A3' }}>
+                      Действует до {formatDateTime(offer.expiresAt)}
+                    </Typography>
+                  )}
                   <Stack direction="row" spacing={1} sx={{ mt: 1.25 }}>
                     <Button
                       variant="contained"
@@ -655,6 +717,120 @@ export function ApplicationDetailPage() {
                   </Stack>
                 </Box>
               ))}
+            </Box>
+          )}
+
+          {decisionReady && (
+            <Box sx={tileSx}>
+              <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                justifyContent="space-between"
+                alignItems={{ xs: 'stretch', sm: 'center' }}
+                spacing={1.25}
+                sx={{ mb: 1.25 }}
+              >
+                <Typography
+                  sx={{
+                    fontFamily: 'Manrope, sans-serif',
+                    fontWeight: 800,
+                    fontSize: 16,
+                    color: '#0B1F35',
+                  }}
+                >
+                  Почему такое решение
+                </Typography>
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                  <Button
+                    variant="outlined"
+                    disabled={explanationLoading}
+                    onClick={() => void loadExplanation()}
+                    sx={{
+                      borderRadius: 2,
+                      fontWeight: 700,
+                      textTransform: 'none',
+                      borderColor: 'rgba(11,31,53,0.16)',
+                      color: '#0B1F35',
+                    }}
+                  >
+                    {explanationLoading ? (
+                      <CircularProgress size={18} />
+                    ) : explanation ? (
+                      'Обновить'
+                    ) : (
+                      'Показать объяснение'
+                    )}
+                  </Button>
+                  <Button
+                    component={RouterLink}
+                    to={`/app/ai?applicationId=${encodeURIComponent(app.id)}`}
+                    variant="contained"
+                    color="primary"
+                    sx={{
+                      borderRadius: 2,
+                      fontWeight: 700,
+                      textTransform: 'none',
+                      boxShadow: 'none',
+                    }}
+                  >
+                    Задать вопрос по заявке
+                  </Button>
+                </Stack>
+              </Stack>
+              {explanationError && (
+                <Alert severity="error" sx={{ mb: 1.25, borderRadius: 2 }}>
+                  {explanationError}
+                </Alert>
+              )}
+              {explanation ? (
+                <AiAgentReply data={explanation} />
+              ) : (
+                !explanationLoading &&
+                !explanationError && (
+                  <Typography sx={{ fontSize: 13.5, color: '#7A8795' }}>
+                    Загрузите объяснение решения или задайте вопрос в чате по этой заявке.
+                  </Typography>
+                )
+              )}
+            </Box>
+          )}
+
+          {app.statusHistory.length > 0 && (
+            <Box sx={tileSx}>
+              <Typography
+                sx={{
+                  fontFamily: 'Manrope, sans-serif',
+                  fontWeight: 800,
+                  fontSize: 16,
+                  color: '#0B1F35',
+                  mb: 1.25,
+                }}
+              >
+                История статусов
+              </Typography>
+              <Stack spacing={0.85}>
+                {[...app.statusHistory].reverse().map((h, i) => (
+                  <Stack
+                    key={`${h.status}-${h.at}-${i}`}
+                    direction="row"
+                    justifyContent="space-between"
+                    spacing={1}
+                    sx={{
+                      py: 0.65,
+                      borderBottom:
+                        i < app.statusHistory.length - 1
+                          ? '1px solid rgba(11,31,53,0.06)'
+                          : 'none',
+                    }}
+                  >
+                    <Typography sx={{ fontSize: 13.5, fontWeight: 650, color: '#0B1F35' }}>
+                      {statusLabels[h.status] ?? h.status}
+                    </Typography>
+                    <Typography sx={{ fontSize: 12.5, color: '#8A96A3', flexShrink: 0 }}>
+                      {formatDateTime(h.at)}
+                    </Typography>
+                  </Stack>
+                ))}
+              </Stack>
             </Box>
           )}
 
@@ -1075,8 +1251,26 @@ function Pipeline({ current, status }: { current: number; status: ApplicationSta
   return (
     <Stack direction="row" alignItems="flex-start" spacing={0.5}>
       {labels.map((label, i) => {
-        const done = i < current || (i === current && ['approved', 'issued'].includes(status))
-        const active = i === current && !['approved', 'issued', 'rejected'].includes(status)
+        const done =
+          i < current ||
+          (i === current &&
+            [
+              'approved',
+              'counteroffered',
+              'offer_accepted',
+              'agreement_preparation',
+              'issued',
+            ].includes(status))
+        const active =
+          i === current &&
+          ![
+            'approved',
+            'counteroffered',
+            'offer_accepted',
+            'agreement_preparation',
+            'issued',
+            'rejected',
+          ].includes(status)
         const failed = status === 'rejected' && i === current
         return (
           <Box key={label} sx={{ flex: 1, minWidth: 0 }}>

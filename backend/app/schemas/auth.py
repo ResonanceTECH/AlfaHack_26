@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import Field
 
 from app.core.enums import UserRole, UserStatus
@@ -25,6 +27,22 @@ class UserOut(APIModel):
     company_id: str | None = None
     permissions: list[str] = Field(default_factory=list)
     status: UserStatus = UserStatus.ACTIVE
+    mfa_enabled: bool = False
+
+
+class UserPatch(APIModel):
+    full_name: str | None = Field(default=None, min_length=1, max_length=255)
+    email: str | None = None
+    phone: str | None = None
+
+
+class SessionOut(APIModel):
+    id: str
+    device_info: str | None = None
+    created_at: datetime | None = None
+    expires_at: datetime | None = None
+    current: bool = False
+    revoked: bool = False
 
 
 class AuthSessionOut(APIModel):

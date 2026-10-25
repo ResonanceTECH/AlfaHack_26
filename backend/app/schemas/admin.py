@@ -34,6 +34,7 @@ class AdminUserOut(APIModel):
     company_ids: list[str] = Field(default_factory=list)
     last_login_at: datetime | None = None
     created_at: datetime | None = None
+    mfa_enabled: bool = False
 
 
 class AdminUserListOut(APIModel):
@@ -59,6 +60,7 @@ class AdminUserPatch(APIModel):
     role: UserRole | None = None
     status: UserStatus | None = None
     is_active: bool | None = None
+    mfa_enabled: bool | None = None
 
 
 class AdminResetCredentialsIn(APIModel):
@@ -438,3 +440,64 @@ class AdminDemoJobOut(APIModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     created_at: datetime | None = None
+
+
+class AnalyticsKpis(APIModel):
+    apps: int = 0
+    issued_volume: float = 0
+    take_up_pct: float = 0
+    avg_rate: float = 0
+    auto_decision_pct: float = 0
+
+
+class AnalyticsFunnelRow(APIModel):
+    stage: str
+    count: int
+    conversion_pct: float = 0
+    avg_hours: float = 0
+    dropoff_pct: float = 0
+
+
+class AnalyticsByProduct(APIModel):
+    product: str
+    apps: int = 0
+    approval: float = 0
+    take_up: float = 0
+    volume: float = 0
+
+
+class AnalyticsByChannel(APIModel):
+    channel: str
+    apps: int = 0
+    conv: float = 0
+
+
+class AnalyticsVolumeWeek(APIModel):
+    week: str
+    volume: float = 0
+
+
+class AnalyticsRejectReason(APIModel):
+    name: str
+    value: float = 0
+
+
+class AnalyticsWeeklyConv(APIModel):
+    week: str
+    pct: float = 0
+
+
+class AnalyticsSlaSegment(APIModel):
+    segment: str
+    hours: float = 0
+
+
+class AdminAnalyticsConveyorOut(APIModel):
+    kpis: AnalyticsKpis
+    funnel: list[AnalyticsFunnelRow] = Field(default_factory=list)
+    by_product: list[AnalyticsByProduct] = Field(default_factory=list)
+    by_channel: list[AnalyticsByChannel] = Field(default_factory=list)
+    volume_weekly: list[AnalyticsVolumeWeek] = Field(default_factory=list)
+    reject_reasons: list[AnalyticsRejectReason] = Field(default_factory=list)
+    weekly_conv: list[AnalyticsWeeklyConv] = Field(default_factory=list)
+    sla_by_segment: list[AnalyticsSlaSegment] = Field(default_factory=list)

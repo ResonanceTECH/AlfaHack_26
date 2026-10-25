@@ -9,7 +9,7 @@ import {
 } from '@/api/analyst'
 import { CASE_TABS, type AnalystCase } from '@/features/analyst/demoData'
 import { clearLastAnalystCaseId, writeLastAnalystCaseId } from '@/features/analyst/lastCase'
-import { cardToCase } from '@/features/analyst/map'
+import { analystStatusLabel, cardToCase } from '@/features/analyst/map'
 import { outlineBtn, primaryBtn, statusPill } from '@/features/analyst/styles'
 import { formatMoney } from '@/utils/format'
 
@@ -211,7 +211,7 @@ export function StatusChip({ status }: { status: string }) {
   return (
     <Chip
       size="small"
-      label={status}
+      label={analystStatusLabel(status)}
       sx={{
         height: 24,
         borderRadius: 1.25,

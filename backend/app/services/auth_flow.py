@@ -23,9 +23,9 @@ def utcnow() -> datetime:
 
 def redirect_for_role(role: UserRole) -> str:
     if role == UserRole.ANALYST:
-        return "/bank/queue"
+        return "/app/analyst"
     if role == UserRole.ADMIN:
-        return "/admin"
+        return "/app/admin"
     return "/select-company"
 
 
@@ -148,3 +148,65 @@ def logout_all_sessions(db: Session, user: User, *, correlation_id: str | None) 
     )
     db.commit()
     return len(tokens)
+
+
+def ensure_unique_contacts(
+    db: Session,
+    *,
+    email: str | None,
+    phone: str | None,
+    exclude_id: str,
+) -> None:
+    if email:
+        taken = db.scalar(select(User).where(User.email == email, User.id != exclude_id))
+        if taken:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="Email уже занят")
+    if phone:
+        taken = db.scalar(select(User).where(User.phone == phone, User.id != exclude_id))
+        if taken:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="Телефон уже занят")
+
+
+def patch_profile(db: Session, user: User, patch: dict) -> User:
+    email = patch.get("email")
+    phone = patch.get("phone")
+    if email is not None:
+        email = email.strip().lower() or None
+        patch["email"] = email
+    if phone is not None:
+        phone = phone.strip() or None
+        patch["phone"] = phone
+    ensure_unique_contacts(db, email=email, phone=phone, exclude_id=user.id)
+    if "full_name" in patch and patch["full_name"]:
+        user.full_name = patch["full_name"].strip()
+    if "email" in patch:
+        user.email = patch["email"]
+    if "phone" in patch:
+        user.phone = patch["phone"]
+    db.flush()
+    return user
+
+
+def list_active_sessions(db: Session, user_id: str) -> list[RefreshToken]:
+    return list(
+        db.scalars(
+            select(RefreshToken)
+            .where(RefreshToken.user_id == user_id, RefreshToken.revoked.is_(False))
+            .order_by(RefreshToken.created_at.desc())
+        ).all()
+    )
+
+
+def revoke_session(db: Session, user: User, session_id: str, *, current_id: str | None) -> None:
+    stored = db.scalar(
+        select(RefreshToken).where(RefreshToken.id == session_id, RefreshToken.user_id == user.id)
+    )
+    if stored is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Сессия не найдена")
+    if stored.revoked:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Сессия уже отозвана")
+    if current_id and stored.id == current_id:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Нельзя отозвать текущую сессию")
+    stored.revoked = True
+    stored.revoked_at = utcnow()
+    db.flush()

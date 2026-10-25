@@ -13,12 +13,12 @@ import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import { useMemo, useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { createApplication, submitApplication } from '@/api/applications'
+import { createApplication, getApplication, submitApplication } from '@/api/applications'
 import { makeLocalApplication, upsertLocalApp } from '@/features/applications/localApps'
 import { SelectionStepper } from '@/features/selection/SelectionStepper'
 import { loadSelectionDraft, saveSelectionDraft } from '@/features/selection/draft'
 import { DEMO_PRODUCTS } from '@/features/selection/demoProducts'
-import { goalTitle } from '@/features/selection/goalOptions'
+import { GOAL_OPTIONS, goalTitle } from '@/features/selection/goalOptions'
 import { useAppStore } from '@/hooks/useAppStore'
 import { annuityPayment } from '@/utils/finance'
 import { formatMoney } from '@/utils/format'
@@ -117,15 +117,20 @@ export function ApplicationWizardPage() {
       setSelectedProduct(pickId)
 
       if (apiProductId) {
-        let app = await createApplication({
+        const goalType =
+          GOAL_OPTIONS.find((g) => g.key === draft.goalKey)?.goalType ?? 'other'
+        const draftCreated = await createApplication({
           companyId,
           productId: apiProductId,
-          amount,
+          requestedAmount: amount,
           termMonths: term,
           rate,
           purpose: `${name} · ${goalTitle(draft.goalKey)}`,
+          goalType,
+          fundingNeedId: null,
         })
-        app = await submitApplication(app.id)
+        await submitApplication(companyId, draftCreated.id)
+        const app = await getApplication(draftCreated.id, companyId)
         upsertLocalApp(app)
         await qc.invalidateQueries({ queryKey: ['applications'] })
         setSubmitted({

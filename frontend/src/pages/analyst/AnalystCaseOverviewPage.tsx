@@ -50,9 +50,13 @@ export function AnalystCaseOverviewPage() {
     { label: 'Автопроверки', value: checksLine },
     {
       label: 'Этап',
-      value: card.workflow
-        ? `${analystStepLabel(card.workflow.currentStep) || '—'} · ${analystStatusLabel(card.workflow.status)}`
-        : c.nextStep || '—',
+      value: (() => {
+        if (!card.workflow) return c.nextStep || '—'
+        const step = analystStepLabel(card.workflow.currentStep)
+        const st = analystStatusLabel(card.workflow.status)
+        if (step && step !== '—' && st && st !== '—' && step !== st) return `${step} · ${st}`
+        return step && step !== '—' ? step : st || c.nextStep || '—'
+      })(),
     },
     { label: 'Следующий шаг', value: c.nextStep },
   ]

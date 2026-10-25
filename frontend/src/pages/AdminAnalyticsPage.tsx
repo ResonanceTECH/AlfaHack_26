@@ -1,7 +1,9 @@
 import Grid from '@mui/material/Grid2'
 import {
+  Alert,
   Box,
   Button,
+  CircularProgress,
   MenuItem,
   Stack,
   Table,
@@ -13,7 +15,9 @@ import {
   Typography,
 } from '@mui/material'
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { fetchAdminAnalytics } from '@/api/admin'
 import {
   Area,
   Bar,
@@ -50,86 +54,12 @@ type FunnelRow = {
   bar: 'ink' | 'red' | 'green'
 }
 
-const FUNNEL: FunnelRow[] = [
-  { stage: 'Подана', count: 1284, conversionPct: 100, avgHours: 0.2, dropoffPct: 0, bar: 'ink' },
-  { stage: 'Автопроверки', count: 1104, conversionPct: 86, avgHours: 0.23, dropoffPct: 14, bar: 'ink' },
-  { stage: 'Документы', count: 1020, conversionPct: 79, avgHours: 6.3, dropoffPct: 8, bar: 'ink' },
-  { stage: 'Аналитик', count: 950, conversionPct: 74, avgHours: 28, dropoffPct: 7, bar: 'red' },
-  { stage: 'Риск-оценка', count: 860, conversionPct: 67, avgHours: 5.2, dropoffPct: 9, bar: 'ink' },
-  {
-    stage: 'Решение: одобрено',
-    count: 796,
-    conversionPct: 62,
-    avgHours: 22,
-    dropoffPct: 7,
-    bar: 'green',
-  },
-  {
-    stage: 'Принято клиентом',
-    count: 402,
-    conversionPct: 31,
-    avgHours: 55,
-    dropoffPct: 50,
-    bar: 'green',
-  },
-]
-
-const PRODUCT_KPIS = [
-  { label: 'Заявок в периоде', value: '1 284', trend: '+8.2%', up: true },
-  { label: 'Выдано', value: '13.3 млрд', hint: 'принято клиентом' },
-  { label: 'Approval → take-up', value: '50%', hint: '796 → 402' },
-  { label: 'Ср. ставка выдачи', value: '18.1%', hint: 'взвеш. по объёму' },
-  { label: 'Авто-решение', value: '41%', hint: 'без эскалации' },
-]
-
-const BY_PRODUCT = [
-  { product: 'Оборотный', apps: 612, approval: 64, takeUp: 54, volume: 4.2 },
-  { product: 'Инвестиц.', apps: 346, approval: 58, takeUp: 41, volume: 6.8 },
-  { product: 'Овердрафт', apps: 198, approval: 71, takeUp: 61, volume: 0.9 },
-  { product: 'Линия', apps: 128, approval: 55, takeUp: 38, volume: 1.4 },
-]
-
-const BY_CHANNEL = [
-  { channel: 'Web', apps: 742, conv: 61 },
-  { channel: 'Аналитик', apps: 318, conv: 68 },
-  { channel: 'Партнёр', apps: 224, conv: 54 },
-]
-
-const VOLUME_WEEKLY = [
-  { week: '36', volume: 2.8 },
-  { week: '37', volume: 3.1 },
-  { week: '38', volume: 2.9 },
-  { week: '39', volume: 3.4 },
-  { week: '40', volume: 3.2 },
-  { week: '41', volume: 3.6 },
-  { week: '42', volume: 3.3 },
-  { week: '43', volume: 1.1 },
-]
-
-const REJECT_REASONS = [
-  { name: 'Низкий DSCR', value: 34, fill: color.primary.main },
-  { name: 'Кредитная история', value: 24, fill: color.secondary.main },
-  { name: 'Нехватка документов', value: 18, fill: color.secondary.light },
-  { name: 'Падение выручки', value: 14, fill: '#5A6B7D' },
-  { name: 'Прочее', value: 10, fill: '#B0B8C2' },
-]
-
-const WEEKLY_CONV = [
-  { week: '36', pct: 58 },
-  { week: '37', pct: 61 },
-  { week: '38', pct: 59 },
-  { week: '39', pct: 63 },
-  { week: '40', pct: 62 },
-  { week: '41', pct: 65 },
-  { week: '42', pct: 64 },
-  { week: '43', pct: 62 },
-]
-
-const SLA_BY_SEGMENT = [
-  { segment: 'A', hours: 18 },
-  { segment: 'B+', hours: 26 },
-  { segment: 'B', hours: 30 },
-  { segment: 'C', hours: 44 },
+const REJECT_FILLS = [
+  color.primary.main,
+  color.secondary.main,
+  color.secondary.light,
+  '#5A6B7D',
+  '#B0B8C2',
 ]
 
 const barColor = (kind: FunnelRow['bar']) => {
@@ -156,6 +86,39 @@ export function AdminAnalyticsPage() {
   const [channel, setChannel] = useState('all')
   const [region, setRegion] = useState('all')
 
+  const filters = {
+    period,
+    product: product === 'all' ? undefined : product,
+    region: region === 'all' ? undefined : region,
+    channel: channel === 'all' ? undefined : channel,
+  }
+
+  const analyticsQ = useQuery({
+    queryKey: ['admin', 'analytics', 'conveyor', filters],
+    queryFn: () => fetchAdminAnalytics(filters),
+  })
+
+  const kpis = analyticsQ.data?.kpis ?? []
+  const funnel: FunnelRow[] = analyticsQ.data?.funnel ?? []
+  const byProduct = analyticsQ.data?.byProduct ?? []
+  const byChannel = analyticsQ.data?.byChannel ?? []
+  const volumeWeekly = analyticsQ.data?.volumeWeekly ?? []
+  const weeklyConv = analyticsQ.data?.weeklyConv ?? []
+  const slaBySegment = analyticsQ.data?.slaBySegment ?? []
+  const rejectReasons = useMemo(
+    () =>
+      (analyticsQ.data?.rejectReasons ?? []).map((r, i) => ({
+        ...r,
+        fill: r.fill || REJECT_FILLS[i % REJECT_FILLS.length],
+      })),
+    [analyticsQ.data?.rejectReasons],
+  )
+  const rejectTotal =
+    analyticsQ.data?.rejectTotal ??
+    rejectReasons.reduce((s, r) => s + (typeof r.value === 'number' ? r.value : 0), 0)
+  const counterShare = analyticsQ.data?.counterofferSharePct
+  const counterAccept = analyticsQ.data?.counterofferAcceptPct
+
   return (
     <Box>
       <PageHeader
@@ -178,13 +141,21 @@ export function AdminAnalyticsPage() {
             </Button>
             <Button
               variant="contained"
+              onClick={() => void analyticsQ.refetch()}
+              disabled={analyticsQ.isFetching}
               sx={{ borderRadius: `${radius.button}px`, fontWeight: 600 }}
             >
-              Применить
+              {analyticsQ.isFetching ? 'Загрузка…' : 'Применить'}
             </Button>
           </>
         }
       />
+
+      {analyticsQ.isError && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          Не удалось загрузить аналитику конвейера
+        </Alert>
+      )}
 
       <Stack
         direction={{ xs: 'column', md: 'row' }}
@@ -247,8 +218,14 @@ export function AdminAnalyticsPage() {
         </TextField>
       </Stack>
 
+      {analyticsQ.isLoading && (
+        <Box sx={{ display: 'grid', placeItems: 'center', py: 4, mb: 2 }}>
+          <CircularProgress size={28} sx={{ color: color.primary.main }} />
+        </Box>
+      )}
+
       <Grid container spacing={2} sx={{ mb: 2.5 }}>
-        {PRODUCT_KPIS.map((k) => (
+        {(kpis.length ? kpis : []).map((k) => (
           <Grid key={k.label} size={{ xs: 12, sm: 6, md: 2.4 }}>
             <Box sx={{ ...tileSx, p: 2 }}>
               <Typography sx={{ fontSize: 12, fontWeight: 600, color: color.text.secondary, mb: 0.75 }}>
@@ -320,7 +297,7 @@ export function AdminAnalyticsPage() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {FUNNEL.map((row) => (
+                {funnel.map((row) => (
                   <TableRow key={row.stage}>
                     <TableCell>
                       <Typography sx={{ fontSize: 13.5, fontWeight: 600, color: color.text.primary }}>
@@ -399,7 +376,7 @@ export function AdminAnalyticsPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
-                    data={REJECT_REASONS}
+                    data={rejectReasons}
                     dataKey="value"
                     nameKey="name"
                     innerRadius={52}
@@ -407,7 +384,7 @@ export function AdminAnalyticsPage() {
                     paddingAngle={2}
                     stroke="none"
                   >
-                    {REJECT_REASONS.map((r) => (
+                    {rejectReasons.map((r) => (
                       <Cell key={r.name} fill={r.fill} />
                     ))}
                   </Pie>
@@ -441,7 +418,7 @@ export function AdminAnalyticsPage() {
                       color: color.text.primary,
                     }}
                   >
-                    154
+                    {rejectTotal || '—'}
                   </Typography>
                   <Typography sx={{ fontSize: 11, color: color.text.muted, fontWeight: 600 }}>
                     отказа
@@ -450,7 +427,7 @@ export function AdminAnalyticsPage() {
               </Box>
             </Box>
             <Stack spacing={0.75} sx={{ mt: 0.5, mb: 2 }}>
-              {REJECT_REASONS.map((r) => (
+              {rejectReasons.map((r) => (
                 <Stack key={r.name} direction="row" alignItems="center" spacing={1}>
                   <Box sx={{ width: 10, height: 10, borderRadius: 0.5, bgcolor: r.fill, flexShrink: 0 }} />
                   <Typography sx={{ flex: 1, fontSize: 12.5, color: color.text.primary }}>
@@ -462,13 +439,15 @@ export function AdminAnalyticsPage() {
                 </Stack>
               ))}
             </Stack>
+            {counterShare != null || counterAccept != null ? (
             <Box sx={{ pt: 1.5, borderTop: `1px solid ${color.semantic.divider}` }}>
               <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.75 }}>
                 <Typography sx={{ fontSize: 12.5, fontWeight: 650, color: color.text.primary }}>
                   Counteroffer
                 </Typography>
                 <Typography sx={{ fontSize: 12, color: color.text.muted }}>
-                  14% заявок · принято 71%
+                  {counterShare != null ? `${counterShare}% заявок` : '—'}
+                  {counterAccept != null ? ` · принято ${counterAccept}%` : ''}
                 </Typography>
               </Stack>
               <Box
@@ -481,7 +460,7 @@ export function AdminAnalyticsPage() {
               >
                 <Box
                   sx={{
-                    width: '71%',
+                    width: `${Math.max(0, Math.min(100, counterAccept ?? 0))}%`,
                     height: '100%',
                     bgcolor: color.semantic.success,
                     borderRadius: `${radius.pill}px`,
@@ -489,6 +468,7 @@ export function AdminAnalyticsPage() {
                 />
               </Box>
             </Box>
+            ) : null}
           </Box>
         </Grid>
       </Grid>
@@ -529,7 +509,7 @@ export function AdminAnalyticsPage() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {BY_PRODUCT.map((p) => (
+                {byProduct.map((p) => (
                   <TableRow key={p.product} hover>
                     <TableCell>
                       <Typography sx={{ fontSize: 13.5, fontWeight: 650 }}>{p.product}</Typography>
@@ -565,7 +545,7 @@ export function AdminAnalyticsPage() {
             </Typography>
             <Box sx={{ height: 220 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={BY_CHANNEL} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+                <BarChart data={byChannel} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={color.secondary.soft06} vertical={false} />
                   <XAxis
                     dataKey="channel"
@@ -586,7 +566,7 @@ export function AdminAnalyticsPage() {
               </ResponsiveContainer>
             </Box>
             <Stack direction="row" spacing={2} sx={{ mt: 1 }} flexWrap="wrap" useFlexGap>
-              {BY_CHANNEL.map((c) => (
+              {byChannel.map((c) => (
                 <Typography key={c.channel} sx={{ fontSize: 12, color: color.text.muted }}>
                   {c.channel}: <Box component="span" sx={{ fontWeight: 700, color: color.text.primary }}>{c.conv}%</Box>
                 </Typography>
@@ -612,7 +592,7 @@ export function AdminAnalyticsPage() {
             </Typography>
             <Box sx={{ height: 220 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={WEEKLY_CONV} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+                <ComposedChart data={weeklyConv} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
                   <defs>
                     <linearGradient id="convFill" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor={color.primary.main} stopOpacity={0.28} />
@@ -627,7 +607,7 @@ export function AdminAnalyticsPage() {
                     tickLine={false}
                   />
                   <YAxis
-                    domain={[50, 70]}
+                    domain={['auto', 'auto']}
                     tick={{ fill: color.text.muted, fontSize: 12 }}
                     axisLine={false}
                     tickLine={false}
@@ -671,7 +651,7 @@ export function AdminAnalyticsPage() {
             </Typography>
             <Box sx={{ height: 220 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={SLA_BY_SEGMENT} margin={{ top: 24, right: 8, left: -12, bottom: 0 }}>
+                <BarChart data={slaBySegment} margin={{ top: 24, right: 8, left: -12, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={color.secondary.soft06} vertical={false} />
                   <XAxis
                     dataKey="segment"
@@ -729,7 +709,7 @@ export function AdminAnalyticsPage() {
             </Typography>
             <Box sx={{ height: 200 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={VOLUME_WEEKLY} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+                <BarChart data={volumeWeekly} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={color.secondary.soft06} vertical={false} />
                   <XAxis
                     dataKey="week"

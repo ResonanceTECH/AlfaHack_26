@@ -16,11 +16,10 @@ docker compose version
 Распакуйте архив и откройте терминал в папке AlfaHack_26, рядом с docker-compose.yml:
 
 ```bash
-docker compose up --build db redis api frontend
+docker compose up --build db redis api web
 ```
 
-Сервисы перечислены явно: frontend и web в текущем Compose используют один порт.
-Запускайте только frontend. При первом запуске нужен интернет для образов и зависимостей.
+Сервис UI в Compose называется `web` (порт 8080). При первом запуске нужен интернет для образов и зависимостей.
 По умолчанию LLM отключена, объяснения формируются шаблонами.
 
 Откройте:

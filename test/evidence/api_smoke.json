@@ -1,0 +1,252 @@
+{
+  "commit": "91b6b6b",
+  "results": [
+    {
+      "id": "AUTH-01",
+      "title": "Login entrepreneur",
+      "ok": true,
+      "detail": "status=200 keys=['accessToken', 'tokenType', 'expiresIn', 'refreshToken', 'user', 'redirectTo']",
+      "severity": "info"
+    },
+    {
+      "id": "AUTH-02",
+      "title": "Login analyst",
+      "ok": true,
+      "detail": "status=200 role=ANALYST",
+      "severity": "info"
+    },
+    {
+      "id": "AUTH-03",
+      "title": "Login admin",
+      "ok": false,
+      "detail": "status=200 role=ADMIN",
+      "severity": "info"
+    },
+    {
+      "id": "AUTH-04",
+      "title": "Wrong password",
+      "ok": true,
+      "detail": "status=401 detail=None",
+      "severity": "info"
+    },
+    {
+      "id": "AUTH-05",
+      "title": "Unknown user",
+      "ok": true,
+      "detail": "status=401 detail=None",
+      "severity": "info"
+    },
+    {
+      "id": "AUTH-06",
+      "title": "Empty credentials",
+      "ok": true,
+      "detail": "status=422",
+      "severity": "info"
+    },
+    {
+      "id": "AUTH-08",
+      "title": "Refresh token",
+      "ok": true,
+      "detail": "status=200",
+      "severity": "info"
+    },
+    {
+      "id": "AUTH-10",
+      "title": "Logout revokes refresh",
+      "ok": true,
+      "detail": "logout=200 me_after=200 refresh_after=401 detail=None",
+      "severity": "info"
+    },
+    {
+      "id": "COMP-01",
+      "title": "List companies IP",
+      "ok": true,
+      "detail": "status=200 n=1",
+      "severity": "info"
+    },
+    {
+      "id": "COMP-01b",
+      "title": "Tenant isolation list",
+      "ok": true,
+      "detail": "ip=['770123456703'] ooo=['7709876545'] overlap_ids=set()",
+      "severity": "info"
+    },
+    {
+      "id": "COMP-04",
+      "title": "Lookup valid INN",
+      "ok": true,
+      "detail": "status=200 body_keys=['found', 'source', 'company', 'checkedAt', 'innValid']",
+      "severity": "info"
+    },
+    {
+      "id": "COMP-05",
+      "title": "Invalid INN short",
+      "ok": true,
+      "detail": "status=422 body={'error': {'code': 'VALIDATION_ERROR', 'message': 'Ошибка валидации: inn', 'request_id': 'cc74239e-8483-45a2-a97b-802811137c20', 'fields': [{'field': 'inn', 'code': 'string_too_sho",
+      "severity": "info"
+    },
+    {
+      "id": "COMP-08",
+      "title": "No access foreign financials",
+      "ok": true,
+      "detail": "status=404 detail=None",
+      "severity": "info"
+    },
+    {
+      "id": "RBAC-01",
+      "title": "Entrepreneur /analyst",
+      "ok": true,
+      "detail": "status=403",
+      "severity": "info"
+    },
+    {
+      "id": "RBAC-02",
+      "title": "Entrepreneur /admin",
+      "ok": true,
+      "detail": "status=403",
+      "severity": "info"
+    },
+    {
+      "id": "RBAC-03",
+      "title": "Analyst change/read policy",
+      "ok": true,
+      "detail": "status=403",
+      "severity": "info"
+    },
+    {
+      "id": "RBAC-04",
+      "title": "Admin client apps denied",
+      "ok": true,
+      "detail": "status=403 detail={'error': {'code': 'HTTP_403', 'message': 'Администратор работает через /admin/*', 'request_id': '9d74069a-4a92-4efd-bea",
+      "severity": "info"
+    },
+    {
+      "id": "CREDIT-10",
+      "title": "Annuity monthly matches Decimal",
+      "ok": true,
+      "detail": "status=200 api=90258.31 expected=90258.31 overpay=83099.74 total=1083099.74",
+      "severity": "info"
+    },
+    {
+      "id": "CREDIT-11",
+      "title": "Schedule rounding/balance",
+      "ok": true,
+      "detail": "final_bal=0.00 sum_prin=1000000.00 neg=False n=12",
+      "severity": "info"
+    },
+    {
+      "id": "CREDIT-07",
+      "title": "Zero amount",
+      "ok": true,
+      "detail": "status=422 body={'error': {'code': 'VALIDATION_ERROR', 'message': 'Ошибка валидации: amount', 'request_id': '7b1f4fb5-94a4-4573-a9b0-3cc6d56a6cc6', 'fields': [{'field",
+      "severity": "info"
+    },
+    {
+      "id": "CREDIT-08",
+      "title": "Negative amount",
+      "ok": true,
+      "detail": "status=422",
+      "severity": "info"
+    },
+    {
+      "id": "CREDIT-01",
+      "title": "Product catalog",
+      "ok": true,
+      "detail": "status=200 n=4",
+      "severity": "info"
+    },
+    {
+      "id": "CREDIT-03",
+      "title": "Credit matches",
+      "ok": true,
+      "detail": "status=200 keys=['companyId', 'fundingNeedId', 'catalogVersion', 'policyVersion', 'requestedAmount', 'termMonths', 'currency', 'goalType']",
+      "severity": "info"
+    },
+    {
+      "id": "APP-list",
+      "title": "List applications",
+      "ok": true,
+      "detail": "status=200 n=4",
+      "severity": "info"
+    },
+    {
+      "id": "APP-01",
+      "title": "Create draft",
+      "ok": false,
+      "detail": "status=422 id=None status_field=None detail={'error': {'code': 'VALIDATION_ERROR', 'message': 'Ошибка валидации: termMonths', 'request_id': '35b555b0-e2f5-4e1b-b185-2b3ae5efdaf4', 'fields': [{'field': 'termMonths', 'code': 'missing'}]}}",
+      "severity": "info"
+    },
+    {
+      "id": "APP-08",
+      "title": "Idempotent create",
+      "ok": false,
+      "detail": "status=422 id1=None id2=None",
+      "severity": "info"
+    },
+    {
+      "id": "APP-14",
+      "title": "Foreign application access",
+      "ok": true,
+      "detail": "status=404",
+      "severity": "info"
+    },
+    {
+      "id": "ANALYST-01",
+      "title": "Analyst queue",
+      "ok": true,
+      "detail": "status=200 keys=['items', 'total', 'countsByStatus']",
+      "severity": "info"
+    },
+    {
+      "id": "ADMIN-01",
+      "title": "Admin list users",
+      "ok": true,
+      "detail": "status=200",
+      "severity": "info"
+    },
+    {
+      "id": "ADMIN-02",
+      "title": "Admin roles",
+      "ok": true,
+      "detail": "status=200 roles=[{'role': 'ENTREPRENEUR', 'title': 'Предприниматель', 'description': 'Кабинет клиента: компании, заявки, документы, предложения', 'permissions': []}, {'role': 'ANALYST', 'title': 'Аналитик', 'description': 'Очередь заявок, проверки, запрос документов, кредитные решения', 'permissions': ['applications.decide', 'applications.review', 'companies.read_client']}, {'role': 'ADMIN', 'title': 'Администратор', 'description': 'Пользователи, каталог, политики, модели, демо-среда', 'permissions': ['analytics.read', 'audit.read', 'catalog.manage', 'demo.reset', 'models.manage', 'policy.edit', 'policy.publish', 'users.manage']}]",
+      "severity": "info"
+    },
+    {
+      "id": "ADMIN-15",
+      "title": "ML model registry",
+      "ok": true,
+      "detail": "status=200 n=3",
+      "severity": "info"
+    },
+    {
+      "id": "ADMIN-20",
+      "title": "Audit events",
+      "ok": true,
+      "detail": "status=200",
+      "severity": "info"
+    },
+    {
+      "id": "ML-status",
+      "title": "Assistant status",
+      "ok": true,
+      "detail": "status=200 body={'ready': True, 'mode': 'RULES_FALLBACK', 'modelActive': None, 'disclaimer': 'Локальная модель опциональна; активен rule-based fallback.'}",
+      "severity": "info"
+    },
+    {
+      "id": "FIN-11",
+      "title": "Finance summary",
+      "ok": true,
+      "detail": "status=200 keys=['period', 'currency', 'revenue', 'inflow', 'outflow', 'netCashFlow', 'cashBalance', 'liabilities', 'activeCredits', 'debtLoad', 'source', 'asOf']",
+      "severity": "info"
+    },
+    {
+      "id": "DEC-03",
+      "title": "Counteroffer offers visible",
+      "ok": true,
+      "detail": "status=200 offers=1",
+      "severity": "info"
+    }
+  ],
+  "passed": 32,
+  "failed": 3
+}

@@ -7,18 +7,23 @@ import {
   Typography,
 } from '@mui/material'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
+import axios from 'axios'
 import { useEffect, useMemo, useState } from 'react'
 import { Link as RouterLink, Navigate, useNavigate, useParams } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  loadTeamMembers,
-  ROLE_LABEL,
-  ROLE_RIGHTS_TEXT,
-  type TeamMember,
-  type TeamRole,
-  updateTeamMemberRole,
-  removeTeamMember,
-} from '@/features/team/store'
+  cancelInvite,
+  inviteMember,
+  inviteToMember,
+  listInvites,
+  listMembers,
+  patchMemberRole,
+  removeMember,
+  toInviteApiRole,
+} from '@/api/team'
+import { ROLE_LABEL, type TeamRole } from '@/features/team/store'
 import { useAuth } from '@/contexts/AuthContext'
+import { useAppStore } from '@/hooks/useAppStore'
 
 const tileSx = {
   bgcolor: '#fff',
@@ -67,28 +72,46 @@ function makeAccessCode(role: TeamRole) {
   return `${prefix}-ACCESS-${n}`
 }
 
-function seedOwner(user: { id: string; fullName: string; email?: string } | null): TeamMember {
-  return {
-    id: user?.id || 'owner',
-    name: user?.fullName || 'Владелец компании',
-    email: user?.email || 'owner@company.demo',
-    role: 'owner',
-    rights: ROLE_RIGHTS_TEXT.owner,
-    lastLogin: 'сегодня',
-    status: 'active',
-    statusLabel: 'Активен',
+function apiError(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err)) {
+    const detail = err.response?.data?.detail
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail)) {
+      return detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join('; ')
+    }
   }
+  if (err instanceof Error) return err.message
+  return fallback
 }
 
 export function TeamMemberPage() {
   const { memberId } = useParams<{ memberId: string }>()
   const navigate = useNavigate()
   const { user } = useAuth()
+  const { companyId: storeCompanyId } = useAppStore()
+  const qc = useQueryClient()
+  const companyId = storeCompanyId || user?.companyId
+
+  const membersQ = useQuery({
+    queryKey: ['team', 'members', companyId],
+    queryFn: () => listMembers(companyId!),
+    enabled: Boolean(companyId),
+  })
+  const invitesQ = useQuery({
+    queryKey: ['team', 'invites', companyId],
+    queryFn: () => listInvites(companyId!),
+    enabled: Boolean(companyId),
+  })
 
   const base = useMemo(() => {
     if (!memberId) return undefined
-    return loadTeamMembers(seedOwner(user)).find((m) => m.id === memberId)
-  }, [memberId, user])
+    const fromMembers = (membersQ.data ?? []).find((m) => m.id === memberId)
+    if (fromMembers) return fromMembers
+    const inv = (invitesQ.data ?? []).find((i) => i.id === memberId)
+    return inv ? inviteToMember(inv) : undefined
+  }, [memberId, membersQ.data, invitesQ.data])
+
+  const [pageError, setPageError] = useState<string | null>(null)
 
   const [role, setRole] = useState<TeamRole>(base?.role ?? 'viewer')
   const [savedRole, setSavedRole] = useState<TeamRole>(base?.role ?? 'viewer')
@@ -116,28 +139,72 @@ export function TeamMemberPage() {
 
   const dirty = role !== savedRole
   const displayName = base?.name ?? 'Участник'
+  const loading = Boolean(companyId) && (membersQ.isLoading || invitesQ.isLoading)
+
+  const saveM = useMutation({
+    mutationFn: async () => {
+      if (!companyId || !base) throw new Error('Нет компании')
+      if (base.source === 'invite') {
+        if (role === 'owner') throw new Error('Владельца можно назначить только среди участников')
+        await cancelInvite(companyId, base.id)
+        await inviteMember(companyId, { email: base.email, role: toInviteApiRole(role) })
+        return
+      }
+      await patchMemberRole(companyId, base.id, role)
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['team'] })
+      setSavedRole(role)
+      setHistory(
+        (h) =>
+          `${h} · ${new Date().toLocaleDateString('ru-RU')} — смена на ${ROLE_LABEL[role]}`,
+      )
+      setSavedFlash(true)
+      setPageError(null)
+      window.setTimeout(() => setSavedFlash(false), 1800)
+    },
+    onError: (err) => setPageError(apiError(err, 'Не удалось сохранить роль')),
+  })
+
+  const revokeM = useMutation({
+    mutationFn: async () => {
+      if (!companyId || !base) throw new Error('Нет компании')
+      if (base.source === 'invite') {
+        await cancelInvite(companyId, base.id)
+      } else {
+        await removeMember(companyId, base.id)
+      }
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['team'] })
+      setRevoked(true)
+      window.setTimeout(() => navigate('/app/team'), 900)
+    },
+    onError: (err) => setPageError(apiError(err, 'Не удалось отозвать доступ')),
+  })
+
+  if (!loading && !base) {
+    return <Navigate to="/app/team" replace />
+  }
+
+  if (loading && !base) {
+    return (
+      <Box sx={{ maxWidth: 1100, mx: 'auto', py: 6, textAlign: 'center' }}>
+        <Typography sx={{ color: '#9AA5B1' }}>Загрузка участника…</Typography>
+      </Box>
+    )
+  }
 
   if (!base) {
     return <Navigate to="/app/team" replace />
   }
 
   function saveRole() {
-    if (!base) return
-    updateTeamMemberRole(base.id, role)
-    setSavedRole(role)
-    setHistory(
-      (h) =>
-        `${h} · ${new Date().toLocaleDateString('ru-RU')} — смена на ${ROLE_LABEL[role]}`,
-    )
-    setSavedFlash(true)
-    window.setTimeout(() => setSavedFlash(false), 1800)
+    saveM.mutate()
   }
 
   function revoke() {
-    if (!base) return
-    removeTeamMember(base.id)
-    setRevoked(true)
-    window.setTimeout(() => navigate('/app/team'), 900)
+    revokeM.mutate()
   }
 
   return (
@@ -314,7 +381,7 @@ export function TeamMemberPage() {
           <Button
             type="button"
             fullWidth
-            disabled={revoked || base.role === 'owner'}
+            disabled={revoked || base.role === 'owner' || revokeM.isPending}
             onClick={revoke}
             sx={{
               borderRadius: 2,
@@ -357,6 +424,11 @@ export function TeamMemberPage() {
           <Typography sx={{ fontSize: 13.5, color: '#7A8795', mb: 2, lineHeight: 1.45 }}>
             Выберите роль для этого человека. Права применяются сразу.
           </Typography>
+          {pageError && (
+            <Typography sx={{ fontSize: 13, color: '#C41E14', fontWeight: 600, mb: 1.5 }}>
+              {pageError}
+            </Typography>
+          )}
 
           <Stack spacing={1.25} sx={{ mb: 2.5 }}>
             {ROLE_OPTIONS.map((opt) => {
@@ -420,7 +492,7 @@ export function TeamMemberPage() {
               type="button"
               variant="contained"
               color="primary"
-              disabled={!dirty || revoked}
+              disabled={!dirty || revoked || saveM.isPending}
               onClick={saveRole}
               sx={{
                 flex: 1,
@@ -432,7 +504,7 @@ export function TeamMemberPage() {
                 '&:hover': { boxShadow: 'none' },
               }}
             >
-              {savedFlash ? 'Сохранено' : 'Сохранить роль'}
+              {saveM.isPending ? 'Сохранение…' : savedFlash ? 'Сохранено' : 'Сохранить роль'}
             </Button>
             <Button
               type="button"

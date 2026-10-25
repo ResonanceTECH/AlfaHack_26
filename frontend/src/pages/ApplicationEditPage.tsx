@@ -185,7 +185,6 @@ export function ApplicationEditPage() {
   if (!app) {
     return <Navigate to="/app/applications" replace />
   }
-
   const current = app
 
   function resetForm() {

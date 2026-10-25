@@ -1,6 +1,7 @@
 import {
   Box,
   Button,
+  CircularProgress,
   InputAdornment,
   MenuItem,
   Stack,
@@ -11,8 +12,19 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded'
+import axios from 'axios'
 import { useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  deleteCompanyDocument,
+  downloadCompanyDocument,
+  listCompanyDocuments,
+  uploadCompanyDocument,
+  type CompanyDocument,
+  type VaultDocStatus,
+} from '@/api/documents'
+import { useAuth } from '@/contexts/AuthContext'
+import { useAppStore } from '@/hooks/useAppStore'
 
 const tileSx = {
   bgcolor: '#fff',
@@ -30,18 +42,20 @@ const fieldSx = {
   },
 } as const
 
-const APP_REF = 'ABC-2026-1042'
-
-type DocStatus = 'accepted' | 'accepted_remark' | 'pending' | 'need_upload'
+type DocStatus = VaultDocStatus
 type DocCategory = 'Учредительные' | 'Финансовые' | 'Имущество' | 'Владельцы' | 'Согласия'
+type DocItem = CompanyDocument
 
-type DocItem = {
-  id: string
-  title: string
-  category: DocCategory
-  file: string | null
-  uploadedAt: string | null
-  status: DocStatus
+function apiError(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err)) {
+    const detail = err.response?.data?.detail
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail)) {
+      return detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join('; ')
+    }
+  }
+  if (err instanceof Error) return err.message
+  return fallback
 }
 
 type TabKey = 'all' | 'need_upload' | 'pending' | 'accepted'
@@ -55,81 +69,6 @@ const STATUS_META: Record<
   pending: { label: 'На проверке', bg: '#FFE8D6', color: '#C45A12' },
   need_upload: { label: 'Нужно загрузить', bg: '#FDE8E6', color: '#C41E14' },
 }
-
-const DEMO_DOCS: DocItem[] = [
-  {
-    id: 'd1',
-    title: 'Устав ООО «Кофе Плюс»',
-    category: 'Учредительные',
-    file: 'ustav_kofeplus.pdf · 1,2 МБ',
-    uploadedAt: '20.10.2026',
-    status: 'accepted',
-  },
-  {
-    id: 'd2',
-    title: 'Бух. отчётность 2025',
-    category: 'Финансовые',
-    file: 'otchet_2025.xlsx · 860 КБ',
-    uploadedAt: '18.10.2026',
-    status: 'accepted_remark',
-  },
-  {
-    id: 'd3',
-    title: 'Выписка по расчётному счёту',
-    category: 'Финансовые',
-    file: 'extract_sep2026.pdf · 2,4 МБ',
-    uploadedAt: '21.10.2026',
-    status: 'pending',
-  },
-  {
-    id: 'd4',
-    title: 'Договор аренды помещения',
-    category: 'Имущество',
-    file: null,
-    uploadedAt: null,
-    status: 'need_upload',
-  },
-  {
-    id: 'd5',
-    title: 'Паспорт владельца',
-    category: 'Владельцы',
-    file: 'passport_scan.pdf · 540 КБ',
-    uploadedAt: '15.10.2026',
-    status: 'accepted',
-  },
-  {
-    id: 'd6',
-    title: 'Согласие на обработку ПДн',
-    category: 'Согласия',
-    file: 'consent_pd.pdf · 120 КБ',
-    uploadedAt: '15.10.2026',
-    status: 'accepted',
-  },
-  {
-    id: 'd7',
-    title: 'Справка об отсутствии задолженности',
-    category: 'Финансовые',
-    file: null,
-    uploadedAt: null,
-    status: 'need_upload',
-  },
-  {
-    id: 'd8',
-    title: 'Выписка из ЕГРЮЛ',
-    category: 'Учредительные',
-    file: 'egrul_kofeplus.pdf · 310 КБ',
-    uploadedAt: '12.10.2026',
-    status: 'accepted',
-  },
-  {
-    id: 'contract',
-    title: 'Кредитный договор DEMO-ABC-1042',
-    category: 'Финансовые',
-    file: 'dogovor_demo.pdf · 420 КБ',
-    uploadedAt: '23.10.2026',
-    status: 'accepted',
-  },
-]
 
 function StatusChip({ status }: { status: DocStatus }) {
   const m = STATUS_META[status]
@@ -161,15 +100,28 @@ function matchesTab(doc: DocItem, tab: TabKey) {
 }
 
 export function DocumentsPage() {
-  const navigate = useNavigate()
+  const { user } = useAuth()
+  const { companyId: storeCompanyId, company } = useAppStore()
+  const qc = useQueryClient()
+  const companyId = storeCompanyId || user?.companyId
   const fileRef = useRef<HTMLInputElement | null>(null)
-  const [docs, setDocs] = useState(DEMO_DOCS)
   const [tab, setTab] = useState<TabKey>('all')
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState<'all' | DocCategory>('all')
   const [period, setPeriod] = useState('12')
   const [uploadTarget, setUploadTarget] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  const docsQ = useQuery({
+    queryKey: ['company-documents', companyId, category !== 'all' ? category : undefined],
+    queryFn: () =>
+      listCompanyDocuments(companyId!, {
+        category: category !== 'all' ? category : undefined,
+      }),
+    enabled: Boolean(companyId),
+  })
+  const docs = docsQ.data ?? []
 
   const stats = useMemo(() => {
     const accepted = docs.filter(
@@ -202,44 +154,52 @@ export function DocumentsPage() {
     fileRef.current?.click()
   }
 
+  const uploadM = useMutation({
+    mutationFn: async ({ file, targetId }: { file: File; targetId: string | null }) => {
+      if (!companyId) throw new Error('Нет компании')
+      const existing = targetId ? docs.find((d) => d.id === targetId) : undefined
+      return uploadCompanyDocument(companyId, {
+        file,
+        title: existing?.title || file.name.replace(/\.[^.]+$/, '') || 'Новый документ',
+        category: existing?.category || (category !== 'all' ? category : 'Финансовые'),
+      })
+    },
+    onSuccess: async (_doc, vars) => {
+      await qc.invalidateQueries({ queryKey: ['company-documents'] })
+      setActionError(null)
+      flashMsg(vars.targetId ? 'Документ отправлен на проверку' : 'Документ загружен')
+    },
+    onError: (err) => setActionError(apiError(err, 'Не удалось загрузить документ')),
+  })
+
+  const deleteM = useMutation({
+    mutationFn: async (docId: string) => {
+      if (!companyId) throw new Error('Нет компании')
+      await deleteCompanyDocument(companyId, docId)
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['company-documents'] })
+      setActionError(null)
+      flashMsg('Документ удалён')
+    },
+    onError: (err) => setActionError(apiError(err, 'Не удалось удалить документ')),
+  })
+
   function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
-
-    const sizeKb = Math.max(1, Math.round(file.size / 1024))
-    const sizeLabel =
-      sizeKb >= 1024 ? `${(sizeKb / 1024).toFixed(1).replace('.', ',')} МБ` : `${sizeKb} КБ`
-    const fileLabel = `${file.name} · ${sizeLabel}`
-    const today = new Date()
-    const uploadedAt = `${String(today.getDate()).padStart(2, '0')}.${String(
-      today.getMonth() + 1,
-    ).padStart(2, '0')}.${today.getFullYear()}`
-
-    if (uploadTarget) {
-      setDocs((list) =>
-        list.map((d) =>
-          d.id === uploadTarget
-            ? { ...d, file: fileLabel, uploadedAt, status: 'pending' as const }
-            : d,
-        ),
-      )
-      flashMsg('Документ отправлен на проверку')
-    } else {
-      setDocs((list) => [
-        {
-          id: `d_${Date.now()}`,
-          title: file.name.replace(/\.[^.]+$/, '') || 'Новый документ',
-          category: 'Финансовые',
-          file: fileLabel,
-          uploadedAt,
-          status: 'pending',
-        },
-        ...list,
-      ])
-      flashMsg('Документ загружен')
-    }
+    uploadM.mutate({ file, targetId: uploadTarget })
     setUploadTarget(null)
+  }
+
+  async function openDoc(d: DocItem) {
+    if (!companyId) return
+    try {
+      await downloadCompanyDocument(companyId, d.id, d.fileName || undefined)
+    } catch (err) {
+      setActionError(apiError(err, 'Не удалось скачать документ'))
+    }
   }
 
   const tabs: { key: TabKey; label: string; badge?: number }[] = [
@@ -263,7 +223,7 @@ export function DocumentsPage() {
     {
       label: 'Всего документов',
       value: stats.total,
-      caption: `по заявке ${APP_REF}`,
+      caption: company?.name || 'в хранилище',
       captionColor: '#9AA5B1',
     },
     {
@@ -317,7 +277,7 @@ export function DocumentsPage() {
             Документы
           </Typography>
           <Typography sx={{ color: '#7A8795', fontSize: 14, mt: 0.6 }}>
-            По заявке {APP_REF} и профилю компании
+            {company?.name ? `${company.name} · хранилище документов` : 'Хранилище документов компании'}
           </Typography>
         </Box>
         <Stack direction="row" spacing={1.25} flexWrap="wrap" useFlexGap>
@@ -334,6 +294,7 @@ export function DocumentsPage() {
             variant="contained"
             color="primary"
             startIcon={<UploadFileRoundedIcon />}
+            disabled={!companyId || uploadM.isPending}
             onClick={() => openUpload()}
             sx={{
               borderRadius: 2,
@@ -348,6 +309,22 @@ export function DocumentsPage() {
         </Stack>
       </Stack>
 
+      {actionError && (
+        <Box
+          sx={{
+            mb: 2,
+            px: 1.75,
+            py: 1.1,
+            borderRadius: 2,
+            bgcolor: '#FDE8E6',
+            color: '#C41E14',
+            fontSize: 13.5,
+            fontWeight: 700,
+          }}
+        >
+          {actionError}
+        </Box>
+      )}
       {flash && (
         <Box
           sx={{
@@ -531,7 +508,14 @@ export function DocumentsPage() {
             </Box>
           </Box>
           <Box component="tbody">
-            {filtered.map((d) => (
+            {docsQ.isLoading && (
+              <Box component="tr">
+                <Box component="td" colSpan={6} sx={{ py: 4, textAlign: 'center' }}>
+                  <CircularProgress size={24} sx={{ color: '#EF3124' }} />
+                </Box>
+              </Box>
+            )}
+            {!docsQ.isLoading && filtered.map((d) => (
               <Box
                 component="tr"
                 key={d.id}
@@ -574,47 +558,60 @@ export function DocumentsPage() {
                   <StatusChip status={d.status} />
                 </Box>
                 <Box component="td" sx={{ pr: '0 !important', textAlign: 'right' }}>
-                  {d.status === 'need_upload' ? (
+                  <Stack direction="row" spacing={0.5} justifyContent="flex-end">
+                    {d.status === 'need_upload' ? (
+                      <Button
+                        type="button"
+                        size="small"
+                        disabled={uploadM.isPending || !companyId}
+                        onClick={() => openUpload(d.id)}
+                        sx={{
+                          fontWeight: 700,
+                          textTransform: 'none',
+                          color: '#EF3124',
+                          minWidth: 0,
+                          px: 0.5,
+                        }}
+                      >
+                        Загрузить
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="small"
+                        disabled={!companyId}
+                        onClick={() => void openDoc(d)}
+                        sx={{
+                          fontWeight: 700,
+                          textTransform: 'none',
+                          color: '#EF3124',
+                          minWidth: 0,
+                          px: 0.5,
+                        }}
+                      >
+                        Открыть
+                      </Button>
+                    )}
                     <Button
                       type="button"
                       size="small"
-                      onClick={() => openUpload(d.id)}
+                      disabled={deleteM.isPending || !companyId}
+                      onClick={() => deleteM.mutate(d.id)}
                       sx={{
                         fontWeight: 700,
                         textTransform: 'none',
-                        color: '#EF3124',
+                        color: '#C41E14',
                         minWidth: 0,
                         px: 0.5,
                       }}
                     >
-                      Загрузить
+                      Удалить
                     </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      size="small"
-                      onClick={() =>
-                        navigate(
-                          d.id === 'contract'
-                            ? `/app/applications/${APP_REF}/contract`
-                            : `/app/documents/${d.id}`,
-                        )
-                      }
-                      sx={{
-                        fontWeight: 700,
-                        textTransform: 'none',
-                        color: '#EF3124',
-                        minWidth: 0,
-                        px: 0.5,
-                      }}
-                    >
-                      Открыть
-                    </Button>
-                  )}
+                  </Stack>
                 </Box>
               </Box>
             ))}
-            {filtered.length === 0 && (
+            {!docsQ.isLoading && filtered.length === 0 && (
               <Box component="tr">
                 <Box component="td" colSpan={6} sx={{ py: 4, textAlign: 'center' }}>
                   <Typography sx={{ color: '#9AA5B1', fontSize: 14 }}>

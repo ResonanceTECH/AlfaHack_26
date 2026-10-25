@@ -9,9 +9,11 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
+import axios from 'axios'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { listSessions, patchMe, revokeSession, type UserSession } from '@/api/auth'
 import { listCompanies } from '@/api/companies'
 import { useAuth } from '@/contexts/AuthContext'
 import { LogoutConfirmDialog } from '@/components/common/LogoutConfirmDialog'
@@ -54,18 +56,39 @@ function initials(name?: string): string {
   return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || '·'
 }
 
-type Session = {
-  id: string
-  device: string
-  place: string
-  current?: boolean
+function apiError(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err)) {
+    const detail = err.response?.data?.detail
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail)) {
+      return detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join('; ')
+    }
+  }
+  if (err instanceof Error) return err.message
+  return fallback
 }
 
-const DEMO_SESSIONS: Session[] = [
-  { id: 's1', device: 'MacBook · Chrome', place: 'Москва · сейчас', current: true },
-  { id: 's2', device: 'iPhone · приложение', place: 'Москва · 22.10 18:20' },
-  { id: 's3', device: 'Windows · Edge', place: 'Москва · 19.10 09:44' },
-]
+function formatSessionPlace(s: UserSession): string {
+  if (s.current) return 'сейчас'
+  if (s.createdAt) {
+    const d = new Date(s.createdAt)
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    }
+  }
+  if (s.expiresAt) {
+    const d = new Date(s.expiresAt)
+    if (!Number.isNaN(d.getTime())) {
+      return `до ${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}`
+    }
+  }
+  return ''
+}
 
 function defaultsForRole(role?: string) {
   if (role === 'admin') {
@@ -93,8 +116,9 @@ function defaultsForRole(role?: string) {
 }
 
 export function ProfilePage() {
-  const { user, logout } = useAuth()
+  const { user, logout, logoutAll, setUserFromSession } = useAuth()
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const isAdmin = user?.role === 'admin'
   const isBank = isAnalystRole(user?.role)
   const defaults = defaultsForRole(user?.role)
@@ -127,23 +151,18 @@ export function ProfilePage() {
   const [limit, setLimit] = useState('до 20 млн ₽')
   const [savedFlash, setSavedFlash] = useState(false)
 
-  const [twoFa, setTwoFa] = useState(true)
+  const [twoFa, setTwoFa] = useState(() => Boolean(user?.mfaEnabled))
   const [biometry, setBiometry] = useState(false)
   const [notifyDevice, setNotifyDevice] = useState(true)
-  const [sessions, setSessions] = useState(() =>
-    isBank
-      ? [
-          { id: 's1', device: 'MacBook · Chrome · кабинет аналитика', place: 'Москва · сейчас', current: true },
-          { id: 's2', device: 'iPhone · web', place: 'Москва · 25.10 12:10' },
-        ]
-      : isAdmin
-        ? [
-            { id: 's1', device: 'MacBook · Chrome · админ-консоль', place: 'Москва · сейчас', current: true },
-            { id: 's2', device: 'Windows · Edge', place: 'Москва · 24.10 19:02' },
-          ]
-        : DEMO_SESSIONS,
-  )
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [logoutOpen, setLogoutOpen] = useState(false)
+
+  const sessionsQ = useQuery({
+    queryKey: ['auth', 'sessions'],
+    queryFn: listSessions,
+    enabled: Boolean(user),
+  })
+  const sessions = (sessionsQ.data ?? []).filter((s) => !s.revoked)
 
   // Если роль банк/админ — не оставляем предпринимательские дефолты («Генеральный директор» и т.п.)
   useEffect(() => {
@@ -152,13 +171,14 @@ export function ProfilePage() {
     if (user.fullName) setFullName(user.fullName)
     if (user.email) setEmail(user.email)
     if (user.phone) setPhone(user.phone)
+    if (user.mfaEnabled != null) setTwoFa(user.mfaEnabled)
     if (isAnalystRole(user.role) || user.role === 'admin') {
       setPosition(d.position)
       setDepartment(
         user.role === 'admin' ? 'Администрирование платформы' : 'Малый и средний бизнес · кредиты',
       )
     }
-  }, [user?.id, user?.role, user?.fullName, user?.email, user?.phone])
+  }, [user?.id, user?.role, user?.fullName, user?.email, user?.phone, user?.mfaEnabled])
 
   const subtitle = useMemo(() => {
     if (isAdmin || isBank) return null
@@ -175,20 +195,45 @@ export function ProfilePage() {
     navigate('/login')
   }
 
+  async function doLogoutAll() {
+    await logoutAll()
+    navigate('/login')
+  }
+
+  const saveM = useMutation({
+    mutationFn: () =>
+      patchMe({
+        fullName: fullName.trim(),
+        phone: phone.trim() || undefined,
+        email: email.trim() || undefined,
+      }),
+    onSuccess: (next) => {
+      setUserFromSession({
+        ...user!,
+        ...next,
+        companyId: user?.companyId ?? next.companyId,
+      })
+      setSaveError(null)
+      setSavedFlash(true)
+      window.setTimeout(() => setSavedFlash(false), 1800)
+    },
+    onError: (err) => setSaveError(apiError(err, 'Не удалось сохранить профиль')),
+  })
+
+  const revokeM = useMutation({
+    mutationFn: (id: string) => revokeSession(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['auth', 'sessions'] })
+    },
+  })
+
   function saveProfile() {
-    const next = {
-      ...user!,
-      fullName: fullName.trim(),
-      phone: phone.trim() || undefined,
-      email: email.trim() || undefined,
-    }
-    localStorage.setItem('alfa_user', JSON.stringify(next))
-    setSavedFlash(true)
-    window.setTimeout(() => setSavedFlash(false), 1800)
+    if (!user) return
+    saveM.mutate()
   }
 
   function killSession(id: string) {
-    setSessions((list) => list.filter((s) => s.id !== id))
+    revokeM.mutate(id)
   }
 
   return (
@@ -364,6 +409,11 @@ export function ProfilePage() {
                 </Box>
 
                 <Stack direction="row" justifyContent="flex-end" alignItems="center" spacing={1.5} sx={{ mt: 2 }}>
+                  {saveError && (
+                    <Typography sx={{ fontSize: 13, color: '#C41E14', fontWeight: 600 }}>
+                      {saveError}
+                    </Typography>
+                  )}
                   {savedFlash && (
                     <Typography sx={{ fontSize: 13, color: '#1B8A5A', fontWeight: 600 }}>
                       Сохранено
@@ -373,6 +423,7 @@ export function ProfilePage() {
                     variant="contained"
                     color="primary"
                     onClick={saveProfile}
+                    disabled={saveM.isPending}
                     sx={{
                       borderRadius: 2,
                       fontWeight: 700,
@@ -383,7 +434,7 @@ export function ProfilePage() {
                       '&:hover': { boxShadow: 'none' },
                     }}
                   >
-                    Сохранить
+                    {saveM.isPending ? 'Сохранение…' : 'Сохранить'}
                   </Button>
                 </Stack>
               </Box>
@@ -449,7 +500,7 @@ export function ProfilePage() {
               fullWidth
               variant="outlined"
               sx={{ ...outlineBtn, mt: 2, py: 1.05 }}
-              onClick={doLogout}
+              onClick={() => void doLogoutAll()}
             >
               Выйти на всех устройствах
             </Button>
@@ -504,6 +555,16 @@ export function ProfilePage() {
               Активные сеансы
             </Typography>
             <Stack spacing={0}>
+              {sessionsQ.isLoading && (
+                <Typography sx={{ fontSize: 13, color: '#9AA5B1', py: 1 }}>
+                  Загрузка сеансов…
+                </Typography>
+              )}
+              {!sessionsQ.isLoading && sessions.length === 0 && (
+                <Typography sx={{ fontSize: 13, color: '#9AA5B1', py: 1 }}>
+                  Нет активных сеансов
+                </Typography>
+              )}
               {sessions.map((s, i) => (
                 <Stack
                   key={s.id}
@@ -521,10 +582,10 @@ export function ProfilePage() {
                     <Typography
                       sx={{ fontSize: 13.5, fontWeight: 700, color: '#0B1F35', lineHeight: 1.3 }}
                     >
-                      {s.device}
+                      {s.deviceInfo}
                     </Typography>
                     <Typography sx={{ fontSize: 12, color: '#9AA5B1', mt: 0.3 }}>
-                      {s.place}
+                      {formatSessionPlace(s)}
                     </Typography>
                   </Box>
                   {s.current ? (
@@ -546,6 +607,7 @@ export function ProfilePage() {
                   ) : (
                     <Button
                       size="small"
+                      disabled={revokeM.isPending}
                       onClick={() => killSession(s.id)}
                       sx={{
                         color: '#EF3124',

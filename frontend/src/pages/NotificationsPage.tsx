@@ -2,6 +2,7 @@ import {
   Box,
   Button,
   Checkbox,
+  CircularProgress,
   FormControlLabel,
   Stack,
   Switch,
@@ -15,6 +16,17 @@ import PersonOutlineRoundedIcon from '@mui/icons-material/PersonOutlineRounded'
 import AssignmentRoundedIcon from '@mui/icons-material/AssignmentRounded'
 import { useMemo, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  formatNotificationTime,
+  listNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+  notificationCategory,
+  notificationHref,
+  notificationKind,
+  type AppNotification,
+} from '@/api/notifications'
 import { useAuth } from '@/contexts/AuthContext'
 import { isAnalystRole } from '@/features/analyst/roles'
 
@@ -41,163 +53,6 @@ type Notification = {
   href?: string
 }
 
-const ENTREPRENEUR_INITIAL: Notification[] = [
-  {
-    id: 'n1',
-    kind: 'alert',
-    category: 'applications',
-    title: 'Новое предложение по заявке ABC-2026-1042',
-    body: '5 000 000 ₽ · 24 мес. · 18,5% · ответ до 27.10',
-    time: '23.10 · 09:15',
-    unread: true,
-    href: '/app/applications/ABC-2026-1042/edit',
-  },
-  {
-    id: 'n2',
-    kind: 'success',
-    category: 'documents',
-    title: 'Договор аренды принят',
-    body: 'Менеджер проверил документ — замечаний нет',
-    time: '22.10 · 11:05',
-    unread: true,
-    href: '/app/documents',
-  },
-  {
-    id: 'n3',
-    kind: 'doc',
-    category: 'documents',
-    title: 'Запрос документов от менеджера',
-    body: 'Нужны пояснение платежа и выписка за сентябрь',
-    time: '21.10 · 12:20',
-    unread: true,
-    href: '/app/documents',
-  },
-  {
-    id: 'n4',
-    kind: 'time',
-    category: 'payments',
-    title: 'Скоро платёж 28.10',
-    body: 'ABC-2026-0987 · 114 000 ₽',
-    time: '21.10 · 08:00',
-    unread: true,
-    href: '/app/applications',
-  },
-  {
-    id: 'n5',
-    kind: 'success',
-    category: 'documents',
-    title: 'Выписка проанализирована',
-    body: 'Найдено 2 замечания — посмотрите разбор',
-    time: '22.10 · 10:30',
-    unread: false,
-    href: '/app/statements/analysis',
-  },
-  {
-    id: 'n6',
-    kind: 'person',
-    category: 'system',
-    title: 'Приглашение принято',
-    body: 'Лебедева И.О. присоединилась к компании',
-    time: '19.10 · 16:40',
-    unread: false,
-    href: '/app/team',
-  },
-  {
-    id: 'n7',
-    kind: 'success',
-    category: 'applications',
-    title: 'Заявка отправлена',
-    body: 'ABC-2026-1042 принята в работу',
-    time: '20.10 · 14:32',
-    unread: false,
-    href: '/app/applications',
-  },
-]
-
-/** Лента кредитного аналитика / менеджера банка */
-const ANALYST_INITIAL: Notification[] = [
-  {
-    id: 'a1',
-    kind: 'alert',
-    category: 'sla',
-    title: 'SLA < 4ч — решение не отправлено',
-    body: 'ABC-2026-1020 · ООО «Нова Трейд» · DECISION_PENDING',
-    time: '25.10 · 16:40',
-    unread: true,
-    href: '/app/analyst',
-  },
-  {
-    id: 'a2',
-    kind: 'success',
-    category: 'documents',
-    title: 'Клиент загрузил договор аренды',
-    body: 'Проверьте комплект в очереди назначенных заявок',
-    time: '25.10 · 15:12',
-    unread: true,
-    href: '/app/analyst/mine',
-  },
-  {
-    id: 'a3',
-    kind: 'alert',
-    category: 'sla',
-    title: 'Counteroffer истёк',
-    body: 'Требуется действие по контрпредложению',
-    time: '25.10 · 14:05',
-    unread: true,
-    href: '/app/analyst',
-  },
-  {
-    id: 'a4',
-    kind: 'queue',
-    category: 'queue',
-    title: 'Новая заявка в очереди',
-    body: 'Откройте общую очередь банка',
-    time: '25.10 · 12:30',
-    unread: true,
-    href: '/app/analyst',
-  },
-  {
-    id: 'a5',
-    kind: 'time',
-    category: 'sla',
-    title: 'ML unavailable — продолжить вручную',
-    body: 'Продолжите разбор в очереди',
-    time: '25.10 · 11:18',
-    unread: true,
-    href: '/app/analyst/mine',
-  },
-  {
-    id: 'a6',
-    kind: 'person',
-    category: 'queue',
-    title: 'Заявка назначена вам',
-    body: 'Смотрите раздел «Мои заявки»',
-    time: '25.10 · 09:40',
-    unread: false,
-    href: '/app/analyst/mine',
-  },
-  {
-    id: 'a7',
-    kind: 'doc',
-    category: 'documents',
-    title: 'Нужна замена документа',
-    body: 'Откройте комплект в моих заявках',
-    time: '24.10 · 18:22',
-    unread: false,
-    href: '/app/analyst/mine',
-  },
-  {
-    id: 'a8',
-    kind: 'success',
-    category: 'system',
-    title: 'Автопроверки завершены',
-    body: 'Результаты в карточке заявки из очереди',
-    time: '24.10 · 17:55',
-    unread: false,
-    href: '/app/analyst',
-  },
-]
-
 const KIND_META: Record<
   NotifKind,
   { bg: string; color: string; Icon: typeof CheckCircleRoundedIcon }
@@ -212,12 +67,35 @@ const KIND_META: Record<
 
 type TabKey = 'all' | EntrepreneurCategory | AnalystCategory
 
+function mapItem(n: AppNotification, analyst: boolean): Notification {
+  return {
+    id: n.id,
+    kind: notificationKind(n),
+    category: notificationCategory(n, analyst) as EntrepreneurCategory | AnalystCategory,
+    title: n.title,
+    body: n.body,
+    time: formatNotificationTime(n.createdAt),
+    unread: !n.isRead,
+    href: notificationHref(n, analyst ? 'analyst' : 'entrepreneur'),
+  }
+}
+
 export function NotificationsPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const analyst = isAnalystRole(user?.role)
 
-  const [items, setItems] = useState(() => (analyst ? ANALYST_INITIAL : ENTREPRENEUR_INITIAL))
+  const listQ = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => listNotifications({ limit: 50 }),
+  })
+
+  const markAllM = useMutation({
+    mutationFn: markAllNotificationsRead,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
+  })
+
   const [tab, setTab] = useState<TabKey>('all')
   const [channels, setChannels] = useState({
     push: true,
@@ -237,7 +115,12 @@ export function NotificationsPage() {
     assignments: true,
   })
 
-  const unreadCount = items.filter((i) => i.unread).length
+  const items = useMemo(
+    () => (listQ.data?.items ?? []).map((n) => mapItem(n, analyst)),
+    [listQ.data, analyst],
+  )
+
+  const unreadCount = listQ.data?.unreadCount ?? items.filter((i) => i.unread).length
 
   const filtered = useMemo(() => {
     if (tab === 'all') return items
@@ -265,11 +148,16 @@ export function NotificationsPage() {
   }
 
   function markAllRead() {
-    setItems((list) => list.map((i) => ({ ...i, unread: false })))
+    if (unreadCount === 0) return
+    markAllM.mutate()
   }
 
   function openItem(n: Notification) {
-    setItems((list) => list.map((i) => (i.id === n.id ? { ...i, unread: false } : i)))
+    if (n.unread) {
+      void markNotificationRead(n.id)
+        .then(() => qc.invalidateQueries({ queryKey: ['notifications'] }))
+        .catch(() => undefined)
+    }
     if (n.href) navigate(n.href)
   }
 
@@ -304,7 +192,7 @@ export function NotificationsPage() {
         <Button
           variant="outlined"
           color="secondary"
-          disabled={unreadCount === 0}
+          disabled={unreadCount === 0 || markAllM.isPending}
           onClick={markAllRead}
           sx={{
             alignSelf: 'flex-start',
@@ -384,108 +272,122 @@ export function NotificationsPage() {
         }}
       >
         <Stack spacing={1.25}>
-          {filtered.map((n) => {
-            const meta = KIND_META[n.kind]
-            const Icon = meta.Icon
-            return (
-              <Box
-                key={n.id}
-                component="button"
-                type="button"
-                onClick={() => openItem(n)}
-                sx={{
-                  all: 'unset',
-                  cursor: 'pointer',
-                  display: 'block',
-                  boxSizing: 'border-box',
-                  bgcolor: '#fff',
-                  borderRadius: 3,
-                  border: n.unread
-                    ? '1px solid rgba(239,49,36,0.28)'
-                    : '1px solid rgba(11,31,53,0.06)',
-                  boxShadow: n.unread
-                    ? '0 1px 10px rgba(239,49,36,0.06)'
-                    : '0 1px 8px rgba(11,31,53,0.03)',
-                  p: { xs: 1.5, md: 1.75 },
-                  transition: 'border-color 0.15s, box-shadow 0.15s, background 0.15s',
-                  '&:hover': {
-                    borderColor: n.unread ? 'rgba(239,49,36,0.45)' : 'rgba(11,31,53,0.14)',
-                    bgcolor: n.unread ? 'rgba(239,49,36,0.015)' : 'rgba(11,31,53,0.015)',
-                  },
-                }}
-              >
-                <Stack direction="row" spacing={1.5} alignItems="flex-start">
-                  <Box
-                    sx={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: '50%',
-                      bgcolor: meta.bg,
-                      color: meta.color,
-                      display: 'grid',
-                      placeItems: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <Icon sx={{ fontSize: 20 }} />
-                  </Box>
+          {listQ.isLoading && (
+            <Box sx={{ ...tileSx, textAlign: 'center', py: 4 }}>
+              <CircularProgress size={28} sx={{ color: '#EF3124' }} />
+            </Box>
+          )}
+          {listQ.isError && !listQ.data && (
+            <Box sx={{ ...tileSx, textAlign: 'center', py: 4 }}>
+              <Typography sx={{ color: '#C41E14', fontSize: 14, fontWeight: 600 }}>
+                Не удалось загрузить уведомления
+              </Typography>
+            </Box>
+          )}
+          {!listQ.isLoading &&
+            !listQ.isError &&
+            filtered.map((n) => {
+              const meta = KIND_META[n.kind]
+              const Icon = meta.Icon
+              return (
+                <Box
+                  key={n.id}
+                  component="button"
+                  type="button"
+                  onClick={() => openItem(n)}
+                  sx={{
+                    all: 'unset',
+                    cursor: 'pointer',
+                    display: 'block',
+                    boxSizing: 'border-box',
+                    bgcolor: '#fff',
+                    borderRadius: 3,
+                    border: n.unread
+                      ? '1px solid rgba(239,49,36,0.28)'
+                      : '1px solid rgba(11,31,53,0.06)',
+                    boxShadow: n.unread
+                      ? '0 1px 10px rgba(239,49,36,0.06)'
+                      : '0 1px 8px rgba(11,31,53,0.03)',
+                    p: { xs: 1.5, md: 1.75 },
+                    transition: 'border-color 0.15s, box-shadow 0.15s, background 0.15s',
+                    '&:hover': {
+                      borderColor: n.unread ? 'rgba(239,49,36,0.45)' : 'rgba(11,31,53,0.14)',
+                      bgcolor: n.unread ? 'rgba(239,49,36,0.015)' : 'rgba(11,31,53,0.015)',
+                    },
+                  }}
+                >
+                  <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                    <Box
+                      sx={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: '50%',
+                        bgcolor: meta.bg,
+                        color: meta.color,
+                        display: 'grid',
+                        placeItems: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Icon sx={{ fontSize: 20 }} />
+                    </Box>
 
-                  <Box sx={{ flex: 1, minWidth: 0, pt: 0.15 }}>
-                    <Typography
-                      sx={{
-                        fontSize: 14.5,
-                        fontWeight: n.unread ? 800 : 700,
-                        color: '#0B1F35',
-                        lineHeight: 1.35,
-                        letterSpacing: '-0.01em',
-                      }}
-                    >
-                      {n.title}
-                    </Typography>
-                    <Typography
-                      sx={{
-                        fontSize: 13,
-                        color: '#7A8795',
-                        mt: 0.45,
-                        lineHeight: 1.45,
-                      }}
-                    >
-                      {n.body}
-                    </Typography>
-                  </Box>
-
-                  <Stack
-                    alignItems="flex-end"
-                    spacing={0.75}
-                    sx={{ flexShrink: 0, pt: 0.2, minWidth: 88 }}
-                  >
-                    <Typography
-                      sx={{
-                        fontSize: 12,
-                        color: '#9AA5B1',
-                        fontWeight: 600,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {n.time}
-                    </Typography>
-                    {n.unread && (
-                      <Box
+                    <Box sx={{ flex: 1, minWidth: 0, pt: 0.15 }}>
+                      <Typography
                         sx={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: '50%',
-                          bgcolor: '#EF3124',
+                          fontSize: 14.5,
+                          fontWeight: n.unread ? 800 : 700,
+                          color: '#0B1F35',
+                          lineHeight: 1.35,
+                          letterSpacing: '-0.01em',
                         }}
-                      />
-                    )}
-                  </Stack>
-                </Stack>
-              </Box>
-            )
-          })}
+                      >
+                        {n.title}
+                      </Typography>
+                      <Typography
+                        sx={{
+                          fontSize: 13,
+                          color: '#7A8795',
+                          mt: 0.45,
+                          lineHeight: 1.45,
+                        }}
+                      >
+                        {n.body}
+                      </Typography>
+                    </Box>
 
-          {filtered.length === 0 && (
+                    <Stack
+                      alignItems="flex-end"
+                      spacing={0.75}
+                      sx={{ flexShrink: 0, pt: 0.2, minWidth: 88 }}
+                    >
+                      <Typography
+                        sx={{
+                          fontSize: 12,
+                          color: '#9AA5B1',
+                          fontWeight: 600,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {n.time}
+                      </Typography>
+                      {n.unread && (
+                        <Box
+                          sx={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            bgcolor: '#EF3124',
+                          }}
+                        />
+                      )}
+                    </Stack>
+                  </Stack>
+                </Box>
+              )
+            })}
+
+          {!listQ.isLoading && !listQ.isError && filtered.length === 0 && (
             <Box sx={{ ...tileSx, textAlign: 'center', py: 4 }}>
               <Typography sx={{ color: '#9AA5B1', fontSize: 14 }}>
                 В этой категории пока нет уведомлений

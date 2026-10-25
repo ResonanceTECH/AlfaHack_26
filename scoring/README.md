@@ -111,10 +111,10 @@ CLI-каталог — фикстура, рабочий каталог хран�
 ### Приложение в Docker и ручная проверка
 
 ```bash
-docker compose up --build db redis api frontend
+docker compose up --build db redis api web
 ```
 
-Сервисы перечислены явно: frontend и web пока занимают одинаковый порт.
+Сервис UI в Compose называется `web` (порт 8080).
 Backend применяет миграции и seed. UI: http://localhost:8080,
 Swagger: http://localhost:8000/docs. Логины: `ip@demo.alfa`, `ooo@demo.alfa`,
 `analyst@demo.alfa`; пароль — `demo1234`.

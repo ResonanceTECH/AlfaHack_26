@@ -14,13 +14,17 @@ import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
+import { formatAiError, postApplicationAiChat, type AiAgentResponse } from '@/api/ai'
 import { fetchAnalystComments, postAnalystComment } from '@/api/analyst'
+import { AiAgentReply } from '@/components/ai/AiAgentReply'
 import type { AnalystCaseOutlet } from '@/components/analyst/AnalystCaseShell'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatHistoryAt } from '@/features/analyst/map'
 import { outlineBtn, primaryBtn, tileSx } from '@/features/analyst/styles'
 
-type LocalAiMsg = { role: 'ai' | 'user'; text: string }
+type LocalAiMsg =
+  | { role: 'user'; text: string }
+  | { role: 'ai'; text: string; agent?: AiAgentResponse }
 
 export function AnalystCaseAiPage() {
   const { caseData: c, card, applicationId } = useOutletContext<AnalystCaseOutlet>()
@@ -65,6 +69,11 @@ export function AnalystCaseAiPage() {
     `Кратко по ${c.number || c.id}: ${c.company}, ${c.product}, ${c.amount.toLocaleString('ru-RU')} ₽ на ${c.termMonths} мес. Проверки: ${card.checksSummary.passed} ок${card.checksSummary.warnings ? `, замечаний ${card.checksSummary.warnings}` : ''}.`
 
   const [aiMsgs, setAiMsgs] = useState<LocalAiMsg[]>([{ role: 'ai', text: summary }])
+  const [aiBusy, setAiBusy] = useState(false)
+
+  useEffect(() => {
+    setAiMsgs([{ role: 'ai', text: summary }])
+  }, [applicationId, summary])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -85,18 +94,27 @@ export function AnalystCaseAiPage() {
     onError: () => setFlash('Не удалось отправить сообщение'),
   })
 
-  function sendAi() {
+  async function sendAi() {
     const t = input.trim()
-    if (!t) return
-    const reply = buildLocalAiReply(t, c.company, card.checksSummary.passed, card.checksSummary.warnings)
-    setAiMsgs((m) => [...m, { role: 'user', text: t }, { role: 'ai', text: reply }])
+    if (!t || aiBusy) return
+    setAiMsgs((m) => [...m, { role: 'user', text: t }])
     setInput('')
+    setAiBusy(true)
+    setFlash(null)
+    try {
+      const res = await postApplicationAiChat(applicationId, t)
+      setAiMsgs((m) => [...m, { role: 'ai', text: res.summary, agent: res }])
+    } catch (e) {
+      setFlash(formatAiError(e, 'Не удалось получить ответ AI'))
+    } finally {
+      setAiBusy(false)
+    }
   }
 
   function send() {
     if (!input.trim()) return
     if (mode === 'ai') {
-      sendAi()
+      void sendAi()
       return
     }
     postM.mutate()
@@ -148,7 +166,7 @@ export function AnalystCaseAiPage() {
         <Typography sx={{ fontSize: 12.5, color: '#8A96A3', mb: 1.5 }}>
           {mode === 'client'
             ? 'Публичные сообщения видит предприниматель в карточке заявки. Внутренние — только банк.'
-            : 'Локальный помощник по контексту заявки (не решение банка).'}
+            : 'Разбор через /applications/{id}/ai/chat — роль определяет backend.'}
         </Typography>
 
         <Stack
@@ -219,9 +237,15 @@ export function AnalystCaseAiPage() {
                   lineHeight: 1.5,
                 }}
               >
-                {m.text}
+                {m.role === 'ai' && m.agent ? <AiAgentReply data={m.agent} dense /> : m.text}
               </Box>
             ))}
+          {mode === 'ai' && aiBusy && (
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ color: '#8A96A3' }}>
+              <CircularProgress size={16} sx={{ color: '#EF3124' }} />
+              <Typography sx={{ fontSize: 13 }}>Готовлю разбор…</Typography>
+            </Stack>
+          )}
           <div ref={bottomRef} />
         </Stack>
 
@@ -264,9 +288,13 @@ export function AnalystCaseAiPage() {
             variant="contained"
             sx={primaryBtn}
             onClick={send}
-            disabled={!input.trim() || postM.isPending}
+            disabled={!input.trim() || postM.isPending || aiBusy}
           >
-            {postM.isPending ? <CircularProgress size={18} color="inherit" /> : 'Отправить'}
+            {postM.isPending || aiBusy ? (
+              <CircularProgress size={18} color="inherit" />
+            ) : (
+              'Отправить'
+            )}
           </Button>
         </Stack>
       </Box>
@@ -331,23 +359,4 @@ export function AnalystCaseAiPage() {
       </Box>
     </Box>
   )
-}
-
-function buildLocalAiReply(
-  question: string,
-  company: string,
-  passed: number,
-  warnings: number,
-): string {
-  const q = question.toLowerCase()
-  if (q.includes('документ')) {
-    return `По ${company}: проверьте вкладку «Документы» и закройте открытые запросы перед одобрением. При нехватке данных запросите документы у клиента.`
-  }
-  if (q.includes('решен') || q.includes('одобр') || q.includes('отказ')) {
-    return `Решение оформляется на экране «Решение»: одобрить, отклонить, контрпредложение или запросить информацию. Сейчас проверок пройдено ${passed}${warnings ? `, замечаний ${warnings}` : ''}.`
-  }
-  if (q.includes('риск') || q.includes('политик')) {
-    return `Опирайтесь на результаты проверок, финансы и историю заявки. Итоговое решение фиксируйте на экране «Решение».`
-  }
-  return `Учёл вопрос по заявке ${company}. Чтобы ответить клиенту, переключитесь на вкладку «Клиент».`
 }

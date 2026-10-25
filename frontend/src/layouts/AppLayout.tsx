@@ -53,6 +53,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { fetchAnalystQueue } from '@/api/analyst'
 import { listCompanies } from '@/api/companies'
+import { listNotifications } from '@/api/notifications'
 import { useAuth } from '@/contexts/AuthContext'
 import { AlfaMark } from '@/components/landing/AlfaLogo'
 import {
@@ -327,6 +328,15 @@ export function AppLayout() {
     staleTime: 60_000,
   })
 
+  const notifBadgeQ = useQuery({
+    queryKey: ['notifications', 'badge'],
+    queryFn: () => listNotifications({ unread: true, limit: 1 }),
+    enabled: Boolean(user),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  })
+  const unreadNotifs = notifBadgeQ.data?.unreadCount ?? 0
+
   const analystCaseId = useMemo(() => {
     const m = location.pathname.match(/\/app\/analyst\/cases\/([^/]+)/)
     const fromPath = m?.[1] ? decodeURIComponent(m[1]) : ''
@@ -526,89 +536,6 @@ export function AppLayout() {
         ))}
       </Box>
 
-      {!isAnalystRole(user?.role) && user?.role !== 'admin' && (
-        <Box
-          sx={{
-            m: rail ? 1 : 1.5,
-            p: rail ? 1 : 1.75,
-            borderRadius: 2.5,
-            bgcolor: '#fff',
-            border: '1px solid rgba(11,31,53,0.06)',
-            boxShadow: '0 2px 10px rgba(11,31,53,0.04)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: rail ? 'center' : 'stretch',
-          }}
-        >
-          {rail ? (
-            <Tooltip title="Иванова А.С. · Написать" placement="right">
-              <IconButton
-                onClick={() => navigate('/app/ai?new=manager')}
-                sx={{
-                  p: 0.5,
-                  '&:hover': { bgcolor: 'rgba(239,49,36,0.06)' },
-                }}
-              >
-                <Avatar
-                  sx={{
-                    width: 36,
-                    height: 36,
-                    bgcolor: 'rgba(239,49,36,0.12)',
-                    color: '#EF3124',
-                    fontSize: 13,
-                    fontWeight: 700,
-                  }}
-                >
-                  ИА
-                </Avatar>
-              </IconButton>
-            </Tooltip>
-          ) : (
-            <>
-              <Typography sx={{ fontSize: 11, color: '#8A96A3', fontWeight: 600, mb: 0.75 }}>
-                Ваш менеджер
-              </Typography>
-              <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.25 }}>
-                <Avatar
-                  sx={{
-                    width: 36,
-                    height: 36,
-                    bgcolor: 'rgba(239,49,36,0.12)',
-                    color: '#EF3124',
-                    fontSize: 13,
-                    fontWeight: 700,
-                  }}
-                >
-                  ИА
-                </Avatar>
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#0B1F35', lineHeight: 1.2 }}>
-                    Иванова А.С.
-                  </Typography>
-                  <Typography sx={{ fontSize: 11, color: '#8A96A3' }}>Персональный менеджер</Typography>
-                </Box>
-              </Stack>
-              <Button
-                fullWidth
-                size="small"
-                variant="outlined"
-                onClick={() => navigate('/app/ai?new=manager')}
-                sx={{
-                  borderRadius: 2,
-                  borderColor: 'rgba(11,31,53,0.14)',
-                  color: '#0B1F35',
-                  fontWeight: 600,
-                  fontSize: 12,
-                  py: 0.85,
-                }}
-              >
-                Написать менеджеру
-              </Button>
-            </>
-          )}
-        </Box>
-      )}
-
       {rail && (
         <Box sx={{ pb: 1.5, display: 'grid', placeItems: 'center' }}>
           <Tooltip title="Развернуть меню" placement="right">
@@ -742,7 +669,7 @@ export function AppLayout() {
             aria-label="Уведомления"
           >
             <Badge
-              badgeContent={user?.role === 'admin' ? 5 : isAnalystRole(user?.role) ? 5 : 4}
+              badgeContent={unreadNotifs > 0 ? unreadNotifs : undefined}
               color="error"
               overlap="circular"
             >

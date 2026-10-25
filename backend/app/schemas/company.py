@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from pydantic import Field, field_validator
 
-from app.core.enums import GoalType, LegalForm, MemberRole
+from app.core.enums import GoalType, LegalForm, MemberRole, UserStatus
 from app.core.money import Money
 from app.schemas.common import APIModel
 
@@ -154,6 +154,57 @@ class BusinessGoalCreate(APIModel):
     other_funding: Money = Decimal("0")
     target_date: date
     term_months: int = Field(ge=1, le=120)
+
+
+class CompanyMemberOut(APIModel):
+    user_id: str
+    company_id: str
+    role: MemberRole
+    full_name: str | None = None
+    email: str | None = None
+    login: str | None = None
+    status: UserStatus | None = None
+    last_login_at: datetime | None = None
+    permissions: dict = Field(default_factory=dict)
+    created_at: datetime | None = None
+
+
+class CompanyMemberPatch(APIModel):
+    role: MemberRole
+
+
+class CompanyInviteCreate(APIModel):
+    email: str = Field(min_length=3, max_length=255)
+    role: MemberRole = MemberRole.MEMBER
+    message: str | None = Field(default=None, max_length=1024)
+
+
+class CompanyInviteOut(APIModel):
+    id: str
+    company_id: str
+    email: str
+    role: MemberRole
+    code: str
+    status: str
+    invited_by: str | None = None
+    expires_at: datetime | None = None
+    created_at: datetime | None = None
+    message: str | None = None
+
+
+class CompanyDocumentOut(APIModel):
+    id: str
+    company_id: str
+    title: str
+    category: str
+    status: str
+    file_name: str | None = None
+    mime_type: str | None = None
+    size_bytes: int | None = None
+    uploaded_by: str | None = None
+    uploaded_at: datetime | None = None
+    review_comment: str | None = None
+    created_at: datetime | None = None
 
 
 class BusinessGoalOut(APIModel):

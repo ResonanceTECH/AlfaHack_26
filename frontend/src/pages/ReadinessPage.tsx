@@ -1,6 +1,11 @@
-import { Box, Button, Stack, Typography } from '@mui/material'
+import { Box, Button, CircularProgress, Stack, Typography } from '@mui/material'
 import { useMemo, useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { fetchReadiness } from '@/api/credit'
+import { useAuth } from '@/contexts/AuthContext'
+import { useAppStore } from '@/hooks/useAppStore'
+import type { ReadinessFactor } from '@/types'
 
 const tileSx = {
   bgcolor: '#fff',
@@ -59,6 +64,33 @@ const DYNAMICS: { label: string; value: number }[] = [
   { label: 'сен', value: 71 },
   { label: '23 окт', value: 78 },
 ]
+
+function factorTone(score: number): 'good' | 'mid' | 'warn' {
+  if (score >= 80) return 'good'
+  if (score >= 65) return 'mid'
+  return 'warn'
+}
+
+function factorPct(f: ReadinessFactor): number {
+  const max = f.maxScore > 0 ? f.maxScore : 100
+  return Math.round(Math.min(100, Math.max(0, (f.score / max) * 100)))
+}
+
+function recHref(text: string, factor?: ReadinessFactor): string {
+  const t = `${text} ${factor?.key ?? ''} ${factor?.label ?? ''}`.toLowerCase()
+  if (t.includes('счёт') || t.includes('компани') || t.includes('инн')) return '/app/company'
+  if (t.includes('бки') || t.includes('согласи') || t.includes('профиль')) return '/app/profile'
+  if (t.includes('заявк')) return '/app/applications'
+  return '/app/documents'
+}
+
+function recCta(text: string): string {
+  const t = text.toLowerCase()
+  if (t.includes('согласи')) return 'Дать'
+  if (t.includes('подключ')) return 'Подключить'
+  if (t.includes('заявк')) return 'Открыть'
+  return 'Загрузить'
+}
 
 function toneColor(tone: 'good' | 'mid' | 'warn') {
   if (tone === 'good') return '#1B8A5A'
@@ -166,8 +198,58 @@ function Sparkline({ points }: { points: { label: string; value: number }[] }) {
 
 export function ReadinessPage() {
   const navigate = useNavigate()
-  const [score, setScore] = useState(SCORE)
+  const { user } = useAuth()
+  const { companyId: storeCompanyId } = useAppStore()
+  const companyId = storeCompanyId || user?.companyId
   const [flash, setFlash] = useState<string | null>(null)
+
+  const readyQ = useQuery({
+    queryKey: ['readiness', companyId],
+    queryFn: () => fetchReadiness({ companyId: companyId! }),
+    enabled: !!companyId,
+  })
+
+  const score = readyQ.data?.score ?? SCORE
+  const factors = useMemo(() => {
+    const raw = readyQ.data?.factors
+    if (!raw?.length) return FACTORS
+    return raw.map((f) => {
+      const pct = factorPct(f)
+      return { label: f.label || f.key, score: pct, tone: factorTone(pct) }
+    })
+  }, [readyQ.data])
+
+  const actions = useMemo(() => {
+    const raw = readyQ.data?.factors
+    if (!raw?.length) return ACTIONS
+    const derived: typeof ACTIONS = []
+    for (const f of raw) {
+      for (const rec of f.recommendations) {
+        derived.push({
+          action: rec,
+          effect: '+',
+          time: '—',
+          cta: recCta(rec),
+          to: recHref(rec, f),
+        })
+      }
+      for (const miss of f.missing) {
+        derived.push({
+          action: miss,
+          effect: '+',
+          time: '—',
+          cta: recCta(miss),
+          to: recHref(miss, f),
+        })
+      }
+    }
+    return derived.length ? derived.slice(0, 6) : ACTIONS
+  }, [readyQ.data])
+
+  const dynamics = useMemo(() => {
+    const prev = DYNAMICS.slice(0, -1)
+    return [...prev, { label: 'сейчас', value: score }]
+  }, [score])
 
   const label = useMemo(() => {
     if (score >= 80) return { text: 'Отличная готовность', color: '#1B8A5A', bg: '#E6F5EE' }
@@ -177,9 +259,11 @@ export function ReadinessPage() {
   }, [score])
 
   function recalc() {
-    setScore((s) => Math.min(100, s + 1))
-    setFlash('Индекс пересчитан')
-    window.setTimeout(() => setFlash(null), 1800)
+    if (!companyId) return
+    void readyQ.refetch().then(() => {
+      setFlash('Индекс пересчитан')
+      window.setTimeout(() => setFlash(null), 1800)
+    })
   }
 
   return (
@@ -253,6 +337,27 @@ export function ReadinessPage() {
         </Stack>
       </Stack>
 
+      {readyQ.isLoading && !readyQ.data && (
+        <Box sx={{ display: 'grid', placeItems: 'center', py: 2, mb: 1 }}>
+          <CircularProgress size={26} sx={{ color: '#EF3124' }} />
+        </Box>
+      )}
+      {readyQ.isError && !readyQ.data && (
+        <Box
+          sx={{
+            mb: 2,
+            px: 1.75,
+            py: 1.1,
+            borderRadius: 2,
+            bgcolor: '#FDE8E6',
+            color: '#C41E14',
+            fontSize: 13.5,
+            fontWeight: 700,
+          }}
+        >
+          Не удалось загрузить индекс — показан ориентир
+        </Box>
+      )}
       {flash && (
         <Box
           sx={{
@@ -317,7 +422,7 @@ export function ReadinessPage() {
             Из чего складывается
           </Typography>
           <Stack spacing={1.35}>
-            {FACTORS.map((f) => (
+            {factors.map((f) => (
               <Box key={f.label}>
                 <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.55 }}>
                   <Typography sx={{ fontSize: 13.5, fontWeight: 600, color: '#0B1F35' }}>
@@ -395,7 +500,7 @@ export function ReadinessPage() {
               </Box>
             </Box>
             <Box component="tbody">
-              {ACTIONS.map((a) => (
+              {actions.map((a) => (
                 <Box
                   component="tr"
                   key={a.action}
@@ -454,7 +559,7 @@ export function ReadinessPage() {
           >
             Динамика индекса
           </Typography>
-          <Sparkline points={DYNAMICS} />
+          <Sparkline points={dynamics} />
         </Box>
       </Box>
 

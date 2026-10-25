@@ -2,6 +2,9 @@ import { Box, Button, Stack, TextField, Typography } from '@mui/material'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import { useMemo, useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { evaluateProject } from '@/api/credit'
+import type { ProjectEvaluationInput } from '@/types'
 import {
   CartesianGrid,
   Line,
@@ -44,8 +47,8 @@ export function RoiPage() {
   const payment = Math.round(annuityPayment(credit, rate, term))
 
   const monthlyCf = revenue * (margin / 100) - fixed - payment * 0.35
-  const paybackMonths = monthlyCf > 0 ? Math.ceil(investment / monthlyCf) : 99
-  const npv = useMemo(() => {
+  const localPayback = monthlyCf > 0 ? Math.ceil(investment / monthlyCf) : 99
+  const localNpv = useMemo(() => {
     let acc = -investment
     const r = rate / 100 / 12
     for (let m = 1; m <= 24; m++) {
@@ -54,7 +57,7 @@ export function RoiPage() {
     return Math.round(acc)
   }, [investment, monthlyCf, rate])
 
-  const chart = useMemo(() => {
+  const localChart = useMemo(() => {
     const pts: { m: number; cf: number }[] = []
     let acc = -investment / 1_000_000
     for (let m = 0; m <= 24; m++) {
@@ -63,6 +66,43 @@ export function RoiPage() {
     }
     return pts
   }, [investment, monthlyCf])
+
+  const evalInput: ProjectEvaluationInput = useMemo(
+    () => ({
+      initialInvestment: investment,
+      creditAmount: credit,
+      additionalSales: revenue,
+      fixedCosts: fixed,
+      variableCosts: Math.round(revenue * (1 - margin / 100)),
+      creditRate: rate,
+      creditTermMonths: term,
+      horizonMonths: 24,
+      discountRate: 12,
+      ownFunds: 0,
+      residualValue: 0,
+      taxRate: 0,
+    }),
+    [investment, credit, revenue, fixed, margin, rate, term],
+  )
+
+  const evalQ = useQuery({
+    queryKey: ['project-evaluate', evalInput],
+    queryFn: () => evaluateProject(evalInput),
+    retry: false,
+  })
+
+  const api = evalQ.data
+  const paybackMonths = api?.simplePaybackMonths ?? localPayback
+  const npv = api?.npv ?? localNpv
+  const roi = api?.roi
+  const chart = useMemo(() => {
+    if (api?.cashFlows?.length) {
+      return api.cashFlows
+        .filter((_, i) => i % 2 === 0 || i === api.cashFlows.length - 1)
+        .map((r) => ({ m: r.month, cf: Math.round((r.cumulative / 1_000_000) * 100) / 100 }))
+    }
+    return localChart
+  }, [api, localChart])
 
   const sensitivity = [
     { margin: 20, vals: [22, 19, 18, 16, 15] },
@@ -90,14 +130,20 @@ export function RoiPage() {
     },
     {
       label: 'Окупаемость',
-      value: `≈ ${paybackMonths} мес`,
-      caption: `дисконтированная ≈ ${Math.min(24, paybackMonths + 2)} мес`,
+      value: paybackMonths != null ? `≈ ${paybackMonths} мес` : '—',
+      caption:
+        api?.discountedPaybackMonths != null
+          ? `дисконтированная ≈ ${api.discountedPaybackMonths} мес`
+          : `дисконтированная ≈ ${Math.min(24, (paybackMonths ?? 0) + 2)} мес`,
       captionColor: '#1B8A5A',
     },
     {
       label: 'NPV (24 мес)',
       value: `${npv >= 0 ? '+' : ''}${(npv / 1_000_000).toFixed(2).replace('.', ',')} млн ₽`,
-      caption: `ставка ${String(rate).replace('.', ',')}%`,
+      caption:
+        roi != null
+          ? `ROI ${String(Math.round(roi * 10) / 10).replace('.', ',')}%`
+          : `ставка ${String(rate).replace('.', ',')}%`,
       captionColor: '#1B8A5A',
     },
     {
@@ -162,7 +208,7 @@ export function RoiPage() {
             variant="contained"
             color="primary"
             onClick={() => {
-              /* demo save */
+              void evalQ.refetch()
             }}
             sx={{
               borderRadius: 2,
@@ -235,7 +281,8 @@ export function RoiPage() {
             </ResponsiveContainer>
           </Box>
           <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: '#0B1F35', mt: 1, lineHeight: 1.4 }}>
-            Проект выходит в плюс около {paybackMonths}-го месяца при плановой выручке.
+            Проект выходит в плюс около {paybackMonths ?? '—'}
+            -го месяца при плановой выручке.
           </Typography>
         </Box>
 

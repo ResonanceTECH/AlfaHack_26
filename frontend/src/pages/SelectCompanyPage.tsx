@@ -421,13 +421,13 @@ function SelectCompanyChooser() {
             }}
           >
             {filtered.map((item) => (
-                <CompanyCard
-                  key={item.id}
-                  item={item}
-                  selected={item.id === selectedId}
-                  onDetails={() => openDetails(item.id)}
-                />
-              ))}
+              <CompanyCard
+                key={item.id}
+                item={item}
+                selected={item.id === selectedId}
+                onDetails={() => openDetails(item.id)}
+              />
+            ))}
 
             {filtered.length === 0 && (
               <Box

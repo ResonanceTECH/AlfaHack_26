@@ -1,0 +1,110 @@
+[
+  {
+    "id": "APP-01",
+    "ok": true,
+    "title": "Create draft",
+    "detail": "id=31d61013-4473-479f-9605-50c2e62064bd status=DRAFT"
+  },
+  {
+    "id": "APP-08",
+    "ok": false,
+    "title": "Idempotent create",
+    "detail": "31d61013-4473-479f-9605-50c2e62064bd vs None st=422"
+  },
+  {
+    "id": "APP-02",
+    "ok": true,
+    "title": "Edit draft",
+    "detail": "st=200 amount=1600000.00 purpose=QA updated keys=['id', 'companyId', 'fundingNeedId', 'productId', 'productName', 'productType', 'goalType', 'status', 'currentStep', 'version', 'amount', 'requestedAmount', 'termMonths', 'rate', 'purpose']"
+  },
+  {
+    "id": "APP-06",
+    "ok": false,
+    "title": "Submit",
+    "detail": "st=202 status=IN_REVIEW err={'applicationId': '31d61013-4473-479f-9605-50c2e62064bd', 'applicationNumber': 'ABC-2026-64BD', 'status': 'IN_REVIEW', 'workflowId': 'eb6e1663-d351-4504-908a-fbfbc06da4d7', 'nextStep': 'ANALYST_REVIEW"
+  },
+  {
+    "id": "DEC-08",
+    "ok": false,
+    "title": "Foreign offer accept",
+    "detail": "st=422 {'error': {'code': 'VALIDATION_ERROR', 'message': 'Ошибка валидации: body', 'request_id': '780420fc-2a01-4ad4-b2dc-0ab93670d5c8', 'fields': [{'field': 'body', '"
+  },
+  {
+    "id": "DEC-05",
+    "ok": false,
+    "title": "Accept counteroffer",
+    "detail": "st=422 status=None {'error': {'code': 'VALIDATION_ERROR', 'message': 'Ошибка валидации: body', 'request_id': '10c9fc21-ecd9-4023-8599-8aaada25cbda', 'fields': [{'field': 'body', 'code': 'missing'}]}}"
+  },
+  {
+    "id": "DEC-09",
+    "ok": true,
+    "title": "Double accept",
+    "detail": "st=422 {'error': {'code': 'VALIDATION_ERROR', 'message': 'Ошибка валидации: body', 'request_id': '58eb2232-2dda-4b2b-831a-1b2955eda4c3', 'fields': [{'field': 'body', '"
+  },
+  {
+    "id": "DEC-14",
+    "ok": false,
+    "title": "Agreement after accept",
+    "detail": "st=409 {'error': {'code': 'NO_ACCEPTED_OFFER', 'message': 'Договор доступен после принятия предложения', 'request_id': '94a56407-5268-4d6d-a74d-f12b39f074e7'}}"
+  },
+  {
+    "id": "DEC-16",
+    "ok": true,
+    "title": "Invalid transition",
+    "detail": "st=409 {'error': {'code': 'INVALID_TRANSITION', 'message': 'Переход APPROVED → DRAFT запрещён', 'request_id': 'b8fae5e6-a873-4f9c-ad56-f74820d9e333', 'fields': [{'field': 'status', 'code': 'APPROVED->DRAFT'}"
+  },
+  {
+    "id": "APP-11",
+    "ok": true,
+    "title": "Delete non-draft",
+    "detail": "st=400 {'error': {'code': 'HTTP_400', 'message': 'Удалить можно только черновик', 'request_id': 'dddf440c-9d19-4987-b221-129a2fa5cee1'}}"
+  },
+  {
+    "id": "ADMIN-03",
+    "ok": true,
+    "title": "Forbidden role",
+    "detail": "st=422 {'error': {'code': 'VALIDATION_ERROR', 'message': 'Ошибка валидации: login', 'request_id': '902a3be7-8418-43ec-bbfc-a5432d02f45b', 'fields': [{'field': 'login', 'code': 'missing'},"
+  },
+  {
+    "id": "ADMIN-01b",
+    "ok": false,
+    "title": "Create user",
+    "detail": "st=422 {'error': {'code': 'VALIDATION_ERROR', 'message': 'Ошибка валидации: login', 'request_id': '142ed6e1-4f2f-47d7-bef1-1a59f3307fd6', 'fields': [{'field': 'login', 'code': 'missing'}]"
+  },
+  {
+    "id": "RBAC-09",
+    "ok": true,
+    "title": "Self elevate via admin API",
+    "detail": "st=403"
+  },
+  {
+    "id": "CREDIT-05",
+    "ok": true,
+    "title": "Above max amount",
+    "detail": "st=422 {'error': {'code': 'HTTP_422', 'message': 'Сумма вне каталога продукта (500000.00–15000000.00)', 'request_id': 'b4d8a986-469c-4229-a588-c2152dff4f5b'}}"
+  },
+  {
+    "id": "ML-13",
+    "ok": true,
+    "title": "Prompt injection handled",
+    "detail": "st=200 {'id': 'b2e31dbe-c65e-4c21-beed-31f0e028504e', 'role': 'assistant', 'content': 'Я AI-консультант Линии решения для ИП Петров Иван Сергеевич. Могу:\\n• помочь сформулировать бизнес-цель и сумму потребности;\\n• объяснить продукты из каталога (со ссылкой"
+  },
+  {
+    "id": "ML-11",
+    "ok": true,
+    "title": "AI role isolation",
+    "detail": "st=200 leak_suspected=False {'id': '247e5303-ab24-49bf-9b26-51a8688254db', 'role': 'assistant', 'content': 'Я AI-консультант Линии решения для ИП Петров Иван Сергеевич. Могу:\\n• помочь сформулировать бизнес-цель и сумму потребности;\\n• объяснить пр"
+  },
+  {
+    "id": "FIN-16",
+    "ok": true,
+    "title": "Forecast",
+    "detail": "st=201 {'id': '366e7cef-618e-4674-940e-0e5bc1abb8df', 'status': 'COMPLETED', 'currency': 'RUB', 'horizonDays': 30, 'model': {'name': 'cashflow-baseline', 'version': 'seasonal-naive-v1', 'mode': 'RULE_BASELIN"
+  },
+  {
+    "id": "FIN-01",
+    "ok": true,
+    "title": "Statements list",
+    "detail": "st=200 n=1"
+  }
+]

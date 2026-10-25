@@ -10,6 +10,10 @@ const STEP_LABELS: Record<string, string> = {
   CHECKS: 'Проверки',
   DECISION: 'Подготовка решения',
   OFFER: 'Оферта клиенту',
+  AGREEMENT: 'Подготовка договора',
+  AUTOMATED_VALIDATION: 'Автопроверка',
+  CREDIT_PARAMETERS: 'Параметры кредита',
+  CLOSED: 'Закрыта',
   FINANCE: 'Финансы',
 }
 
@@ -21,11 +25,17 @@ const STATUS_LABELS: Record<string, string> = {
   APPROVED: 'Одобрена',
   PREAPPROVED: 'Предварительно одобрена',
   COUNTEROFFERED: 'Контрпредложение',
+  OFFER_ACCEPTED: 'Оферта принята',
+  AGREEMENT_PREPARATION: 'Подготовка договора',
   REJECTED: 'Отклонена',
   NEED_INFO: 'Нужна информация',
   ISSUED: 'Выдана',
   DECISION_PENDING: 'Ожидает решения',
   WAITING_FOR_CLIENT: 'Ожидание клиента',
+  PENDING: 'В очереди',
+  RUNNING: 'В работе',
+  COMPLETED: 'Завершён',
+  FAILED: 'Ошибка',
 }
 
 export function analystStatusLabel(status?: string | null): string {
@@ -43,6 +53,8 @@ function statusLabelsFallback(status: string): string {
     docs_requested: 'Ожидание документов',
     approved: 'Одобрена',
     counteroffered: 'Контрпредложение',
+    offer_accepted: 'Оферта принята',
+    agreement_preparation: 'Подготовка договора',
     rejected: 'Отклонена',
     issued: 'Выдана',
   }
@@ -51,7 +63,8 @@ function statusLabelsFallback(status: string): string {
 
 export function analystStepLabel(step?: string | null): string {
   if (!step) return '—'
-  return STEP_LABELS[step.toUpperCase()] || step
+  const key = step.toUpperCase()
+  return STEP_LABELS[key] || analystStatusLabel(step)
 }
 
 export function analystOfferStatusLabel(status?: string | null): string {
@@ -89,10 +102,18 @@ export function queueItemToCase(
     slaLabel: slaFromItem(item),
     slaUrgent: item.openDocumentRequests > 0 || item.status === 'DOCS_REQUESTED',
     analyst: item.assignedAnalystName || '—',
-    nextStep: analystStepLabel(item.currentStep) || analystStatusLabel(item.status),
+    nextStep: queueNextStep(item),
     purpose: '',
     assignedToMe,
   }
+}
+
+/** One human step label — never echo the same text in nextStep and sla. */
+function queueNextStep(item: AnalystQueueItem): string {
+  const step = item.currentStep ? analystStepLabel(item.currentStep) : ''
+  const status = analystStatusLabel(item.status)
+  if (step && step !== '—' && step !== status) return step
+  return status
 }
 
 export function cardToCase(card: AnalystApplicationCard): AnalystCase {
@@ -112,7 +133,12 @@ export function cardToCase(card: AnalystApplicationCard): AnalystCase {
       : `Этап · ${analystStepLabel(app.currentStep) || analystStatusLabel(statusRaw)}`,
     slaUrgent: card.openDocumentRequests.length > 0 || statusRaw === 'DOCS_REQUESTED',
     analyst: app.assignedManagerName || '—',
-    nextStep: analystStepLabel(app.currentStep) || analystStatusLabel(statusRaw),
+    nextStep: (() => {
+      const step = app.currentStep ? analystStepLabel(app.currentStep) : ''
+      const st = analystStatusLabel(statusRaw)
+      if (step && step !== '—' && step !== st) return step
+      return st
+    })(),
     purpose: app.purpose || '—',
     assignedToMe: Boolean(app.assignedManagerId),
   }
@@ -120,8 +146,8 @@ export function cardToCase(card: AnalystApplicationCard): AnalystCase {
 
 function slaFromItem(item: AnalystQueueItem): string {
   if (item.openDocumentRequests > 0) return `Док-запросов: ${item.openDocumentRequests}`
-  if (item.currentStep) return analystStepLabel(item.currentStep)
-  return analystStatusLabel(item.status)
+  // Don't repeat nextStep/status — queue UI already shows them
+  return ''
 }
 
 export function formatCompactMoney(n: number): string {

@@ -1,0 +1,13 @@
+/usr/local/lib/python3.12/site-packages/pytest_asyncio/plugin.py:207: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+FFs.......F.....x...................................                     [100%]
+=================================== FAILURES ===================================
+/usr/local/lib/python3.12/site-packages/httpx/_transports/default.py:118: httpx.ConnectError: [Errno 111] Connection refused
+/usr/local/lib/python3.12/site-packages/httpx/_transports/default.py:118: httpx.ConnectError: [Errno 111] Connection refused
+/usr/local/lib/python3.12/site-packages/httpx/_transports/default.py:118: httpx.ReadError: [Errno 104] Connection reset by peer
+=========================== short test summary info ============================
+FAILED test_suite/accessibility/test_login_a11y_smoke.py::test_login_page_has_labels_and_button
+FAILED test_suite/accessibility/test_login_a11y_smoke.py::test_login_document_title
+FAILED test_suite/exploratory/test_negative_exploratory.py::test_exp08_conflict_on_stale_version

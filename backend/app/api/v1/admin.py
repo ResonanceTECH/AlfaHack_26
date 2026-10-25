@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Body, HTTPException, Query, Response, status
+from fastapi.responses import PlainTextResponse
 
 from app.core.enums import Permission, PolicyStatus, ProductStatus, ProductType, UserRole, UserStatus
 from app.deps import CorrelationId, CurrentUser, DbDep
@@ -42,6 +43,7 @@ from app.schemas.admin import (
     AdminRoleOut,
     AdminRuntimeConfigOut,
     AdminRuntimeConfigPatch,
+    AdminAnalyticsConveyorOut,
     AdminUserCreate,
     AdminUserListOut,
     AdminUserOut,
@@ -92,6 +94,7 @@ from app.services.admin_products import (
     publish_product,
     serialize_product,
 )
+from app.services.admin_analytics import build_conveyor, conveyor_csv
 from app.services.admin_users import (
     create_user,
     delete_member,
@@ -150,6 +153,11 @@ def _require_demo_reset(user: CurrentUser) -> None:
 def _require_audit_read(user: CurrentUser) -> None:
     _require_admin(user)
     require_permission(user, Permission.AUDIT_READ)
+
+
+def _require_analytics_read(user: CurrentUser) -> None:
+    _require_admin(user)
+    require_permission(user, Permission.ANALYTICS_READ)
 
 
 @router.get("/roles", response_model=list[AdminRoleOut])
@@ -922,6 +930,40 @@ def admin_demo_job(job_id: str, db: DbDep, user: CurrentUser) -> AdminDemoJobOut
     if job is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Job не найден")
     return AdminDemoJobOut(**serialize_job(job))
+
+
+@router.get("/analytics/conveyor", response_model=AdminAnalyticsConveyorOut)
+def admin_analytics_conveyor(
+    db: DbDep,
+    user: CurrentUser,
+    period: int = Query(default=30, ge=1, le=365),
+    product: str | None = None,
+    region: str | None = None,
+    channel: str | None = None,
+) -> AdminAnalyticsConveyorOut:
+    _require_analytics_read(user)
+    return AdminAnalyticsConveyorOut(
+        **build_conveyor(db, period=period, product=product, region=region, channel=channel)
+    )
+
+
+@router.get("/analytics/conveyor/export")
+def admin_analytics_conveyor_export(
+    db: DbDep,
+    user: CurrentUser,
+    period: int = Query(default=30, ge=1, le=365),
+    product: str | None = None,
+    region: str | None = None,
+    channel: str | None = None,
+) -> PlainTextResponse:
+    _require_analytics_read(user)
+    payload = build_conveyor(db, period=period, product=product, region=region, channel=channel)
+    csv = conveyor_csv(payload)
+    return PlainTextResponse(
+        content=csv,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="conveyor.csv"'},
+    )
 
 
 @router.get("/audit/events", response_model=AuditEventListOut)

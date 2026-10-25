@@ -2,23 +2,28 @@ import type {
   ApplicationDocument,
   ApplicationStatus,
   CreditApplication,
+  GoalType,
   UserRole,
 } from '@/types'
-import { api, num, str } from '@/api/client'
+import { ACTIVE_COMPANY_KEY, api, num, str } from '@/api/client'
 
 /** Backend: DRAFT / IN_REVIEW / … → frontend: draft / in_review / … */
 const STATUS_ALIASES: Record<string, ApplicationStatus> = {
   draft: 'draft',
   submitted: 'submitted',
-  validating: 'in_review',
+  validating: 'validating',
   in_review: 'in_review',
   docs_requested: 'docs_requested',
   approved: 'approved',
   rejected: 'rejected',
   counteroffered: 'counteroffered',
-  offer_accepted: 'approved',
-  agreement_preparation: 'approved',
+  offer_accepted: 'offer_accepted',
+  agreement_preparation: 'agreement_preparation',
   issued: 'issued',
+}
+
+function resolveCompanyId(explicit?: string): string | undefined {
+  return explicit || localStorage.getItem(ACTIVE_COMPANY_KEY) || undefined
 }
 
 export function normalizeApplicationStatus(raw: unknown): ApplicationStatus {
@@ -42,12 +47,13 @@ function mapDoc(raw: Record<string, unknown>): ApplicationDocument {
 
 export function mapApplication(raw: Record<string, unknown>): CreditApplication {
   return {
-    id: str(raw.id),
+    id: str(raw.id ?? raw.applicationId ?? raw.application_id),
     companyId: str(raw.companyId ?? raw.company_id),
     productId: str(raw.productId ?? raw.product_id),
     productName: str(raw.productName ?? raw.product_name),
     status: normalizeApplicationStatus(raw.status),
-    amount: num(raw.amount),
+    // requestedAmount is what the client asked for; amount may mirror it or be legacy
+    amount: num(raw.requestedAmount ?? raw.requested_amount ?? raw.amount),
     termMonths: num(raw.termMonths ?? raw.term_months),
     rate: num(raw.rate),
     purpose: str(raw.purpose),
@@ -74,7 +80,7 @@ export function mapApplication(raw: Record<string, unknown>): CreditApplication 
       }),
     ),
     createdAt: str(raw.createdAt ?? raw.created_at),
-    updatedAt: str(raw.updatedAt ?? raw.updated_at),
+    updatedAt: str(raw.updatedAt ?? raw.updated_at ?? raw.savedAt ?? raw.saved_at),
     aiSummary: raw.aiSummary != null || raw.ai_summary != null
       ? str(raw.aiSummary ?? raw.ai_summary)
       : undefined,
@@ -82,33 +88,79 @@ export function mapApplication(raw: Record<string, unknown>): CreditApplication 
 }
 
 export async function listApplications(companyId?: string): Promise<CreditApplication[]> {
-  const { data } = await api.get('/applications', {
-    params: companyId ? { companyId } : undefined,
-  })
+  const cid = resolveCompanyId(companyId)
+  if (!cid) return []
+  const { data } = await api.get(`/companies/${cid}/applications`)
   return (data as Record<string, unknown>[]).map(mapApplication)
 }
 
-export async function getApplication(id: string): Promise<CreditApplication> {
+export async function getApplication(
+  id: string,
+  companyId?: string,
+): Promise<CreditApplication> {
+  const cid = resolveCompanyId(companyId)
+  if (cid) {
+    const { data } = await api.get(`/companies/${cid}/applications/${id}`)
+    return mapApplication(data as Record<string, unknown>)
+  }
   const { data } = await api.get(`/applications/${id}`)
   return mapApplication(data as Record<string, unknown>)
 }
 
-export async function createApplication(input: {
+export type CreateApplicationInput = {
   companyId: string
   productId: string
-  amount: number
+  requestedAmount: number | string
   termMonths: number
-  rate: number
-  purpose: string
+  purpose?: string
+  goalType?: GoalType | string
+  /** Omit or null when not linked to a funding need — never pass placeholder "string". */
+  fundingNeedId?: string | null
+  rate?: number | string
   idempotencyKey?: string
-}): Promise<CreditApplication> {
-  const { data } = await api.post('/applications', input)
-  return mapApplication(data as Record<string, unknown>)
 }
 
-export async function submitApplication(id: string): Promise<CreditApplication> {
-  const { data } = await api.post(`/applications/${id}/submit`)
-  return mapApplication(data as Record<string, unknown>)
+/** Creates a DRAFT under /companies/{id}/applications. Returns draft id — then submit. */
+export async function createApplication(
+  input: CreateApplicationInput,
+): Promise<{ id: string; companyId: string; status: ApplicationStatus }> {
+  const body: Record<string, unknown> = {
+    productId: input.productId,
+    requestedAmount: String(input.requestedAmount),
+    termMonths: input.termMonths,
+  }
+  if (input.purpose != null) body.purpose = input.purpose
+  if (input.goalType != null) body.goalType = input.goalType
+  if (input.fundingNeedId !== undefined) body.fundingNeedId = input.fundingNeedId
+  if (input.rate != null) body.rate = input.rate
+
+  const { data } = await api.post(`/companies/${input.companyId}/applications`, body, {
+    headers: input.idempotencyKey ? { 'Idempotency-Key': input.idempotencyKey } : undefined,
+  })
+  const raw = data as Record<string, unknown>
+  return {
+    id: str(raw.id),
+    companyId: str(raw.companyId ?? raw.company_id, input.companyId),
+    status: normalizeApplicationStatus(raw.status),
+  }
+}
+
+/** Submit draft → scoring. Then reload full card via getApplication. */
+export async function submitApplication(
+  companyId: string,
+  applicationId: string,
+): Promise<{ applicationId: string; status: ApplicationStatus; nextStep?: string }> {
+  const { data } = await api.post(
+    `/companies/${companyId}/applications/${applicationId}/submit`,
+  )
+  const raw = data as Record<string, unknown>
+  return {
+    applicationId: str(raw.applicationId ?? raw.application_id, applicationId),
+    status: normalizeApplicationStatus(raw.status),
+    nextStep: raw.nextStep != null || raw.next_step != null
+      ? str(raw.nextStep ?? raw.next_step)
+      : undefined,
+  }
 }
 
 export async function uploadApplicationDocument(
@@ -233,6 +285,17 @@ export async function fetchApplicationOffers(
     label: raw.label != null ? str(raw.label) : undefined,
     expiresAt: (raw.expiresAt ?? raw.expires_at) as string | undefined,
   }))
+}
+
+/** ACTIVE and not expired / superseded — never show replaced offers as current. */
+export function isLiveOffer(offer: CreditOffer, now = Date.now()): boolean {
+  const st = offer.status.trim().toUpperCase()
+  if (st !== 'ACTIVE') return false
+  if (offer.expiresAt) {
+    const exp = Date.parse(offer.expiresAt)
+    if (Number.isFinite(exp) && exp < now) return false
+  }
+  return true
 }
 
 export async function acceptApplicationOffer(

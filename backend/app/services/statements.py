@@ -73,15 +73,26 @@ def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
             col_map[c] = "balance"
     return df.rename(columns=col_map)
 
+def statement_extension_ok(filename: str) -> bool:
+    return bool(re.search(r"\.(csv|xlsx|xls)$", filename.lower()))
+
+
 def parse_statement_bytes(content: bytes, filename: str) -> list[dict[str, Any]]:
     name = filename.lower()
-    if not re.search(r"\.(csv|xlsx|xls)$", name):
+    if not statement_extension_ok(name):
         raise ValueError("Поддерживаются только CSV и XLSX. PDF — на следующем этапе.")
 
-    if name.endswith(".csv"):
-        df = pd.read_csv(io.BytesIO(content), sep=None, engine="python")
-    else:
-        df = pd.read_excel(io.BytesIO(content))
+    # Guard before pandas: empty/whitespace → ValueError (not uncaught _csv.Error → 500)
+    if not content or not content.strip():
+        raise ValueError("Файл пуст или не содержит строк операций")
+
+    try:
+        if name.endswith(".csv"):
+            df = pd.read_csv(io.BytesIO(content), sep=None, engine="python")
+        else:
+            df = pd.read_excel(io.BytesIO(content))
+    except Exception as exc:
+        raise ValueError(f"Не удалось прочитать файл: {exc}") from exc
 
     if df.empty:
         raise ValueError("Файл пуст или не содержит строк операций")
