@@ -58,7 +58,11 @@ export type AppStore = {
 export function useAppStore(): AppStore {
   const { user, isAuthenticated } = useAuth()
   const companyId = user?.companyId
-  const isManager = user?.role === 'manager' || user?.role === 'risk_analyst' || user?.role === 'admin'
+  const isManager =
+    user?.role === 'analyst' ||
+    user?.role === 'manager' ||
+    user?.role === 'risk_analyst' ||
+    user?.role === 'admin'
   const ui = useUiPrefs()
 
   const enabled = isAuthenticated && Boolean(companyId)
