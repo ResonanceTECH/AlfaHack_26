@@ -28,6 +28,7 @@ export type ApplicationStatus =
   | 'in_review'
   | 'docs_requested'
   | 'approved'
+  | 'counteroffered'
   | 'rejected'
   | 'issued'
 
@@ -236,6 +237,7 @@ export interface ApplicationComment {
   authorRole: UserRole
   text: string
   createdAt: string
+  isInternal?: boolean
 }
 
 export interface CreditApplication {
