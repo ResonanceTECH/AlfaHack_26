@@ -10,7 +10,12 @@ import {
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined'
 import { useMemo, useState } from 'react'
-import { Link as RouterLink, useNavigate } from 'react-router-dom'
+import { Link as RouterLink, useLocation, useNavigate } from 'react-router-dom'
+import { loadLocalApps, mergeApplications } from '@/features/applications/localApps'
+import { useAppStore } from '@/hooks/useAppStore'
+import { statusLabels } from '@/data/labels'
+import { formatDate, formatMoney } from '@/utils/format'
+import type { ApplicationStatus, CreditApplication } from '@/types'
 
 const tileSx = {
   bgcolor: '#fff',
@@ -130,6 +135,94 @@ const DEMO: AppRow[] = [
   },
 ]
 
+function appCode(id: string): string {
+  return id.toUpperCase().startsWith('ABC') ? id : `ABC-${id.slice(-8).toUpperCase()}`
+}
+
+function mapApiStatus(status: ApplicationStatus): {
+  status: AppStatus
+  tab: AppRow['tab']
+  nextStep: string
+  nextStepAction: 'link' | 'text'
+  editable: boolean
+} {
+  switch (status) {
+    case 'draft':
+      return {
+        status: 'draft',
+        tab: 'draft',
+        nextStep: 'Продолжить заполнение',
+        nextStepAction: 'link',
+        editable: true,
+      }
+    case 'approved':
+      return {
+        status: 'alternative',
+        tab: 'work',
+        nextStep: 'Принять или изменить условия',
+        nextStepAction: 'link',
+        editable: true,
+      }
+    case 'issued':
+      return {
+        status: 'signed',
+        tab: 'contracts',
+        nextStep: 'Открыть договор',
+        nextStepAction: 'link',
+        editable: false,
+      }
+    case 'rejected':
+      return {
+        status: 'rejected',
+        tab: 'rejected',
+        nextStep: 'Повторная подача через 30 дней',
+        nextStepAction: 'text',
+        editable: false,
+      }
+    default:
+      return {
+        status: 'review',
+        tab: 'work',
+        nextStep: 'Открыть трекер',
+        nextStepAction: 'link',
+        editable: false,
+      }
+  }
+}
+
+function toRow(a: CreditApplication, companyName: string): AppRow {
+  const meta = mapApiStatus(a.status)
+  const code = appCode(a.id)
+  const canEditOffer = a.status === 'approved' && code === 'ABC-2026-1042'
+  const href =
+    a.status === 'draft'
+      ? '/app/applications/new'
+      : a.status === 'issued'
+        ? `/app/applications/${a.id}/contract`
+        : canEditOffer
+          ? `/app/applications/${a.id}/edit`
+          : `/app/applications/${a.id}`
+  return {
+    id: code,
+    title: a.purpose || a.productName,
+    company: companyName,
+    amount: formatMoney(a.amount),
+    term: `${a.termMonths} мес.`,
+    status: meta.status,
+    statusLabel: statusLabels[a.status],
+    submitted: a.status === 'draft' ? '—' : formatDate(a.createdAt),
+    nextStep: canEditOffer
+      ? 'Принять или изменить условия'
+      : a.status === 'approved'
+        ? 'Посмотреть условия'
+        : meta.nextStep,
+    nextStepAction: meta.nextStepAction,
+    href,
+    editable: a.status === 'draft' || canEditOffer,
+    tab: meta.tab,
+  }
+}
+
 const STATUS_STYLE: Record<AppStatus, { bg: string; color: string }> = {
   alternative: { bg: '#FFF0E0', color: '#C45A12' },
   signed: { bg: '#E6F5EE', color: '#1B8A5A' },
@@ -165,26 +258,39 @@ function StatusChip({ status, label }: { status: AppStatus; label: string }) {
 
 export function ApplicationsPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const { apps, company, companyId } = useAppStore()
   const [tab, setTab] = useState<TabKey>('all')
   const [draftsOnly, setDraftsOnly] = useState(false)
   const [search, setSearch] = useState('')
-  const [company, setCompany] = useState('all')
+  const [companyFilter, setCompanyFilter] = useState('all')
   const [period, setPeriod] = useState('12')
   const [flash, setFlash] = useState<string | null>(null)
 
+  const rows = useMemo(() => {
+    const companyName = company?.name ?? 'Моя компания'
+    const live = mergeApplications(apps, loadLocalApps(companyId)).map((a) =>
+      toRow(a, companyName),
+    )
+    const liveIds = new Set(live.map((r) => r.id))
+    const demoExtra = DEMO.filter((d) => !liveIds.has(d.id))
+    return [...live, ...demoExtra]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apps, companyId, company?.name, location.key])
+
   const companies = useMemo(
-    () => Array.from(new Set(DEMO.map((d) => d.company))),
-    [],
+    () => Array.from(new Set(rows.map((d) => d.company))),
+    [rows],
   )
 
-  const draftCount = DEMO.filter((d) => d.tab === 'draft').length
-  const reviewCount = DEMO.filter((d) => d.tab === 'work').length
-  const contractCount = DEMO.filter((d) => d.tab === 'contracts').length
-  const rejectedCount = DEMO.filter((d) => d.tab === 'rejected').length
+  const draftCount = rows.filter((d) => d.tab === 'draft').length
+  const reviewCount = rows.filter((d) => d.tab === 'work').length
+  const contractCount = rows.filter((d) => d.tab === 'contracts').length
+  const rejectedCount = rows.filter((d) => d.tab === 'rejected').length
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return DEMO.filter((d) => {
+    return rows.filter((d) => {
       if (draftsOnly && d.tab !== 'draft') return false
       if (!draftsOnly) {
         if (tab === 'work' && d.tab !== 'work') return false
@@ -193,7 +299,7 @@ export function ApplicationsPage() {
         if (tab === 'archive' && d.tab !== 'archive') return false
         if (tab === 'all' && d.tab === 'archive') return false
       }
-      if (company !== 'all' && d.company !== company) return false
+      if (companyFilter !== 'all' && d.company !== companyFilter) return false
       if (!q) return true
       return (
         d.id.toLowerCase().includes(q) ||
@@ -202,9 +308,9 @@ export function ApplicationsPage() {
         d.company.toLowerCase().includes(q)
       )
     })
-  }, [tab, search, company, draftsOnly])
+  }, [tab, search, companyFilter, draftsOnly, rows])
 
-  const visibleTotal = DEMO.filter((d) => d.tab !== 'archive').length
+  const visibleTotal = rows.filter((d) => d.tab !== 'archive').length
 
   const tabs: { key: TabKey; label: string }[] = [
     { key: 'all', label: `Все (${visibleTotal})` },
@@ -214,17 +320,21 @@ export function ApplicationsPage() {
     { key: 'archive', label: 'Архив' },
   ]
 
+  const workSample = rows.find((d) => d.tab === 'work')
+  const contractSample = rows.find((d) => d.tab === 'contracts')
+  const rejectedSample = rows.find((d) => d.tab === 'rejected')
+
   const statCards = [
     {
       label: 'На рассмотрении',
       value: reviewCount,
-      caption: 'ABC-2026-1042 · ждёт ответа',
+      caption: workSample ? `${workSample.id} · ждёт ответа` : 'нет активных',
       captionColor: '#C45A12',
     },
     {
       label: 'Активные договоры',
       value: contractCount,
-      caption: 'ABC-2026-0987',
+      caption: contractSample?.id ?? '—',
       captionColor: '#1B8A5A',
     },
     {
@@ -236,7 +346,7 @@ export function ApplicationsPage() {
     {
       label: 'Отклонённые',
       value: rejectedCount,
-      caption: 'ABC-2025-0644',
+      caption: rejectedSample?.id ?? '—',
       captionColor: '#C41E14',
     },
   ]
@@ -431,8 +541,8 @@ export function ApplicationsPage() {
           select
           size="small"
           label="Компания"
-          value={company}
-          onChange={(e) => setCompany(e.target.value)}
+          value={companyFilter}
+          onChange={(e) => setCompanyFilter(e.target.value)}
           sx={fieldSx}
         >
           <MenuItem value="all">Все</MenuItem>
