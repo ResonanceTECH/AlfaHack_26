@@ -8,7 +8,6 @@ import { AdminAnalyticsPage } from '@/pages/AdminAnalyticsPage'
 import { AdminProductsPage } from '@/pages/AdminProductsPage'
 import { AdminPolicyPage } from '@/pages/AdminPolicyPage'
 import { AdminAuditPage } from '@/pages/AdminAuditPage'
-import { AdminStubPage } from '@/pages/AdminStubPage'
 import { DesignSystemPage } from '@/pages/DesignSystemPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { VerifyEmailPage } from '@/pages/VerifyEmailPage'
@@ -193,50 +192,10 @@ export function AppRouter() {
           }
         />
         <Route
-          path="admin/rules"
-          element={
-            <Protected roles={['admin']}>
-              <AdminStubPage />
-            </Protected>
-          }
-        />
-        <Route
-          path="admin/models"
-          element={
-            <Protected roles={['admin']}>
-              <AdminStubPage />
-            </Protected>
-          }
-        />
-        <Route
-          path="admin/model-quality"
-          element={
-            <Protected roles={['admin']}>
-              <AdminStubPage />
-            </Protected>
-          }
-        />
-        <Route
-          path="admin/demo-data"
-          element={
-            <Protected roles={['admin']}>
-              <AdminStubPage />
-            </Protected>
-          }
-        />
-        <Route
           path="admin/audit"
           element={
             <Protected roles={['admin']}>
               <AdminAuditPage />
-            </Protected>
-          }
-        />
-        <Route
-          path="admin/status"
-          element={
-            <Protected roles={['admin']}>
-              <AdminStubPage />
             </Protected>
           }
         />
