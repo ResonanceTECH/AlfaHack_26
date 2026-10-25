@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { AppLayout } from '@/layouts/AppLayout'
 import { LandingPage } from '@/pages/LandingPage'
+import { DesignSystemPage } from '@/pages/DesignSystemPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { VerifyEmailPage } from '@/pages/VerifyEmailPage'
 import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage'
@@ -66,6 +67,7 @@ export function AppRouter() {
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
+      <Route path="/design-system" element={<DesignSystemPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/verify-email" element={<VerifyEmailPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
