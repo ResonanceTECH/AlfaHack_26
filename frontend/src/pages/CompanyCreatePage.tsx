@@ -126,7 +126,10 @@ export function CompanyCreatePage() {
     return <Navigate to="/login" replace />
   }
 
-  if (user.role === 'manager' || user.role === 'risk_analyst' || user.role === 'admin') {
+  if (user.role === 'admin') {
+    return <Navigate to="/app/admin" replace />
+  }
+  if (user.role === 'manager' || user.role === 'risk_analyst') {
     return <Navigate to="/app/manager" replace />
   }
 

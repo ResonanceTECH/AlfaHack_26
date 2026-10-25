@@ -13,7 +13,8 @@ import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
 import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded'
 import PersonOutlineRoundedIcon from '@mui/icons-material/PersonOutlineRounded'
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
+import { useAuth } from '@/contexts/AuthContext'
 
 const tileSx = {
   bgcolor: '#fff',
@@ -124,6 +125,7 @@ const KIND_META: Record<
 type TabKey = 'all' | NotifCategory
 
 export function NotificationsPage() {
+  const { user } = useAuth()
   const navigate = useNavigate()
   const [items, setItems] = useState(INITIAL)
   const [tab, setTab] = useState<TabKey>('all')
@@ -152,6 +154,10 @@ export function NotificationsPage() {
     { key: 'payments', label: 'Платежи' },
     { key: 'system', label: 'Система' },
   ]
+
+  if (user?.role === 'admin') {
+    return <Navigate to="/app/admin/notifications" replace />
+  }
 
   function markAllRead() {
     setItems((list) => list.map((i) => ({ ...i, unread: false })))

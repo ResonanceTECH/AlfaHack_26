@@ -40,7 +40,9 @@ export function LoginPage() {
       navigate(next)
       return
     }
-    if (user.role === 'manager' || user.role === 'risk_analyst') {
+    if (user.role === 'admin') {
+      navigate('/app/admin')
+    } else if (user.role === 'manager' || user.role === 'risk_analyst') {
       navigate('/app/manager')
     } else if (user.companyId) {
       navigate('/app')

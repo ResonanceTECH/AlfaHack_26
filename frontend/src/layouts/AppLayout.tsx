@@ -23,6 +23,7 @@ import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded'
 import HomeRoundedIcon from '@mui/icons-material/HomeRounded'
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import AccountBalanceRoundedIcon from '@mui/icons-material/AccountBalanceRounded'
+import AccountBalanceWalletRoundedIcon from '@mui/icons-material/AccountBalanceWalletRounded'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
 import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded'
@@ -33,6 +34,10 @@ import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded'
 import SupportAgentRoundedIcon from '@mui/icons-material/SupportAgentRounded'
 import NotificationsNoneRoundedIcon from '@mui/icons-material/NotificationsNoneRounded'
 import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded'
+import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
+import PolicyRoundedIcon from '@mui/icons-material/PolicyRounded'
+import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
+import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -108,6 +113,60 @@ const managerGroups: NavGroup[] = [
   },
 ]
 
+const adminGroups: NavGroup[] = [
+  {
+    title: 'Система',
+    items: [
+      {
+        to: '/app/admin',
+        label: 'Обзор',
+        icon: <DashboardRoundedIcon sx={iconSx} />,
+        end: true,
+      },
+      {
+        to: '/app/admin/analytics',
+        label: 'Аналитика конвейера',
+        icon: <InsightsRoundedIcon sx={iconSx} />,
+      },
+    ],
+  },
+  {
+    title: 'Кредитный конвейер',
+    items: [
+      {
+        to: '/app/admin/products',
+        label: 'Каталог продуктов',
+        icon: <AccountBalanceWalletRoundedIcon sx={iconSx} />,
+      },
+      {
+        to: '/app/admin/policy',
+        label: 'Кредитная политика',
+        icon: <PolicyRoundedIcon sx={iconSx} />,
+      },
+    ],
+  },
+  {
+    title: 'Администрирование',
+    items: [
+      {
+        to: '/app/admin/users',
+        label: 'Пользователи и роли',
+        icon: <ManageAccountsRoundedIcon sx={iconSx} />,
+      },
+      {
+        to: '/app/admin/audit',
+        label: 'Аудит изменений',
+        icon: <HistoryRoundedIcon sx={iconSx} />,
+      },
+      {
+        to: '/app/manager',
+        label: 'Очередь заявок',
+        icon: <AssignmentRoundedIcon sx={iconSx} />,
+      },
+    ],
+  },
+]
+
 function initials(name?: string): string {
   if (!name) return '·'
   const parts = name.trim().split(/\s+/)
@@ -128,7 +187,9 @@ function pageTitle(pathname: string): string {
   if (pathname.startsWith('/app/team/') && pathname !== '/app/team/invite') {
     return 'Участник'
   }
-  if (pathname === '/app/notifications') return 'Уведомления'
+  if (pathname === '/app/notifications' || pathname === '/app/admin/notifications') {
+    return 'Уведомления'
+  }
   if (pathname === '/app/scenarios') return 'Сценарии и подбор'
   if (pathname === '/app/calculator') return 'Кредитный калькулятор'
   if (pathname === '/app/forecast') return 'Прогноз денежных средств'
@@ -143,9 +204,10 @@ function pageTitle(pathname: string): string {
   if (pathname.startsWith('/app/documents/') && pathname !== '/app/documents') {
     return 'Документ'
   }
-  const flat = [...entrepreneurGroups, ...managerGroups].flatMap((g) => g.items)
+  const flat = [...entrepreneurGroups, ...managerGroups, ...adminGroups].flatMap((g) => g.items)
   const exact = flat.find((i) => i.to === pathname)
   if (exact) return exact.label
+  if (pathname === '/app/admin' || pathname === '/app/admin/') return 'Обзор'
   if (pathname === '/app' || pathname === '/app/') return 'Главная'
   return 'Кабинет'
 }
@@ -181,11 +243,12 @@ export function AppLayout() {
   const companiesQ = useQuery({
     queryKey: ['companies'],
     queryFn: listCompanies,
-    enabled: Boolean(user) && user?.role !== 'manager',
+    enabled: Boolean(user) && user?.role !== 'manager' && user?.role !== 'admin',
   })
 
   const groups = useMemo(() => {
     if (!user) return []
+    if (user.role === 'admin') return adminGroups
     if (user.role === 'manager') return managerGroups
     if (user.role === 'accountant') {
       return entrepreneurGroups
@@ -364,7 +427,7 @@ export function AppLayout() {
         ))}
       </Box>
 
-      {user?.role !== 'manager' && (
+      {user?.role !== 'manager' && user?.role !== 'admin' && (
         <Box
           sx={{
             m: rail ? 1 : 1.5,
@@ -567,13 +630,23 @@ export function AppLayout() {
 
           <IconButton
             size="small"
-            onClick={() => navigate('/app/notifications')}
+            onClick={() =>
+              navigate(user?.role === 'admin' ? '/app/admin/notifications' : '/app/notifications')
+            }
             sx={{
-              color: location.pathname === '/app/notifications' ? '#EF3124' : '#5A6B7D',
+              color:
+                location.pathname === '/app/notifications' ||
+                location.pathname === '/app/admin/notifications'
+                  ? '#EF3124'
+                  : '#5A6B7D',
             }}
             aria-label="Уведомления"
           >
-            <Badge badgeContent={4} color="error" overlap="circular">
+            <Badge
+              badgeContent={user?.role === 'admin' ? 5 : 4}
+              color="error"
+              overlap="circular"
+            >
               <NotificationsNoneRoundedIcon />
             </Badge>
           </IconButton>

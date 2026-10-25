@@ -12,7 +12,7 @@ import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import EventOutlinedIcon from '@mui/icons-material/EventOutlined'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import { useMemo } from 'react'
-import { Link as RouterLink, useLocation } from 'react-router-dom'
+import { Link as RouterLink, Navigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { listCompanies } from '@/api/companies'
 import { fetchReadiness } from '@/api/credit'
@@ -106,7 +106,7 @@ export function DashboardPage() {
   const companiesQ = useQuery({
     queryKey: ['companies'],
     queryFn: listCompanies,
-    enabled: Boolean(user),
+    enabled: Boolean(user) && user?.role !== 'admin',
   })
 
   const displayApps = useMemo(
@@ -126,8 +126,12 @@ export function DashboardPage() {
         companyId: companyId!,
         applicationId: activeApp?.id,
       }),
-    enabled: Boolean(companyId),
+    enabled: Boolean(companyId) && user?.role !== 'admin',
   })
+
+  if (user?.role === 'admin') {
+    return <Navigate to="/app/admin" replace />
+  }
 
   if (isLoading) {
     return (
@@ -386,9 +390,7 @@ export function DashboardPage() {
             Подберите кредит под цель бизнеса
           </Typography>
           <Typography sx={{ fontSize: 13, color: 'rgba(255,255,255,0.82)', lineHeight: 1.4, mb: 2 }}>
-            {goal
-              ? `${goalLabels[goal.goalType]} · нужно ${formatMoney(goal.requiredAmount)}`
-              : 'Сравните условия и оформите заявку за несколько шагов'}
+            Умный помощник подскажет
           </Typography>
           <Stack direction="row" spacing={1} sx={{ mt: 'auto' }} flexWrap="wrap" useFlexGap>
             <Button
