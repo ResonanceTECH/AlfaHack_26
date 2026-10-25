@@ -19,6 +19,9 @@ export type CompanyInvite = {
   createdAt?: string
   fullName?: string
   status?: string
+  companyId?: string
+  companyName?: string
+  invitedByName?: string
 }
 
 export type AcceptInviteResult = {
@@ -123,6 +126,18 @@ export function mapInvite(raw: Record<string, unknown>): CompanyInvite {
         ? str(raw.fullName ?? raw.full_name)
         : undefined,
     status: raw.status != null ? str(raw.status) : undefined,
+    companyId:
+      raw.companyId != null || raw.company_id != null
+        ? str(raw.companyId ?? raw.company_id)
+        : undefined,
+    companyName:
+      raw.companyName != null || raw.company_name != null
+        ? str(raw.companyName ?? raw.company_name)
+        : undefined,
+    invitedByName:
+      raw.invitedByName != null || raw.invited_by_name != null
+        ? str(raw.invitedByName ?? raw.invited_by_name)
+        : undefined,
   }
 }
 
@@ -162,6 +177,12 @@ export async function inviteMember(
 
 export async function listInvites(companyId: string): Promise<CompanyInvite[]> {
   const { data } = await api.get(`/companies/${companyId}/members/invites`)
+  return asRecords(data, ['items', 'invites']).map(mapInvite)
+}
+
+/** Inbox приглашённого — pending invites на email текущего пользователя. */
+export async function listMyInvites(): Promise<CompanyInvite[]> {
+  const { data } = await api.get('/invites/mine')
   return asRecords(data, ['items', 'invites']).map(mapInvite)
 }
 
