@@ -2,7 +2,7 @@
 
 Эндпоинты API, которые дергает фронт. Базовый префикс: `/api/v1` (прокси Vite → backend).
 
-Экраны: **логин**, **забыли пароль**, **выбор / добавление компании**, **профиль компании**, **календарь**, **профиль пользователя**, **команда**, **помощь**, **AI-консультант**.
+Экраны: **логин**, **забыли пароль**, **выбор / добавление компании**, **профиль компании**, **финансовый профиль**, **календарь**, **профиль пользователя**, **команда**, **помощь**, **AI-консультант**.
 
 Данные только с бэка — без mock UI и без `?empty=1`.
 
@@ -184,9 +184,16 @@ UI превью: name / region / `membershipRole` из list item; KPI — `appli
 | `GET` | `/companies/{companyId}` | Mount через store |
 | `GET` | `/companies` | блок «Мои компании» |
 | `PATCH` | `/companies/{companyId}` | «Редактировать» → сохранить |
-| `POST` | `/companies/{companyId}/registry/verify` | «Проверить ИНН» |
+| `POST` | `/companies/{companyId}/registry/verify` | подтверждение на `/app/company/inn-check` |
 
 Владельцы / согласия / банковские счета — UI demo поверх реальных реквизитов. Финансы — на `/app/statements`.
+
+«Проверить ИНН» → `/app/company/inn-check` (`CompanyInnCheckPage.tsx`):
+
+| Method | Path | Когда |
+|--------|------|--------|
+| `POST` | `/registry/companies/lookup` | «Проверить» |
+| `POST` | `/companies/{id}/registry/verify` | «Подтвердить и продолжить» |
 
 ### `GET /companies/{companyId}`
 
@@ -340,6 +347,20 @@ PATCH:
 | `GET` | `/companies` | Mount: имя активной компании |
 
 **Нет на бэке (UI demo):** список участников, фильтры, матрица ролей, приглашение по e-mail, «Отозвать доступ». Приглашение добавляет строку локально в state.
+
+---
+
+## Финансовый профиль — `/app/statements`
+
+Код: `StatementsPage.tsx` · KPI/графики из `financials` + демо-ряд 12 мес.
+
+| Method | Path | Когда |
+|--------|------|--------|
+| `GET` | `/companies/{id}/financials` | Mount (store) — масштаб KPI |
+| `GET` | `/companies/{id}/transactions` | (store) после импорта |
+| `POST` | `/statements/import` (multipart) | «Загрузить выписку» |
+
+«Обновить данные» — `refetchAll()` store.
 
 ---
 
