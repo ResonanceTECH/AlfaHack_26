@@ -466,8 +466,8 @@ export function HelpPage() {
                 Быстрые действия
               </Typography>
               <Typography sx={{ fontSize: 13, color: '#7A8795', mb: 1.75, lineHeight: 1.45 }}>
-                У роли ANALYST нет персонального менеджера — рабочий контур: очередь, карточка заявки и
-                чат с клиентом.
+                Персонального менеджера нет — рабочий контур: очередь, карточка заявки и чат с
+                клиентом.
               </Typography>
               <Stack spacing={1.1}>
                 <Button

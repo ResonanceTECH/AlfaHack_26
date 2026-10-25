@@ -5,9 +5,67 @@ import { formatMoney } from '@/utils/format'
 const STEP_LABELS: Record<string, string> = {
   ANALYST_REVIEW: 'Разбор аналитиком',
   DOCS_WAIT: 'Ожидание документов',
+  DOCUMENTS: 'Документы',
   RISK_REVIEW: 'Оценка риска',
+  CHECKS: 'Проверки',
   DECISION: 'Подготовка решения',
   OFFER: 'Оферта клиенту',
+  FINANCE: 'Финансы',
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  DRAFT: 'Черновик',
+  SUBMITTED: 'Отправлена',
+  IN_REVIEW: 'На рассмотрении',
+  DOCS_REQUESTED: 'Ожидание документов',
+  APPROVED: 'Одобрена',
+  PREAPPROVED: 'Предварительно одобрена',
+  COUNTEROFFERED: 'Контрпредложение',
+  REJECTED: 'Отклонена',
+  NEED_INFO: 'Нужна информация',
+  ISSUED: 'Выдана',
+  DECISION_PENDING: 'Ожидает решения',
+  WAITING_FOR_CLIENT: 'Ожидание клиента',
+}
+
+export function analystStatusLabel(status?: string | null): string {
+  if (!status) return '—'
+  const key = status.toUpperCase()
+  return STATUS_LABELS[key] || statusLabelsFallback(status)
+}
+
+function statusLabelsFallback(status: string): string {
+  const lower = status.toLowerCase()
+  const map: Record<string, string> = {
+    draft: 'Черновик',
+    submitted: 'Отправлена',
+    in_review: 'На рассмотрении',
+    docs_requested: 'Ожидание документов',
+    approved: 'Одобрена',
+    counteroffered: 'Контрпредложение',
+    rejected: 'Отклонена',
+    issued: 'Выдана',
+  }
+  return map[lower] || status
+}
+
+export function analystStepLabel(step?: string | null): string {
+  if (!step) return '—'
+  return STEP_LABELS[step.toUpperCase()] || step
+}
+
+export function analystOfferStatusLabel(status?: string | null): string {
+  if (!status) return '—'
+  const key = String(status).toUpperCase()
+  const map: Record<string, string> = {
+    PENDING: 'Ожидает ответа',
+    SENT: 'Отправлен',
+    ACCEPTED: 'Принят',
+    REJECTED: 'Отклонён',
+    EXPIRED: 'Истёк',
+    COUNTEROFFERED: 'Контрпредложение',
+  }
+  return map[key] || analystStatusLabel(status)
 }
 
 export function queueItemToCase(
@@ -31,7 +89,7 @@ export function queueItemToCase(
     slaLabel: slaFromItem(item),
     slaUrgent: item.openDocumentRequests > 0 || item.status === 'DOCS_REQUESTED',
     analyst: item.assignedAnalystName || '—',
-    nextStep: STEP_LABELS[item.currentStep] || item.currentStep || item.status,
+    nextStep: analystStepLabel(item.currentStep) || analystStatusLabel(item.status),
     purpose: '',
     assignedToMe,
   }
@@ -39,7 +97,7 @@ export function queueItemToCase(
 
 export function cardToCase(card: AnalystApplicationCard): AnalystCase {
   const app = card.application
-  const status = app.statusLabel || String(app.status).toUpperCase()
+  const statusRaw = (app.statusLabel || String(app.status)).toUpperCase()
   return {
     id: app.id,
     number: app.applicationNumber || app.id,
@@ -48,13 +106,13 @@ export function cardToCase(card: AnalystApplicationCard): AnalystCase {
     product: app.productName || app.productId || '—',
     amount: app.amount,
     termMonths: app.termMonths,
-    status,
+    status: statusRaw,
     slaLabel: card.openDocumentRequests.length
       ? `Открытых запросов: ${card.openDocumentRequests.length}`
-      : `Шаг · ${app.currentStep || status}`,
-    slaUrgent: card.openDocumentRequests.length > 0 || status === 'DOCS_REQUESTED',
+      : `Этап · ${analystStepLabel(app.currentStep) || analystStatusLabel(statusRaw)}`,
+    slaUrgent: card.openDocumentRequests.length > 0 || statusRaw === 'DOCS_REQUESTED',
     analyst: app.assignedManagerName || '—',
-    nextStep: STEP_LABELS[app.currentStep || ''] || app.currentStep || status,
+    nextStep: analystStepLabel(app.currentStep) || analystStatusLabel(statusRaw),
     purpose: app.purpose || '—',
     assignedToMe: Boolean(app.assignedManagerId),
   }
@@ -62,8 +120,8 @@ export function cardToCase(card: AnalystApplicationCard): AnalystCase {
 
 function slaFromItem(item: AnalystQueueItem): string {
   if (item.openDocumentRequests > 0) return `Док-запросов: ${item.openDocumentRequests}`
-  if (item.currentStep) return STEP_LABELS[item.currentStep] || item.currentStep
-  return item.status
+  if (item.currentStep) return analystStepLabel(item.currentStep)
+  return analystStatusLabel(item.status)
 }
 
 export function formatCompactMoney(n: number): string {

@@ -161,9 +161,8 @@ export function ProfilePage() {
   }, [user?.id, user?.role, user?.fullName, user?.email, user?.phone])
 
   const subtitle = useMemo(() => {
+    if (isAdmin || isBank) return null
     const name = fullName.trim() || 'Пользователь'
-    if (isAdmin) return `${name} · Администратор системы · RBAC ADMIN`
-    if (isBank) return `${name} · Аналитик · единый кабинет · ANALYST`
     const companyPart = company?.name ? `${membershipLabel} ${company.name}` : null
     return companyPart ? `${name} · ${companyPart}` : name
   }, [fullName, company?.name, membershipLabel, isAdmin, isBank])
@@ -214,7 +213,9 @@ export function ProfilePage() {
           >
             Профиль пользователя
           </Typography>
-          <Typography sx={{ color: '#7A8795', fontSize: 14, mt: 0.6 }}>{subtitle}</Typography>
+          {subtitle && (
+            <Typography sx={{ color: '#7A8795', fontSize: 14, mt: 0.6 }}>{subtitle}</Typography>
+          )}
         </Box>
         <Button
           variant="outlined"
@@ -327,9 +328,9 @@ export function ProfilePage() {
                     sx={fieldSx}
                     helperText={
                       isAdmin
-                        ? 'Роль системы: ADMIN'
+                        ? 'Администратор системы'
                         : isBank
-                          ? 'Роль системы: ANALYST · write decision'
+                          ? 'Кредитный аналитик'
                           : undefined
                     }
                   />
@@ -473,9 +474,9 @@ export function ProfilePage() {
               <Stack spacing={1.1}>
                 {[
                   ['Политика', 'CP-2026.10'],
-                  ['RBAC', 'ANALYST · write decision'],
-                  ['Очередь', 'назначенные + unassigned'],
-                  ['Кабинет', '/app/analyst'],
+                  ['Права', 'Просмотр и решение по заявкам'],
+                  ['Очередь', 'Назначенные и свободные'],
+                  ['Кабинет', 'Аналитик'],
                 ].map(([k, v]) => (
                   <Stack key={k} direction="row" justifyContent="space-between" spacing={1.5}>
                     <Typography sx={{ fontSize: 13, color: '#8A96A3' }}>{k}</Typography>
