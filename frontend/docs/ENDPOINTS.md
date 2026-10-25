@@ -1137,10 +1137,11 @@ HTTP к бэку нет — FAQ, категории, документы и ко�
 
 ---
 
-## Админ — каталог API (`/api/v1/admin/*`)
+## Админ — кабинет (`/app/admin/*`)
 
 Источник правды: `backend/app/api/v1/admin.py` + схемы `backend/app/schemas/admin.py`.  
-Все маршруты требуют роль `ADMIN` (+ permission из таблицы ниже). Фронт: gate `Protected roles={['admin']}`, layout `AppLayout` (`adminGroups`).
+Роль `ADMIN` + permission из таблицы. Фронт: `Protected roles={['admin']}`, меню `adminGroups` в `AppLayout`.  
+**HTTP-клиент `api/admin.ts` пока нет** — все экраны на синтетике; ниже — эндпоинты, которые **требуются**, чтобы повесить UI на бэк.
 
 | Permission | Маршруты |
 |------------|----------|
@@ -1153,17 +1154,91 @@ HTTP к бэку нет — FAQ, категории, документы и ко�
 | `DEMO_RESET` | demo/* |
 | `AUDIT_READ` | audit/events |
 
-### UI ↔ API
+### Навигация
 
-| Экран | Код | Что реально есть на бэке | UI сейчас |
-|-------|-----|--------------------------|-----------|
-| `/app/admin` | `AdminOverviewPage` | — | синтетика |
-| `/app/admin/analytics` | `AdminAnalyticsPage` | — | синтетика |
-| `/app/admin/products` | `AdminProductsPage` | `/admin/credit-products*` | синтетика |
-| `/app/admin/policy` | `AdminPolicyPage` | `/admin/policies*` | синтетика |
-| `/app/admin/users` | `AdminUsersPage` | `/admin/users*`, `/roles`, `/permissions`, `/companies*` | синтетика |
-| `/app/admin/audit` | `AdminAuditPage` | `/admin/audit/events*` | синтетика |
-| `/app/admin/notifications` | `AdminNotificationsPage` | общего `/notifications` для admin нет | локально |
+| Группа | Пункт | Path |
+|--------|-------|------|
+| Система | Обзор | `/app/admin` |
+| | Аналитика конвейера | `/app/admin/analytics` |
+| Кредитный конвейер | Каталог продуктов | `/app/admin/products` |
+| | Кредитная политика | `/app/admin/policy` |
+| Администрирование | Пользователи и роли | `/app/admin/users` |
+| | Аудит изменений | `/app/admin/audit` |
+
+Уведомления — только колокольчик хедера → `/app/admin/notifications` (не в sidebar).  
+Экранов Models / Runtime / Demo в меню нет — API есть, UI нет.
+
+### UI ↔ требуемые эндпоинты (по экранам)
+
+| Экран | Код · разделы UI | Требуемые эндпоинты | UI сейчас |
+|-------|------------------|---------------------|-----------|
+| `/app/admin` | `AdminOverviewPage` · KPI опер/продукт · заявки по неделям · воронка · микс/топ продуктов · цели · портфель · внимание · последние изменения · «Экспорт» / «Инцидент» | **Нет dedicated overview API.** Агрегаты можно собрать из: `GET /admin/credit-products`, `GET /admin/users`, `GET /admin/audit/events`, `GET /analyst/applications` (или будущий `GET /admin/overview`). Экспорт/инцидент — бэка нет | синтетика |
+| `/app/admin/analytics` | `AdminAnalyticsPage` · фильтры период/продукт/канал/регион · KPI · воронка · отказы · продукт. доска · каналы · конверсия/время/объём · CSV | **Нет `/admin/analytics*`.** Целевой: conveyor metrics API; до него — audit + applications + products. CSV — клиент или `…/export` | синтетика |
+| `/app/admin/products` | `AdminProductsPage` · таблица · требования · редактор · Новый / Импорт / Сохранить | `GET/POST /admin/credit-products` · `GET/PATCH /admin/credit-products/{id}` · `POST …/publish` · `POST …/archive` · `GET …/versions`. Импорт — **нет на бэке** | синтетика |
+| `/app/admin/policy` | `AdminPolicyPage` · разделы правил · версии · DSL-редактор · diff · Проверить / Публикация | `GET/POST /admin/policies` · `GET/PATCH /admin/policies/{id}` · `GET …/versions` · `POST …/validate` · `POST …/simulate` · `GET …/simulations/{run_id}` · `POST …/publish` · `GET …/diff` | синтетика |
+| `/app/admin/users` | `AdminUsersPage` · фильтры · bulk роль/блок · таблица · пригласить · матрица прав · экспорт | `GET/POST /admin/users` · `GET/PATCH /admin/users/{id}` · `POST …/disable` · `POST …/reset-credentials` · `GET /admin/roles` · `GET /admin/permissions` · members: `GET /admin/companies` · `GET/PUT/DELETE …/members/{user_id}`. Invite/bulk/export — **нет** (invite ≈ `POST /admin/users`) | синтетика |
+| `/app/admin/audit` | `AdminAuditPage` · фильтры · журнал · CSV · проверка целостности | `GET /admin/audit/events` · `GET /admin/audit/events/{id}`. Export/verify — **нет на бэке** | синтетика |
+| `/app/admin/notifications` | `AdminNotificationsPage` · лента · каналы · типы · прочитать все | общего admin notifications API **нет**; целевой `/notifications*` или admin prefs. Demo reset косвенно: `GET/POST /admin/demo/*` | локально |
+
+**Нет UI, API есть (полный админ-продукт):**
+
+| Область | Эндпоинты |
+|---------|-----------|
+| ML-модели | `GET /admin/models` · `…/active` · `…/evaluations` · `GET/POST …/{id}/validate|activate` · `GET …/{id}/evaluations` |
+| Runtime | `GET/PATCH /admin/config/runtime` |
+| Demo | `GET /admin/demo/scenarios` · `GET …/{id}` · `POST …/load` · `POST /admin/demo/reset` · `GET /admin/demo/jobs/{id}` |
+
+### Чеклист всех маршрутов `admin.py`
+
+| Status | Method | Path |
+|--------|--------|------|
+| required · UI users | `GET` | `/admin/roles` |
+| required · UI users | `GET` | `/admin/permissions` |
+| required · UI users | `GET` | `/admin/users` |
+| required · UI users | `POST` | `/admin/users` |
+| required · UI users | `GET` | `/admin/users/{user_id}` |
+| required · UI users | `PATCH` | `/admin/users/{user_id}` |
+| required · UI users | `POST` | `/admin/users/{user_id}/disable` |
+| required · UI users | `POST` | `/admin/users/{user_id}/reset-credentials` |
+| required · UI users | `GET` | `/admin/companies` |
+| required · UI users | `GET` | `/admin/companies/{company_id}/members` |
+| required · UI users | `PUT` | `/admin/companies/{company_id}/members/{user_id}` |
+| required · UI users | `DELETE` | `/admin/companies/{company_id}/members/{user_id}` |
+| required · UI products | `GET` | `/admin/credit-products` |
+| required · UI products | `POST` | `/admin/credit-products` |
+| required · UI products | `GET` | `/admin/credit-products/{product_id}` |
+| required · UI products | `PATCH` | `/admin/credit-products/{product_id}` |
+| required · UI products | `POST` | `/admin/credit-products/{product_id}/publish` |
+| required · UI products | `POST` | `/admin/credit-products/{product_id}/archive` |
+| required · UI products | `GET` | `/admin/credit-products/{product_id}/versions` |
+| required · UI policy | `GET` | `/admin/policies` |
+| required · UI policy | `POST` | `/admin/policies` |
+| required · UI policy | `GET` | `/admin/policies/{policy_id}` |
+| required · UI policy | `PATCH` | `/admin/policies/{policy_id}` |
+| required · UI policy | `GET` | `/admin/policies/{policy_id}/versions` |
+| required · UI policy | `POST` | `/admin/policies/{policy_id}/validate` |
+| required · UI policy | `POST` | `/admin/policies/{policy_id}/simulate` |
+| required · UI policy | `GET` | `/admin/policies/{policy_id}/simulations/{run_id}` |
+| required · UI policy | `POST` | `/admin/policies/{policy_id}/publish` |
+| required · UI policy | `GET` | `/admin/policies/{policy_id}/diff` |
+| API only · no screen | `GET` | `/admin/models` |
+| API only · no screen | `GET` | `/admin/models/active` |
+| API only · no screen | `GET` | `/admin/models/evaluations` |
+| API only · no screen | `GET` | `/admin/models/{model_id}` |
+| API only · no screen | `POST` | `/admin/models/{model_id}/validate` |
+| API only · no screen | `POST` | `/admin/models/{model_id}/activate` |
+| API only · no screen | `GET` | `/admin/models/{model_id}/evaluations` |
+| API only · no screen | `GET` | `/admin/config/runtime` |
+| API only · no screen | `PATCH` | `/admin/config/runtime` |
+| API only · no screen | `GET` | `/admin/demo/scenarios` |
+| API only · no screen | `GET` | `/admin/demo/scenarios/{scenario_id}` |
+| API only · no screen | `POST` | `/admin/demo/scenarios/{scenario_id}/load` |
+| API only · no screen | `POST` | `/admin/demo/reset` |
+| API only · no screen | `GET` | `/admin/demo/jobs/{job_id}` |
+| required · UI audit | `GET` | `/admin/audit/events` |
+| required · UI audit | `GET` | `/admin/audit/events/{event_id}` |
+
+**Дырки продукта (UI хочет, бэка нет):** overview/analytics aggregates, product import, user invite/bulk/export, audit export/integrity, admin notifications/prefs, report incident.
 
 ---
 

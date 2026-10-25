@@ -25,6 +25,7 @@ export type ProductType =
 export type ApplicationStatus =
   | 'draft'
   | 'submitted'
+  | 'validating'
   | 'in_review'
   | 'docs_requested'
   | 'approved'

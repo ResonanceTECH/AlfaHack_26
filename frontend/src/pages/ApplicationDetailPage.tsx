@@ -24,6 +24,7 @@ import {
   fetchApplicationOffers,
   fetchDocumentRequests,
   getApplication,
+  isLiveOffer,
   postApplicationComment,
   uploadApplicationDocument,
   uploadCompanyApplicationDocument,
@@ -31,6 +32,10 @@ import {
   type DocumentRequest,
   type PublicDecision,
 } from '@/api/applications'
+import { fetchApplicationExplanation, type AiAgentResponse } from '@/api/ai'
+import { AiAgentReply } from '@/components/ai/AiAgentReply'
+import { useAuth } from '@/contexts/AuthContext'
+import { useAppStore } from '@/hooks/useAppStore'
 import {
   formatBytesLabel,
   loadAppDocuments,
@@ -92,6 +97,7 @@ const DOC_STATUS_UI: Record<
 const APP_STATUS_CHIP: Record<ApplicationStatus, { bg: string; color: string }> = {
   draft: { bg: '#EEF1F4', color: '#5A6B7D' },
   submitted: { bg: '#E8F1FB', color: '#1A4A7A' },
+  validating: { bg: '#E8F1FB', color: '#1A4A7A' },
   in_review: { bg: '#FFF0E0', color: '#C45A12' },
   docs_requested: { bg: '#FDE8E6', color: '#C41E14' },
   approved: { bg: '#E6F5EE', color: '#1B8A5A' },
@@ -104,6 +110,7 @@ function pipelineStep(status: ApplicationStatus): number {
   switch (status) {
     case 'draft':
     case 'submitted':
+    case 'validating':
       return 0
     case 'docs_requested':
       return 1
