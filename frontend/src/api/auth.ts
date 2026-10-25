@@ -44,7 +44,12 @@ export function getStoredUser(): User | null {
   const raw = localStorage.getItem('alfa_user')
   if (!raw) return null
   try {
-    return JSON.parse(raw) as User
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    // tolerate snake_case / partial blobs from older sessions
+    if (parsed.id && (parsed.fullName || parsed.full_name)) {
+      return mapUser(parsed)
+    }
+    return parsed as unknown as User
   } catch {
     return null
   }
