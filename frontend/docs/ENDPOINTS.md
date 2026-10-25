@@ -547,26 +547,26 @@ UI: drag&drop / «Загрузить» / «Заменить» в блоке «Д
 
 Legacy URL `/app/manager` → redirect `/app/analyst`.
 
-**Сейчас UI:** демо-данные `features/analyst/demoData.ts` (кейсы `ABC-2026-*`). Ниже — целевой контракт для проводки HTTP.
+**Сейчас UI:** live через `api/analyst.ts` → `/api/v1/analyst/*`. Route param — UUID (или `applicationNumber`, резолвится в id). Демо осталось на Risks / Explain / части AI.
 
 ### UI ↔ API
 
 | Экран | Код | Что есть на бэке | UI сейчас |
 |-------|-----|------------------|-----------|
-| `/app/analyst` | `AnalystQueuePage` | `GET /analyst/applications` | синтетика |
-| `/app/analyst/mine` | `AnalystMinePage` | `GET /analyst/applications?assigned_to_me=true` | синтетика |
-| `/app/analyst/attention` | `AnalystAttentionPage` | нет отдельного API (фильтр очереди / notifications) | синтетика |
-| `/app/analyst/workflow` | `AnalystWorkflowPage` | нет агрегата SLA; куски в card.`workflow` | синтетика |
-| `/app/analyst/cases/:id` | `AnalystCaseOverviewPage` | `GET /analyst/applications/{id}` | синтетика |
-| `…/company` | `AnalystCaseCompanyPage` | card.`company` + `financials` | синтетика |
-| `…/finance` | `AnalystCaseFinancePage` | card.`financials` (+ company financials) | синтетика |
-| `…/documents` | `AnalystCaseDocumentsPage` | docs + document-requests (см. ниже) | синтетика |
-| `…/checks` | `AnalystCaseChecksPage` | `GET /analyst/applications/{id}/checks` | синтетика |
+| `/app/analyst` | `AnalystQueuePage` | `GET /analyst/applications` | live |
+| `/app/analyst/mine` | `AnalystMinePage` | `GET /analyst/applications?assigned_to_me=true` | live |
+| `/app/analyst/attention` | `AnalystAttentionPage` | фильтр `assigned_to_me` очереди | live (derived) |
+| `/app/analyst/workflow` | `AnalystWorkflowPage` | `countsByStatus` очереди | live (derived) |
+| `/app/analyst/cases/:id` | `AnalystCaseOverviewPage` | `GET /analyst/applications/{id}` | live |
+| `…/company` | `AnalystCaseCompanyPage` | card.`company` + `financials` | live |
+| `…/finance` | `AnalystCaseFinancePage` | card.`financials` | live |
+| `…/documents` | `AnalystCaseDocumentsPage` | docs + `POST …/document-requests` | live |
+| `…/checks` | `AnalystCaseChecksPage` | `GET /analyst/applications/{id}/checks` | live |
 | `…/risks` | `AnalystCaseRisksPage` | checks / decision payload (отдельного `/risks` нет) | синтетика |
 | `…/explainability` | `AnalystCaseExplainPage` | `explanation` / `reason_codes` в decision | синтетика |
-| `…/ai` | `AnalystCaseAiPage` | `POST /ai/chat` (общий) | локальный чат |
-| `…/decision` | `AnalystCaseDecisionPage` | `POST /analyst/applications/{id}/propose` | синтетика |
-| `…/history` | `AnalystCaseHistoryPage` | `statusHistory` / comments в `ApplicationOut` | синтетика |
+| `…/ai` | `AnalystCaseAiPage` | `aiSummary` из card + локальный чат | partial |
+| `…/decision` | `AnalystCaseDecisionPage` | `POST /analyst/applications/{id}/propose` | live |
+| `…/history` | `AnalystCaseHistoryPage` | `statusHistory` / comments / decisions | live |
 | `/app/notifications` | `NotificationsPage` (ветка analyst) | `GET/PATCH /notifications*` | синтетика: SLA / очередь / docs клиента |
 | `/app/help` | `HelpPage` | — | статика |
 | `/app/profile` | `ProfilePage` | `GET /auth/me`, logout | как у всех |

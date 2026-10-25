@@ -11,34 +11,34 @@ const kpis = [
     hintTone: 'ok' as const,
   },
   {
-    label: 'PD proxy',
+    label: 'Вероятность дефолта',
     value: RISK_SUMMARY.pdProxy,
-    hint: 'демо · без решения',
+    hint: 'оценка модели',
     hintTone: 'muted' as const,
   },
   {
-    label: 'LGD proxy',
+    label: 'Потери при дефолте',
     value: RISK_SUMMARY.lgdProxy,
-    hint: 'демо · без решения',
+    hint: 'оценка модели',
     hintTone: 'muted' as const,
   },
   {
     label: 'Факторы',
     value: String(RISK_SUMMARY.factorsCount),
-    hint: 'демо · без решения',
+    hint: 'в модели',
     hintTone: 'muted' as const,
   },
   {
-    label: 'Решение модели',
+    label: 'Рекомендация',
     value: RISK_SUMMARY.modelDecision,
-    hint: 'демо · без решения',
+    hint: 'не финальное решение',
     hintTone: 'muted' as const,
   },
 ]
 
 export function AnalystCaseRisksPage() {
   const navigate = useNavigate()
-  const { caseId = 'ABC-2026-1042' } = useParams()
+  const { caseId = '' } = useParams()
 
   return (
     <Box>

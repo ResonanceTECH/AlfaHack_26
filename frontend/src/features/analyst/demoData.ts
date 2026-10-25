@@ -1,14 +1,9 @@
-export type AnalystCaseStatus =
-  | 'IN_REVIEW'
-  | 'RISK_REVIEW'
-  | 'DECISION_PENDING'
-  | 'WAITING_FOR_CLIENT'
-  | 'COUNTEROFFERED'
-  | 'SUBMITTED'
-  | 'DOCS_REQUESTED'
+export type AnalystCaseStatus = string
 
 export type AnalystCase = {
   id: string
+  /** Human-readable application number (ABC-…); id is UUID */
+  number?: string
   company: string
   inn: string
   product: string
@@ -26,6 +21,7 @@ export type AnalystCase = {
 export const DEMO_CASES: AnalystCase[] = [
   {
     id: 'ABC-2026-1042',
+    number: 'ABC-2026-1042',
     company: 'ООО «Кофе Плюс»',
     inn: '7701234567',
     product: 'Оборотный кредит',
@@ -127,7 +123,8 @@ export const DEMO_CASES: AnalystCase[] = [
   },
 ]
 
-export const DEFAULT_CASE_ID = 'ABC-2026-1042'
+/** Fallback for sidebar until first case opened; queue resolves real UUID */
+export const DEFAULT_CASE_ID = ''
 
 export function getCase(id?: string): AnalystCase {
   return DEMO_CASES.find((c) => c.id === id) ?? DEMO_CASES[0]!
@@ -141,7 +138,7 @@ export const CASE_TABS = [
   { key: 'checks', label: 'Проверки' },
   { key: 'risks', label: 'Риски' },
   { key: 'explainability', label: 'Объяснимость' },
-  { key: 'ai', label: 'AI Copilot' },
+  { key: 'ai', label: 'Чат' },
   { key: 'decision', label: 'Решение' },
   { key: 'history', label: 'История' },
 ] as const
@@ -294,15 +291,15 @@ export const RISK_SUMMARY = {
       detail: 'Лимиты, документы, срок бизнеса',
     },
     {
-      title: 'ML Risk Assessment',
-      detail: 'PD/LGD proxy, объяснимость',
+      title: 'Оценка риска моделью',
+      detail: 'Вероятность дефолта и потери, объяснимость',
     },
     {
       title: 'Финансовые расчёты',
-      detail: 'NCF, DSCR, концентрация',
+      detail: 'Потоки, долговая нагрузка, концентрация',
     },
     {
-      title: 'AI Copilot',
+      title: 'AI-помощник',
       detail: 'Черновик — не решение',
     },
   ],

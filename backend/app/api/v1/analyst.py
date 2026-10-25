@@ -12,6 +12,7 @@ from app.schemas.analyst import (
     AnalystCheckOut,
     AnalystChecksOut,
     AnalystChecksSummary,
+    AnalystCommentCreate,
     AnalystCompanyBrief,
     AnalystDecisionBrief,
     AnalystDocumentRequestCancel,
@@ -25,9 +26,10 @@ from app.schemas.analyst import (
     AnalystQueueOut,
     AnalystWorkflowBrief,
 )
-from app.schemas.application import ApplicationOut, DocumentRequestOut
+from app.schemas.application import ApplicationOut, CommentOut, DocumentRequestOut
 from app.services.access import require_application_access, require_roles
 from app.services.analyst import (
+    assign_application,
     build_analyst_card,
     build_analyst_checks,
     get_analyst_application,
@@ -40,6 +42,7 @@ from app.services.documents import (
     create_document_request,
     serialize_document_request,
 )
+from app.services.notifications import notify
 
 router = APIRouter(prefix="/analyst", tags=["analyst"])
 
@@ -74,6 +77,57 @@ def analyst_applications_queue(
         items=[AnalystQueueItem(**i) for i in items],
         total=total,
         counts_by_status=counts,
+    )
+
+
+@router.post("/applications/{application_id}/assign", response_model=AnalystApplicationCard)
+def analyst_assign_application(
+    application_id: str,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+) -> AnalystApplicationCard:
+    """Взять заявку в работу (assigned_analyst + IN_REVIEW)."""
+    require_roles(user, UserRole.ANALYST)
+    app = get_analyst_application(db, application_id)
+    if app is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Заявка не найдена")
+    require_application_access(db, user, app, write=True)
+
+    assign_application(db, app=app, analyst=user)
+    db.add(
+        ApplicationComment(
+            application_id=app.id,
+            author_id=user.id,
+            author_name=user.full_name,
+            author_role=user.role.value,
+            text="Заявка взята в работу",
+            is_internal=False,
+        )
+    )
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="application",
+        entity_id=app.id,
+        action="assign",
+        details={"assigned_analyst_id": user.id},
+        correlation_id=cid,
+    )
+    db.commit()
+
+    app = get_analyst_application(db, application_id) or app
+    raw = build_analyst_card(db, app)
+    return AnalystApplicationCard(
+        application=ApplicationOut(**raw["application"]),
+        company=AnalystCompanyBrief(**raw["company"]) if raw.get("company") else None,
+        financials=AnalystFinancialsBrief(**raw["financials"]) if raw.get("financials") else None,
+        workflow=AnalystWorkflowBrief(**raw["workflow"]) if raw.get("workflow") else None,
+        checks_summary=AnalystChecksSummary(**raw["checks_summary"]),
+        open_document_requests=[DocumentRequestOut(**r) for r in raw["open_document_requests"]],
+        decisions=[AnalystDecisionBrief(**d) for d in raw["decisions"]],
+        offers=[AnalystOfferBrief(**o) for o in raw["offers"]],
+        allowed_actions=raw["allowed_actions"],
     )
 
 
@@ -231,6 +285,103 @@ def analyst_cancel_document_request(
         application_id=app.id,
         status=app.status,
         current_step=app.current_step,
+    )
+
+
+@router.get(
+    "/applications/{application_id}/comments",
+    response_model=list[CommentOut],
+)
+def analyst_list_comments(
+    application_id: str, db: DbDep, user: CurrentUser
+) -> list[CommentOut]:
+    require_roles(user, UserRole.ANALYST)
+    app = get_analyst_application(db, application_id)
+    if app is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Заявка не найдена")
+    require_application_access(db, user, app)
+    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    comments = sorted(app.comments or [], key=lambda c: c.created_at or epoch)
+    return [
+        CommentOut(
+            id=c.id,
+            author_id=c.author_id,
+            author_name=c.author_name or "",
+            author_role=c.author_role or "",
+            text=c.text,
+            created_at=c.created_at,
+            is_internal=bool(c.is_internal),
+        )
+        for c in comments
+    ]
+
+
+@router.post(
+    "/applications/{application_id}/comments",
+    response_model=CommentOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def analyst_post_comment(
+    application_id: str,
+    body: AnalystCommentCreate,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+) -> CommentOut:
+    """Сообщение клиенту (is_internal=false) или внутренняя заметка."""
+    require_roles(user, UserRole.ANALYST)
+    app = get_analyst_application(db, application_id)
+    if app is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Заявка не найдена")
+    require_application_access(db, user, app, write=True)
+
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Пустой текст")
+
+    comment = ApplicationComment(
+        application_id=app.id,
+        author_id=user.id,
+        author_name=user.full_name,
+        author_role=user.role.value,
+        text=text,
+        is_internal=bool(body.is_internal),
+    )
+    db.add(comment)
+
+    if not body.is_internal and app.created_by:
+        notify(
+            db,
+            user_id=app.created_by,
+            type="ANALYST_MESSAGE",
+            title="Сообщение от банка по заявке",
+            body=text[:240],
+            payload={
+                "application_id": app.id,
+                "company_id": app.company_id,
+                "comment_id": comment.id,
+            },
+        )
+
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="application_comment",
+        entity_id=app.id,
+        action="create",
+        details={"is_internal": body.is_internal, "preview": text[:120]},
+        correlation_id=cid,
+    )
+    db.commit()
+    db.refresh(comment)
+    return CommentOut(
+        id=comment.id,
+        author_id=comment.author_id,
+        author_name=comment.author_name or "",
+        author_role=comment.author_role or "",
+        text=comment.text,
+        created_at=comment.created_at,
+        is_internal=bool(comment.is_internal),
     )
 
 

@@ -309,6 +309,7 @@ DECISION_TO_STATUS: dict[DecisionType, ApplicationStatus] = {
     DecisionType.APPROVED: ApplicationStatus.APPROVED,
     DecisionType.REJECTED: ApplicationStatus.REJECTED,
     DecisionType.COUNTEROFFERED: ApplicationStatus.COUNTEROFFERED,
+    DecisionType.NEED_INFO: ApplicationStatus.DOCS_REQUESTED,
 }
 
 
@@ -331,6 +332,7 @@ def propose_decision(
         DecisionType.APPROVED,
         DecisionType.REJECTED,
         DecisionType.COUNTEROFFERED,
+        DecisionType.NEED_INFO,
     ):
         raise AppError(
             "UNSUPPORTED_DECISION",
@@ -366,6 +368,7 @@ def propose_decision(
     if app.assigned_manager_id is None:
         app.assigned_manager_id = analyst.id
 
+    # NEED_INFO при уже DOCS_REQUESTED — только decision + notify, без transition
     if app.status != target_status:
         transition_application(db, app, target_status, actor=analyst, comment=note)
 

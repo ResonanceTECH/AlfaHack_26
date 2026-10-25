@@ -5,6 +5,7 @@ import {
   CircularProgress,
   LinearProgress,
   Stack,
+  TextField,
   Typography,
 } from '@mui/material'
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded'
@@ -13,9 +14,23 @@ import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { Link as RouterLink, Navigate, useParams } from 'react-router-dom'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { EmptyState } from '@/components/common/EmptyState'
-import { getApplication, uploadApplicationDocument } from '@/api/applications'
+import {
+  acceptApplicationOffer,
+  declineApplicationOffer,
+  fetchApplicationComments,
+  fetchApplicationDecision,
+  fetchApplicationOffers,
+  fetchDocumentRequests,
+  getApplication,
+  postApplicationComment,
+  uploadApplicationDocument,
+  uploadCompanyApplicationDocument,
+  type CreditOffer,
+  type DocumentRequest,
+  type PublicDecision,
+} from '@/api/applications'
 import {
   formatBytesLabel,
   loadAppDocuments,
@@ -80,6 +95,7 @@ const APP_STATUS_CHIP: Record<ApplicationStatus, { bg: string; color: string }> 
   in_review: { bg: '#FFF0E0', color: '#C45A12' },
   docs_requested: { bg: '#FDE8E6', color: '#C41E14' },
   approved: { bg: '#E6F5EE', color: '#1B8A5A' },
+  counteroffered: { bg: '#FFF0E0', color: '#C45A12' },
   rejected: { bg: '#FDE8E6', color: '#C41E14' },
   issued: { bg: '#E6F5EE', color: '#1B8A5A' },
 }
@@ -94,6 +110,7 @@ function pipelineStep(status: ApplicationStatus): number {
     case 'in_review':
       return 2
     case 'approved':
+    case 'counteroffered':
       return 3
     case 'rejected':
     case 'issued':
@@ -137,13 +154,43 @@ export function ApplicationDetailPage() {
     [id, appQ.dataUpdatedAt],
   )
   const app = appQ.data ?? localApp
+  const companyId = app?.companyId
+
+  const decisionQ = useQuery({
+    queryKey: ['application', id, 'decision'],
+    queryFn: () => fetchApplicationDecision(companyId!, id!),
+    enabled: Boolean(id && companyId && !editable),
+    retry: false,
+  })
+  const offersQ = useQuery({
+    queryKey: ['application', id, 'offers'],
+    queryFn: () => fetchApplicationOffers(companyId!, id!),
+    enabled: Boolean(id && companyId && !editable),
+    retry: false,
+  })
+  const docReqsQ = useQuery({
+    queryKey: ['application', id, 'document-requests'],
+    queryFn: () => fetchDocumentRequests(companyId!, id!),
+    enabled: Boolean(id && companyId && !editable),
+    retry: false,
+  })
+  const commentsQ = useQuery({
+    queryKey: ['application', id, 'comments'],
+    queryFn: () => fetchApplicationComments(companyId!, id!),
+    enabled: Boolean(id && companyId && !editable),
+    retry: false,
+    refetchInterval: 15_000,
+  })
 
   const [slots, setSlots] = useState<AppDocSlot[]>(() => (id ? loadAppDocuments(id) : []))
   const [flash, setFlash] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [dragId, setDragId] = useState<string | null>(null)
+  const [chatText, setChatText] = useState('')
   const bulkRef = useRef<HTMLInputElement>(null)
+  const docReqFileRef = useRef<HTMLInputElement>(null)
+  const [activeDocReq, setActiveDocReq] = useState<DocumentRequest | null>(null)
 
   useEffect(() => {
     if (id) setSlots(loadAppDocuments(id))
@@ -211,8 +258,14 @@ export function ApplicationDetailPage() {
     setError(null)
     try {
       try {
-        const updated = await uploadApplicationDocument(app.id, file)
-        upsertLocalApp(updated)
+        if (app.companyId) {
+          await uploadCompanyApplicationDocument(app.companyId, app.id, file, {
+            docType: slots.find((s) => s.id === slotId)?.id || 'OTHER',
+          })
+        } else {
+          const updated = await uploadApplicationDocument(app.id, file)
+          upsertLocalApp(updated)
+        }
         await qc.invalidateQueries({ queryKey: ['application', id] })
         await qc.invalidateQueries({ queryKey: ['applications'] })
       } catch {
@@ -238,6 +291,66 @@ export function ApplicationDetailPage() {
     }
   }
 
+  async function uploadForDocRequest(req: DocumentRequest, file: File) {
+    if (!id || !app?.companyId) return
+    setBusyId(req.id)
+    setError(null)
+    try {
+      await uploadCompanyApplicationDocument(app.companyId, app.id, file, {
+        docType: req.docType,
+        documentRequestId: req.id,
+      })
+      await qc.invalidateQueries({ queryKey: ['application', id] })
+      await qc.invalidateQueries({ queryKey: ['application', id, 'document-requests'] })
+      showFlash(`Ответ на запрос «${req.label || req.docType}» отправлен`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось ответить на запрос документов')
+    } finally {
+      setBusyId(null)
+      setActiveDocReq(null)
+    }
+  }
+
+  const acceptM = useMutation({
+    mutationFn: (offer: CreditOffer) =>
+      acceptApplicationOffer(companyId!, id!, offer.id, offer.offerVersion),
+    onSuccess: async () => {
+      showFlash('Предложение банка принято')
+      await qc.invalidateQueries({ queryKey: ['application', id] })
+      await qc.invalidateQueries({ queryKey: ['application', id, 'offers'] })
+      await qc.invalidateQueries({ queryKey: ['application', id, 'decision'] })
+      await qc.invalidateQueries({ queryKey: ['applications'] })
+    },
+    onError: (e: unknown) => {
+      setError(
+        (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
+          ?.message || 'Не удалось принять предложение',
+      )
+    },
+  })
+
+  const declineM = useMutation({
+    mutationFn: (offer: CreditOffer) =>
+      declineApplicationOffer(companyId!, id!, offer.id, 'Отклонено клиентом'),
+    onSuccess: async () => {
+      showFlash('Предложение отклонено')
+      await qc.invalidateQueries({ queryKey: ['application', id, 'offers'] })
+      await qc.invalidateQueries({ queryKey: ['application', id] })
+    },
+    onError: () => setError('Не удалось отклонить предложение'),
+  })
+
+  const chatM = useMutation({
+    mutationFn: () => postApplicationComment(companyId!, id!, chatText.trim()),
+    onSuccess: async () => {
+      setChatText('')
+      showFlash('Сообщение отправлено банку')
+      await qc.invalidateQueries({ queryKey: ['application', id, 'comments'] })
+      await qc.invalidateQueries({ queryKey: ['application', id] })
+    },
+    onError: () => setError('Не удалось отправить сообщение'),
+  })
+
   function onPick(slotId: string, files: FileList | null) {
     const file = files?.[0]
     if (!file) return
@@ -257,8 +370,18 @@ export function ApplicationDetailPage() {
   }
 
   const code = appCode(app.id)
-  const offerAmount = Math.round(app.amount * 0.6)
-  const monthly = estimateMonthly(offerAmount || app.amount, app.termMonths, app.rate || 17.9)
+  const activeOffers = (offersQ.data ?? []).filter((o) => o.status.toUpperCase() === 'ACTIVE')
+  const bankOffer = activeOffers[0]
+  const decision = decisionQ.data as PublicDecision | null | undefined
+  const openDocReqs = (docReqsQ.data ?? []).filter((r) =>
+    ['OPEN', 'PENDING', 'REQUESTED'].includes(r.status.toUpperCase()),
+  )
+  const offerAmount = bankOffer?.amount ?? app.amount
+  const offerRate = bankOffer?.rate ?? app.rate ?? 17.9
+  const offerTerm = bankOffer?.termMonths ?? app.termMonths
+  const monthly =
+    bankOffer?.monthlyPayment ||
+    estimateMonthly(offerAmount || app.amount, offerTerm, offerRate)
   const step = pipelineStep(app.status)
   const statusChip = APP_STATUS_CHIP[app.status] ?? APP_STATUS_CHIP.submitted
   const statusLabel = statusLabels[app.status] ?? String(app.status)
@@ -433,16 +556,180 @@ export function ApplicationDetailPage() {
               <Meta
                 label="Предложение банка"
                 value={
-                  app.rate
-                    ? `${shortMoney(offerAmount)} · ${app.rate.toFixed(1)}%`
-                    : shortMoney(offerAmount)
+                  bankOffer
+                    ? `${shortMoney(offerAmount)} · ${offerRate.toFixed(1)}%`
+                    : decision
+                      ? String(decision.decision)
+                      : 'Ожидает решения'
                 }
-                accent
+                accent={Boolean(bankOffer)}
               />
               <Meta label="Ежемес. платёж" value={monthly ? `≈ ${shortMoney(monthly)}` : '—'} />
             </Box>
             <Pipeline current={step} status={app.status} />
           </Box>
+
+          {(decision || activeOffers.length > 0) && (
+            <Box sx={tileSx}>
+              <Typography
+                sx={{
+                  fontFamily: 'Manrope, sans-serif',
+                  fontWeight: 800,
+                  fontSize: 16,
+                  color: '#0B1F35',
+                  mb: 1.25,
+                }}
+              >
+                Решение банка
+              </Typography>
+              {decision && (
+                <Box sx={{ mb: 1.75 }}>
+                  <Typography sx={{ fontSize: 14, fontWeight: 700, color: '#0B1F35' }}>
+                    {decision.decision}
+                    {decision.policyVersion ? ` · ${decision.policyVersion}` : ''}
+                  </Typography>
+                  {decision.explanation && (
+                    <Typography sx={{ mt: 0.75, fontSize: 13.5, color: '#5A6B7D', lineHeight: 1.45 }}>
+                      {decision.explanation}
+                    </Typography>
+                  )}
+                  {decision.reasonCodes.length > 0 && (
+                    <Stack spacing={0.5} sx={{ mt: 1 }}>
+                      {decision.reasonCodes.map((r) => (
+                        <Typography key={r.code} sx={{ fontSize: 12.5, color: '#7A8795' }}>
+                          {r.title}
+                          {r.details ? ` — ${r.details}` : ''}
+                        </Typography>
+                      ))}
+                    </Stack>
+                  )}
+                </Box>
+              )}
+              {activeOffers.map((offer) => (
+                <Box
+                  key={offer.id}
+                  sx={{
+                    p: 1.75,
+                    borderRadius: 2.5,
+                    bgcolor: '#F7F8FA',
+                    border: '1px solid rgba(11,31,53,0.06)',
+                    mb: 1.25,
+                  }}
+                >
+                  <Typography sx={{ fontSize: 14, fontWeight: 700, color: '#0B1F35' }}>
+                    {offer.label || (offer.isAlternative ? 'Альтернатива' : 'Основное предложение')}
+                  </Typography>
+                  <Typography sx={{ mt: 0.5, fontSize: 13.5, color: '#5A6B7D' }}>
+                    {shortMoney(offer.amount)} · {offer.termMonths} мес · {offer.rate.toFixed(1)}% ·
+                    платёж ≈ {shortMoney(offer.monthlyPayment || 0)}
+                  </Typography>
+                  <Stack direction="row" spacing={1} sx={{ mt: 1.25 }}>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      disabled={acceptM.isPending}
+                      onClick={() => acceptM.mutate(offer)}
+                      sx={{
+                        borderRadius: 2,
+                        fontWeight: 700,
+                        textTransform: 'none',
+                        boxShadow: 'none',
+                      }}
+                    >
+                      Принять
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      disabled={declineM.isPending}
+                      onClick={() => declineM.mutate(offer)}
+                      sx={{
+                        borderRadius: 2,
+                        fontWeight: 700,
+                        textTransform: 'none',
+                        borderColor: 'rgba(11,31,53,0.16)',
+                        color: '#0B1F35',
+                      }}
+                    >
+                      Отклонить
+                    </Button>
+                  </Stack>
+                </Box>
+              ))}
+            </Box>
+          )}
+
+          {openDocReqs.length > 0 && (
+            <Box sx={tileSx}>
+              <Typography
+                sx={{
+                  fontFamily: 'Manrope, sans-serif',
+                  fontWeight: 800,
+                  fontSize: 16,
+                  color: '#0B1F35',
+                  mb: 1.25,
+                }}
+              >
+                Запросы банка по документам
+              </Typography>
+              <Stack spacing={1.1}>
+                {openDocReqs.map((req) => (
+                  <Stack
+                    key={req.id}
+                    direction={{ xs: 'column', sm: 'row' }}
+                    justifyContent="space-between"
+                    alignItems={{ xs: 'stretch', sm: 'center' }}
+                    spacing={1}
+                    sx={{
+                      p: 1.5,
+                      borderRadius: 2,
+                      bgcolor: '#FDE8E6',
+                      border: '1px solid rgba(239,49,36,0.12)',
+                    }}
+                  >
+                    <Box>
+                      <Typography sx={{ fontSize: 14, fontWeight: 700, color: '#0B1F35' }}>
+                        {req.label || req.docType}
+                      </Typography>
+                      {req.comment && (
+                        <Typography sx={{ fontSize: 12.5, color: '#5A6B7D', mt: 0.35 }}>
+                          {req.comment}
+                        </Typography>
+                      )}
+                    </Box>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      disabled={busyId === req.id}
+                      onClick={() => {
+                        setActiveDocReq(req)
+                        docReqFileRef.current?.click()
+                      }}
+                      sx={{
+                        borderRadius: 2,
+                        fontWeight: 700,
+                        textTransform: 'none',
+                        boxShadow: 'none',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {busyId === req.id ? <CircularProgress size={18} color="inherit" /> : 'Загрузить'}
+                    </Button>
+                  </Stack>
+                ))}
+              </Stack>
+              <input
+                ref={docReqFileRef}
+                hidden
+                type="file"
+                accept={ACCEPT}
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file && activeDocReq) void uploadForDocRequest(activeDocReq, file)
+                  e.target.value = ''
+                }}
+              />
+            </Box>
+          )}
 
           <Box sx={tileSx} id="documents">
             <Stack
@@ -575,21 +862,68 @@ export function ApplicationDetailPage() {
                 ))}
               </Stack>
             )}
-            {app.comments.length > 0 && (
-              <Box sx={{ mt: 2, pt: 1.5, borderTop: '1px solid rgba(11,31,53,0.06)' }}>
-                <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#0B1F35', mb: 1 }}>
-                  Комментарии
+            <Box sx={{ mt: 2, pt: 1.5, borderTop: '1px solid rgba(11,31,53,0.06)' }} id="chat">
+              <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#0B1F35', mb: 1 }}>
+                Переписка с банком
+              </Typography>
+              {(commentsQ.data ?? app.comments).length === 0 ? (
+                <Typography sx={{ fontSize: 13, color: '#8A96A3', mb: 1.25 }}>
+                  Пока нет сообщений. Можете задать вопрос аналитику ниже.
                 </Typography>
-                {app.comments.map((c) => (
-                  <Typography key={c.id} sx={{ fontSize: 13, color: '#5A6B7D', mb: 0.75 }}>
-                    <Box component="span" sx={{ fontWeight: 700, color: '#0B1F35' }}>
-                      {c.authorName}
+              ) : (
+                <Stack spacing={0.85} sx={{ mb: 1.5 }}>
+                  {(commentsQ.data ?? app.comments).map((c) => (
+                    <Box
+                      key={c.id}
+                      sx={{
+                        p: 1.1,
+                        borderRadius: 2,
+                        bgcolor: '#F7F8FA',
+                        border: '1px solid rgba(11,31,53,0.05)',
+                      }}
+                    >
+                      <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#0B1F35' }}>
+                        {c.authorName}
+                        {'createdAt' in c && c.createdAt ? (
+                          <Box component="span" sx={{ fontWeight: 600, color: '#8A96A3' }}>
+                            {' '}
+                            · {formatDateTime(String(c.createdAt))}
+                          </Box>
+                        ) : null}
+                      </Typography>
+                      <Typography sx={{ fontSize: 13, color: '#5A6B7D', mt: 0.35 }}>{c.text}</Typography>
                     </Box>
-                    : {c.text}
-                  </Typography>
-                ))}
-              </Box>
-            )}
+                  ))}
+                </Stack>
+              )}
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems="stretch">
+                <TextField
+                  fullWidth
+                  multiline
+                  minRows={2}
+                  value={chatText}
+                  onChange={(e) => setChatText(e.target.value)}
+                  placeholder="Вопрос банку: сроки, документы, условия…"
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                />
+                <Button
+                  variant="contained"
+                  color="primary"
+                  disabled={!chatText.trim() || chatM.isPending || !companyId}
+                  onClick={() => chatM.mutate()}
+                  sx={{
+                    borderRadius: 2,
+                    fontWeight: 700,
+                    textTransform: 'none',
+                    boxShadow: 'none',
+                    alignSelf: { sm: 'flex-end' },
+                    minWidth: 120,
+                  }}
+                >
+                  {chatM.isPending ? <CircularProgress size={18} color="inherit" /> : 'Отправить'}
+                </Button>
+              </Stack>
+            </Box>
           </Box>
         </Stack>
 
@@ -607,9 +941,13 @@ export function ApplicationDetailPage() {
               Следующий шаг
             </Typography>
             <Typography sx={{ fontSize: 13.5, color: '#5A6B7D', lineHeight: 1.45, mb: 1.5 }}>
-              {docsReady
-                ? 'Обязательные документы на месте. Можно перейти к проверке перед отправкой или дождаться решения банка.'
-                : 'Загрузите обязательные файлы — индекс готовности вырастет, кнопка проверки разблокируется.'}
+              {openDocReqs.length > 0
+                ? `Банк запросил документы (${openDocReqs.length}). Загрузите файлы выше — статус вернётся в работу.`
+                : bankOffer
+                  ? 'Есть активное предложение банка — примите или отклоните условия.'
+                  : docsReady
+                    ? 'Обязательные документы на месте. Можно дождаться решения банка.'
+                    : 'Загрузите обязательные файлы — индекс готовности вырастет.'}
             </Typography>
             {blockMsg && (
               <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#C41E14', mb: 1.5 }}>
@@ -640,21 +978,20 @@ export function ApplicationDetailPage() {
               >
                 К проверке перед отправкой
               </Button>
-              {app.status === 'approved' && (
+              {(app.status === 'approved' || app.status === 'counteroffered') && bankOffer && (
                 <Button
-                  component={RouterLink}
-                  to={`/app/applications/${app.id}/edit`}
-                  variant="outlined"
+                  variant="contained"
+                  color="primary"
+                  disabled={acceptM.isPending}
+                  onClick={() => acceptM.mutate(bankOffer)}
                   sx={{
                     borderRadius: 2,
-                    borderColor: 'rgba(11,31,53,0.16)',
-                    color: '#0B1F35',
                     fontWeight: 700,
-                    bgcolor: '#fff',
                     textTransform: 'none',
+                    boxShadow: 'none',
                   }}
                 >
-                  Изменить условия
+                  Принять предложение банка
                 </Button>
               )}
               {app.status === 'issued' && (

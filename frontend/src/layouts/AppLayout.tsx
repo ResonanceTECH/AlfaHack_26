@@ -52,10 +52,15 @@ import PersonRoundedIcon from '@mui/icons-material/PersonRounded'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { fetchAnalystQueue } from '@/api/analyst'
 import { listCompanies } from '@/api/companies'
 import { useAuth } from '@/contexts/AuthContext'
 import { AlfaMark } from '@/components/landing/AlfaLogo'
-import { DEFAULT_CASE_ID } from '@/features/analyst/demoData'
+import {
+  isAnalystCaseUuid,
+  readLastAnalystCaseId,
+  writeLastAnalystCaseId,
+} from '@/features/analyst/lastCase'
 import { isAnalystRole } from '@/features/analyst/roles'
 
 const DRAWER_WIDTH = 260
@@ -113,10 +118,8 @@ const entrepreneurGroups: NavGroup[] = [
   },
 ]
 
-const LAST_CASE_KEY = 'alfa_analyst_last_case'
-
 function buildAnalystGroups(caseId: string): NavGroup[] {
-  const base = `/app/analyst/cases/${caseId}`
+  const base = caseId ? `/app/analyst/cases/${caseId}` : '/app/analyst'
   return [
     {
       title: 'Рабочий стол',
@@ -131,11 +134,6 @@ function buildAnalystGroups(caseId: string): NavGroup[] {
           to: '/app/analyst/mine',
           label: 'Мои заявки',
           icon: <FolderSharedRoundedIcon sx={iconSx} />,
-        },
-        {
-          to: '/app/analyst/attention',
-          label: 'Требуют внимания',
-          icon: <NotificationImportantRoundedIcon sx={iconSx} />,
         },
         {
           to: '/app/analyst/workflow',
@@ -158,7 +156,7 @@ function buildAnalystGroups(caseId: string): NavGroup[] {
           label: 'Объяснимость',
           icon: <CenterFocusStrongRoundedIcon sx={iconSx} />,
         },
-        { to: `${base}/ai`, label: 'AI Copilot', icon: <AutoAwesomeRoundedIcon sx={iconSx} /> },
+        { to: `${base}/ai`, label: 'Чат с клиентом', icon: <AutoAwesomeRoundedIcon sx={iconSx} /> },
         { to: `${base}/decision`, label: 'Решение', icon: <TaskAltRoundedIcon sx={iconSx} /> },
         { to: `${base}/history`, label: 'История', icon: <HistoryRoundedIcon sx={iconSx} /> },
       ],
@@ -278,13 +276,13 @@ function pageTitle(pathname: string): string {
       checks: 'Проверки',
       risks: 'Риски',
       explainability: 'Объяснимость',
-      ai: 'AI Copilot',
+      ai: 'Чат с клиентом',
       decision: 'Решение',
       history: 'История',
     }
     return tab && labels[tab] ? labels[tab] : 'Обзор'
   }
-  const flat = [...entrepreneurGroups, ...adminGroups, ...buildAnalystGroups(DEFAULT_CASE_ID)].flatMap(
+  const flat = [...entrepreneurGroups, ...adminGroups, ...buildAnalystGroups('')].flatMap(
     (g) => g.items,
   )
   const exact = flat.find((i) => i.to === pathname)
@@ -328,22 +326,30 @@ export function AppLayout() {
     enabled: Boolean(user) && !isAnalystRole(user?.role) && user?.role !== 'admin',
   })
 
+  const analystNavQ = useQuery({
+    queryKey: ['analyst', 'queue', 'nav'],
+    queryFn: () => fetchAnalystQueue({ assignedToMe: true, limit: 1 }),
+    enabled: Boolean(user) && isAnalystRole(user?.role),
+    staleTime: 60_000,
+  })
+
   const analystCaseId = useMemo(() => {
     const m = location.pathname.match(/\/app\/analyst\/cases\/([^/]+)/)
-    if (m?.[1]) {
-      try {
-        localStorage.setItem(LAST_CASE_KEY, m[1])
-      } catch {
-        /* ignore */
-      }
-      return m[1]
+    const fromPath = m?.[1] ? decodeURIComponent(m[1]) : ''
+    if (isAnalystCaseUuid(fromPath)) {
+      writeLastAnalystCaseId(fromPath)
+      return fromPath
     }
-    try {
-      return localStorage.getItem(LAST_CASE_KEY) || DEFAULT_CASE_ID
-    } catch {
-      return DEFAULT_CASE_ID
+    // demo ABC-… в URL не кладём в sidebar — иначе битые ссылки «Компания/Финансы»
+    const stored = readLastAnalystCaseId()
+    if (stored) return stored
+    const fromQueue = analystNavQ.data?.items[0]?.id ?? ''
+    if (isAnalystCaseUuid(fromQueue)) {
+      writeLastAnalystCaseId(fromQueue)
+      return fromQueue
     }
-  }, [location.pathname])
+    return ''
+  }, [location.pathname, analystNavQ.data])
 
   const groups = useMemo(() => {
     if (!user) return []
@@ -726,6 +732,19 @@ export function AppLayout() {
           >
             {headerTitle}
           </Typography>
+
+          {isAnalystRole(user?.role) && (
+            <IconButton
+              size="small"
+              onClick={() => navigate('/app/analyst/attention')}
+              sx={{
+                color: location.pathname === '/app/analyst/attention' ? '#EF3124' : '#5A6B7D',
+              }}
+              aria-label="Требуют внимания"
+            >
+              <NotificationImportantRoundedIcon />
+            </IconButton>
+          )}
 
           <IconButton
             size="small"

@@ -1,7 +1,10 @@
 import { Box, Stack, Typography } from '@mui/material'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
-import { APPLICANT, COMPANY_PROFILE, FIN_KPIS } from '@/features/analyst/demoData'
+import { useOutletContext } from 'react-router-dom'
+import type { AnalystCaseOutlet } from '@/components/analyst/AnalystCaseShell'
+import { companyAgeLabel, formatCompactMoney } from '@/features/analyst/map'
 import { tileSx } from '@/features/analyst/styles'
+import { formatDate, formatMoney } from '@/utils/format'
 
 function Kv({ label, value }: { label: string; value: string }) {
   return (
@@ -23,7 +26,20 @@ function Kv({ label, value }: { label: string; value: string }) {
 }
 
 export function AnalystCaseCompanyPage() {
-  const p = COMPANY_PROFILE
+  const { card } = useOutletContext<AnalystCaseOutlet>()
+  const co = card.company
+  const fin = card.financials
+
+  const kpis = fin
+    ? [
+        { label: 'Выручка / мес', value: formatCompactMoney(fin.avgMonthlyRevenue) },
+        { label: 'Расходы / мес', value: formatCompactMoney(fin.operatingExpenses) },
+        { label: 'Остаток', value: formatCompactMoney(fin.cashBalance) },
+        { label: 'Обязательства', value: formatCompactMoney(fin.liabilities) },
+        { label: 'Активные кредиты', value: formatCompactMoney(fin.activeCredits) },
+        { label: 'Период', value: fin.period || '—' },
+      ]
+    : []
 
   return (
     <Box>
@@ -39,41 +55,56 @@ export function AnalystCaseCompanyPage() {
           <Typography sx={{ fontWeight: 700, fontSize: 16, color: '#0B1F35', mb: 1.25 }}>
             Профиль компании
           </Typography>
-          <Kv label="Тип" value={p.type} />
-          <Kv label="Наименование" value={p.name} />
-          <Kv label="ИНН / ОГРН" value={`${p.inn} / ${p.ogrn}`} />
-          <Kv label="Дата регистрации" value={`${p.registeredAt} · ${p.age}`} />
-          <Kv label="ОКВЭД" value={p.okved} />
-          <Kv label="Источник" value={p.source} />
-          <Stack
-            direction="row"
-            alignItems="center"
-            spacing={0.75}
-            sx={{
-              mt: 1.75,
-              display: 'inline-flex',
-              px: 1.25,
-              py: 0.65,
-              borderRadius: 2,
-              bgcolor: 'rgba(46, 125, 50, 0.1)',
-              color: '#2E7D32',
-              width: 'fit-content',
-            }}
-          >
-            <CheckCircleRoundedIcon sx={{ fontSize: 16 }} />
-            <Typography sx={{ fontSize: 12.5, fontWeight: 700 }}>Данные подтверждены</Typography>
-          </Stack>
+          {co ? (
+            <>
+              <Kv label="Тип" value={co.legalForm} />
+              <Kv label="Наименование" value={co.name} />
+              <Kv label="ИНН / ОГРН" value={`${co.inn} / ${co.ogrn || '—'}`} />
+              <Kv
+                label="Дата регистрации"
+                value={`${co.registrationDate ? formatDate(co.registrationDate) : '—'} · ${companyAgeLabel(co.registrationDate)}`}
+              />
+              <Kv label="Отрасль" value={co.industry || '—'} />
+              <Kv label="Регион" value={co.region || '—'} />
+              <Kv label="Сотрудники" value={String(co.employeesCount)} />
+              <Kv label="Реестр" value={co.registryStatus} />
+              {co.registryStatus === 'ACTIVE' && (
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  spacing={0.75}
+                  sx={{
+                    mt: 1.75,
+                    display: 'inline-flex',
+                    px: 1.25,
+                    py: 0.65,
+                    borderRadius: 2,
+                    bgcolor: 'rgba(46, 125, 50, 0.1)',
+                    color: '#2E7D32',
+                    width: 'fit-content',
+                  }}
+                >
+                  <CheckCircleRoundedIcon sx={{ fontSize: 16 }} />
+                  <Typography sx={{ fontSize: 12.5, fontWeight: 700 }}>Данные подтверждены</Typography>
+                </Stack>
+              )}
+            </>
+          ) : (
+            <Typography sx={{ fontSize: 14, color: '#8A96A3' }}>Компания не найдена в карточке</Typography>
+          )}
         </Box>
 
         <Box sx={tileSx}>
           <Typography sx={{ fontWeight: 700, fontSize: 16, color: '#0B1F35', mb: 1.25 }}>
-            Заявитель и контакты
+            Заявка
           </Typography>
-          <Kv label="ФИО" value={APPLICANT.fullName} />
-          <Kv label="Роль" value={APPLICANT.role} />
-          <Kv label="Телефон" value={APPLICANT.phone} />
-          <Kv label="Email" value={APPLICANT.email} />
-          <Kv label="История в ABC" value={APPLICANT.history} />
+          <Kv label="Номер" value={card.application.applicationNumber} />
+          <Kv label="Продукт" value={card.application.productName || '—'} />
+          <Kv label="Сумма" value={formatMoney(card.application.amount)} />
+          <Kv label="Срок" value={`${card.application.termMonths} мес.`} />
+          <Kv label="Ставка" value={`${card.application.rate}%`} />
+          <Kv label="Аналитик" value={card.application.assignedManagerName || '—'} />
+          <Kv label="Цель" value={card.application.purpose || '—'} />
         </Box>
       </Box>
 
@@ -81,43 +112,49 @@ export function AnalystCaseCompanyPage() {
         <Typography sx={{ fontWeight: 700, fontSize: 16, color: '#0B1F35', mb: 1.75 }}>
           Ключевые финансовые показатели
         </Typography>
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(3, 1fr)', lg: 'repeat(6, 1fr)' },
-            gap: 1.5,
-          }}
-        >
-          {FIN_KPIS.map((k) => (
-            <Box
-              key={k.label}
-              sx={{
-                p: 1.5,
-                borderRadius: 2,
-                bgcolor: '#F7F8FA',
-                border: '1px solid rgba(11,31,53,0.04)',
-              }}
-            >
-              <Typography sx={{ fontSize: 11, fontWeight: 600, color: '#8A96A3', mb: 0.75 }}>
-                {k.label}
-              </Typography>
-              <Typography
+        {kpis.length === 0 ? (
+          <Typography sx={{ fontSize: 14, color: '#8A96A3' }}>Финансовый снимок отсутствует</Typography>
+        ) : (
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(3, 1fr)', lg: 'repeat(6, 1fr)' },
+              gap: 1.5,
+            }}
+          >
+            {kpis.map((k) => (
+              <Box
+                key={k.label}
                 sx={{
-                  fontFamily: 'Manrope, sans-serif',
-                  fontWeight: 800,
-                  fontSize: 18,
-                  color: '#0B1F35',
-                  letterSpacing: '-0.02em',
+                  p: 1.5,
+                  borderRadius: 2,
+                  bgcolor: '#F7F8FA',
+                  border: '1px solid rgba(11,31,53,0.04)',
                 }}
               >
-                {k.value}
-              </Typography>
-            </Box>
-          ))}
-        </Box>
-        <Typography sx={{ mt: 1.75, fontSize: 12, color: '#8A96A3' }}>
-          Методика: агрегация выписки за 6 месяцев · демо-данные для прототипа.
-        </Typography>
+                <Typography sx={{ fontSize: 11, fontWeight: 600, color: '#8A96A3', mb: 0.75 }}>
+                  {k.label}
+                </Typography>
+                <Typography
+                  sx={{
+                    fontFamily: 'Manrope, sans-serif',
+                    fontWeight: 800,
+                    fontSize: 18,
+                    color: '#0B1F35',
+                    letterSpacing: '-0.02em',
+                  }}
+                >
+                  {k.value}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+        )}
+        {fin && (
+          <Typography sx={{ mt: 1.75, fontSize: 12, color: '#8A96A3' }}>
+            Источник: {fin.source || '—'} · подтверждено: {fin.confirmed ? 'да' : 'нет'}
+          </Typography>
+        )}
       </Box>
     </Box>
   )

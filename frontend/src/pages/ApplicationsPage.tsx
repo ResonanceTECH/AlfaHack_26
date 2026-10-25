@@ -159,9 +159,17 @@ function mapApiStatus(status: ApplicationStatus): {
       return {
         status: 'alternative',
         tab: 'work',
-        nextStep: 'Принять или изменить условия',
+        nextStep: 'Принять предложение банка',
         nextStepAction: 'link',
-        editable: true,
+        editable: false,
+      }
+    case 'counteroffered':
+      return {
+        status: 'alternative',
+        tab: 'work',
+        nextStep: 'Рассмотреть контрпредложение',
+        nextStepAction: 'link',
+        editable: false,
       }
     case 'issued':
       return {
@@ -213,8 +221,8 @@ function toRow(a: CreditApplication, companyName: string): AppRow {
     submitted: a.status === 'draft' ? '—' : formatDate(a.createdAt),
     nextStep: canEditOffer
       ? 'Принять или изменить условия'
-      : a.status === 'approved'
-        ? 'Посмотреть условия'
+      : a.status === 'approved' || a.status === 'counteroffered'
+        ? meta.nextStep
         : meta.nextStep,
     nextStepAction: meta.nextStepAction,
     href,

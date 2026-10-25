@@ -165,20 +165,53 @@ def list_analyst_queue(
     return items, int(total), counts
 
 
-def _allowed_actions(status: ApplicationStatus) -> list[str]:
+def _allowed_actions(app: CreditApplication) -> list[str]:
     mapping: dict[ApplicationStatus, list[str]] = {
-        ApplicationStatus.SUBMITTED: ["REQUEST_DOCS", "APPROVE", "REJECT", "COUNTEROFFER"],
-        ApplicationStatus.VALIDATING: ["REQUEST_DOCS", "APPROVE", "REJECT", "COUNTEROFFER"],
-        ApplicationStatus.IN_REVIEW: ["REQUEST_DOCS", "APPROVE", "REJECT", "COUNTEROFFER"],
-        ApplicationStatus.DOCS_REQUESTED: ["REQUEST_DOCS", "APPROVE", "REJECT", "COUNTEROFFER"],
+        ApplicationStatus.SUBMITTED: ["REQUEST_DOCS", "APPROVE", "REJECT", "COUNTEROFFER", "NEED_INFO"],
+        ApplicationStatus.VALIDATING: ["REQUEST_DOCS", "APPROVE", "REJECT", "COUNTEROFFER", "NEED_INFO"],
+        ApplicationStatus.IN_REVIEW: ["REQUEST_DOCS", "APPROVE", "REJECT", "COUNTEROFFER", "NEED_INFO"],
+        ApplicationStatus.DOCS_REQUESTED: ["REQUEST_DOCS", "APPROVE", "REJECT", "COUNTEROFFER", "NEED_INFO"],
         ApplicationStatus.APPROVED: ["REJECT", "COUNTEROFFER"],
-        ApplicationStatus.COUNTEROFFERED: ["REQUEST_DOCS", "APPROVE", "REJECT", "COUNTEROFFER"],
+        ApplicationStatus.COUNTEROFFERED: ["REQUEST_DOCS", "APPROVE", "REJECT", "COUNTEROFFER", "NEED_INFO"],
         ApplicationStatus.OFFER_ACCEPTED: [],
         ApplicationStatus.AGREEMENT_PREPARATION: [],
         ApplicationStatus.REJECTED: [],
         ApplicationStatus.ISSUED: [],
     }
-    return list(mapping.get(status, []))
+    actions = list(mapping.get(app.status, []))
+    if app.assigned_analyst_id is None:
+        actions = ["ASSIGN", *actions]
+    return actions
+
+
+def assign_application(
+    db: Session,
+    *,
+    app: CreditApplication,
+    analyst: User,
+) -> CreditApplication:
+    """Взять заявку в работу: assignee + IN_REVIEW при необходимости."""
+    from app.services.workflow import transition_application
+
+    app.assigned_analyst_id = analyst.id
+    if app.assigned_manager_id is None:
+        app.assigned_manager_id = analyst.id
+
+    if app.status in (
+        ApplicationStatus.SUBMITTED,
+        ApplicationStatus.VALIDATING,
+    ):
+        transition_application(
+            db,
+            app,
+            ApplicationStatus.IN_REVIEW,
+            actor=analyst,
+            comment="Заявка взята в работу аналитиком",
+        )
+    elif app.status == ApplicationStatus.IN_REVIEW and not app.current_step:
+        app.current_step = "ANALYST_REVIEW"
+    db.flush()
+    return app
 
 
 def _checks_summary(app: CreditApplication) -> dict[str, Any]:
@@ -236,7 +269,7 @@ def build_analyst_card(db: Session, app: CreditApplication) -> dict[str, Any]:
         if (r.status or "").upper() in ("OPEN", "PENDING", "REQUESTED")
     ]
 
-    application = serialize_application(app)
+    application = serialize_application(app, include_internal_comments=True)
     application["application_number"] = (
         application_number(app) if app.status != ApplicationStatus.DRAFT else None
     )
@@ -326,7 +359,7 @@ def build_analyst_card(db: Session, app: CreditApplication) -> dict[str, Any]:
             }
             for o in offers
         ],
-        "allowed_actions": _allowed_actions(app.status),
+        "allowed_actions": _allowed_actions(app),
     }
 
 

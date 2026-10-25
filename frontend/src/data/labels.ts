@@ -46,6 +46,7 @@ export const statusLabels: Record<ApplicationStatus, string> = {
   in_review: 'На рассмотрении',
   docs_requested: 'Запрос документов',
   approved: 'Одобрена',
+  counteroffered: 'Контрпредложение',
   rejected: 'Отклонена',
   issued: 'Выдана',
 }
@@ -59,6 +60,7 @@ export const statusColors: Record<
   in_review: 'primary',
   docs_requested: 'warning',
   approved: 'success',
+  counteroffered: 'warning',
   rejected: 'error',
   issued: 'success',
 }

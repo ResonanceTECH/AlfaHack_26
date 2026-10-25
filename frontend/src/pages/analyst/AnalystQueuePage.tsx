@@ -1,42 +1,64 @@
 import {
+  Alert,
   Box,
   Button,
+  CircularProgress,
   MenuItem,
   Stack,
   TextField,
   Typography,
 } from '@mui/material'
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { DEMO_CASES, type AnalystCaseStatus } from '@/features/analyst/demoData'
-import { outlineBtn, tileSx } from '@/features/analyst/styles'
+import { useQuery } from '@tanstack/react-query'
+import { useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { fetchAnalystQueue } from '@/api/analyst'
 import { StatusChip } from '@/components/analyst/AnalystCaseShell'
+import { readLastAnalystCaseId } from '@/features/analyst/lastCase'
+import { queueItemToCase } from '@/features/analyst/map'
+import { outlineBtn, tileSx } from '@/features/analyst/styles'
+import { useAuth } from '@/contexts/AuthContext'
 import { formatMoney } from '@/utils/format'
 
 const ALL = 'all'
 
 export function AnalystQueuePage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const { user } = useAuth()
   const [status, setStatus] = useState(ALL)
   const [q, setQ] = useState('')
+  const [qDebounced, setQDebounced] = useState('')
+  const missingCase = (location.state as { caseMissing?: string } | null)?.caseMissing
 
-  const rows = useMemo(() => {
-    return DEMO_CASES.filter((c) => {
-      if (status !== ALL && c.status !== status) return false
-      if (!q.trim()) return true
-      const s = q.trim().toLowerCase()
-      return (
-        c.id.toLowerCase().includes(s) ||
-        c.company.toLowerCase().includes(s) ||
-        c.inn.includes(s)
-      )
-    })
-  }, [status, q])
+  useEffect(() => {
+    const t = window.setTimeout(() => setQDebounced(q.trim()), 250)
+    return () => window.clearTimeout(t)
+  }, [q])
 
-  const statuses = useMemo(
-    () => Array.from(new Set(DEMO_CASES.map((c) => c.status))) as AnalystCaseStatus[],
-    [],
+  // one-shot: вычистить legacy ABC-… из last case при заходе в кабинет
+  useEffect(() => {
+    readLastAnalystCaseId()
+  }, [])
+
+  const queueQ = useQuery({
+    queryKey: ['analyst', 'queue', status, qDebounced],
+    queryFn: () =>
+      fetchAnalystQueue({
+        status: status === ALL ? undefined : status,
+        q: qDebounced || undefined,
+        limit: 50,
+      }),
+  })
+
+  const rows = useMemo(
+    () => (queueQ.data?.items ?? []).map((i) => queueItemToCase(i, { myUserId: user?.id })),
+    [queueQ.data, user?.id],
   )
+
+  const statuses = useMemo(() => {
+    const keys = Object.keys(queueQ.data?.countsByStatus ?? {})
+    return keys.length ? keys.sort() : Array.from(new Set(rows.map((r) => r.status)))
+  }, [queueQ.data, rows])
 
   return (
     <Box>
@@ -53,8 +75,14 @@ export function AnalystQueuePage() {
         Очередь заявок
       </Typography>
       <Typography sx={{ fontSize: 14, color: '#7A8795', mb: 2.5 }}>
-        Общая очередь банка · {rows.length} в списке
+        Общая очередь банка · {queueQ.data?.total ?? '…'} в списке
       </Typography>
+
+      {missingCase && (
+        <Alert severity="info" sx={{ mb: 2, borderRadius: 2 }} onClose={() => navigate('.', { replace: true, state: {} })}>
+          Заявка «{missingCase}» больше недоступна. Откройте актуальную из списка.
+        </Alert>
+      )}
 
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ mb: 2 }}>
         <TextField
@@ -76,53 +104,70 @@ export function AnalystQueuePage() {
           {statuses.map((s) => (
             <MenuItem key={s} value={s}>
               {s}
+              {queueQ.data?.countsByStatus?.[s] != null
+                ? ` · ${queueQ.data.countsByStatus[s]}`
+                : ''}
             </MenuItem>
           ))}
         </TextField>
       </Stack>
 
       <Box sx={{ ...tileSx, p: 0, overflow: 'hidden' }}>
-        {rows.map((c, i) => (
-          <Stack
-            key={c.id}
-            direction={{ xs: 'column', md: 'row' }}
-            alignItems={{ xs: 'flex-start', md: 'center' }}
-            spacing={1.5}
-            sx={{
-              px: { xs: 2, md: 2.5 },
-              py: 1.75,
-              borderTop: i === 0 ? 'none' : '1px solid rgba(11,31,53,0.06)',
-              gap: 1,
-            }}
-          >
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Stack direction="row" spacing={1.25} alignItems="center" flexWrap="wrap" useFlexGap>
-                <Typography sx={{ fontWeight: 700, fontSize: 14, color: '#0B1F35' }}>{c.id}</Typography>
-                <Typography sx={{ fontSize: 14, color: '#0B1F35' }}>{c.company}</Typography>
-                <StatusChip status={c.status} />
-              </Stack>
-              <Typography sx={{ mt: 0.5, fontSize: 13, color: '#7A8795' }}>
-                {c.product} · {formatMoney(c.amount)} · {c.nextStep}
-                {c.slaUrgent ? (
-                  <Box component="span" sx={{ color: '#EF3124', fontWeight: 700 }}>
-                    {' '}
-                    · {c.slaLabel}
-                  </Box>
-                ) : (
-                  ` · ${c.slaLabel}`
-                )}
-              </Typography>
-            </Box>
-            <Button
-              variant="outlined"
-              sx={{ ...outlineBtn, flexShrink: 0 }}
-              onClick={() => navigate(`/app/analyst/cases/${c.id}`)}
+        {queueQ.isLoading && (
+          <Box sx={{ display: 'grid', placeItems: 'center', py: 6 }}>
+            <CircularProgress size={28} sx={{ color: '#EF3124' }} />
+          </Box>
+        )}
+        {queueQ.isError && (
+          <Typography sx={{ p: 3, color: '#EF3124', fontSize: 14 }}>
+            Не удалось загрузить очередь
+          </Typography>
+        )}
+        {!queueQ.isLoading &&
+          !queueQ.isError &&
+          rows.map((c, i) => (
+            <Stack
+              key={c.id}
+              direction={{ xs: 'column', md: 'row' }}
+              alignItems={{ xs: 'flex-start', md: 'center' }}
+              spacing={1.5}
+              sx={{
+                px: { xs: 2, md: 2.5 },
+                py: 1.75,
+                borderTop: i === 0 ? 'none' : '1px solid rgba(11,31,53,0.06)',
+                gap: 1,
+              }}
             >
-              Открыть
-            </Button>
-          </Stack>
-        ))}
-        {rows.length === 0 && (
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Stack direction="row" spacing={1.25} alignItems="center" flexWrap="wrap" useFlexGap>
+                  <Typography sx={{ fontWeight: 700, fontSize: 14, color: '#0B1F35' }}>
+                    {c.number || c.id}
+                  </Typography>
+                  <Typography sx={{ fontSize: 14, color: '#0B1F35' }}>{c.company}</Typography>
+                  <StatusChip status={c.status} />
+                </Stack>
+                <Typography sx={{ mt: 0.5, fontSize: 13, color: '#7A8795' }}>
+                  {c.product} · {formatMoney(c.amount)} · {c.nextStep}
+                  {c.slaUrgent ? (
+                    <Box component="span" sx={{ color: '#EF3124', fontWeight: 700 }}>
+                      {' '}
+                      · {c.slaLabel}
+                    </Box>
+                  ) : (
+                    ` · ${c.slaLabel}`
+                  )}
+                </Typography>
+              </Box>
+              <Button
+                variant="outlined"
+                sx={{ ...outlineBtn, flexShrink: 0 }}
+                onClick={() => navigate(`/app/analyst/cases/${c.id}`)}
+              >
+                Открыть
+              </Button>
+            </Stack>
+          ))}
+        {!queueQ.isLoading && !queueQ.isError && rows.length === 0 && (
           <Typography sx={{ p: 3, color: '#7A8795', fontSize: 14 }}>Ничего не найдено</Typography>
         )}
       </Box>

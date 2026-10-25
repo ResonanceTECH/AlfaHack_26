@@ -69,6 +69,12 @@ class CommentOut(APIModel):
     author_role: UserRole | str
     text: str
     created_at: datetime
+    is_internal: bool = False
+
+
+class ApplicationCommentCreate(APIModel):
+    text: str = Field(min_length=1, max_length=4000)
+    is_internal: bool = False
 
 
 class StatusHistoryItem(APIModel):
