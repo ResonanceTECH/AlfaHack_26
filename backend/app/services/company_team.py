@@ -6,15 +6,16 @@ from uuid import uuid4
 
 from fastapi import HTTPException, status as http_status
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.enums import MemberRole
 from app.core.errors import AppError
-from app.models.company import CompanyInvite, CompanyMembership
+from app.models.company import Company, CompanyInvite, CompanyMembership
 from app.models.user import User
 from app.services.access import get_membership, require_company_access
 from app.services.admin_users import delete_member as admin_delete_member
 from app.services.admin_users import list_members, upsert_member
+from app.services.notifications import notify
 
 
 def utcnow() -> datetime:
@@ -22,6 +23,8 @@ def utcnow() -> datetime:
 
 
 def serialize_invite(invite: CompanyInvite) -> dict[str, Any]:
+    company = getattr(invite, "company", None)
+    inviter = getattr(invite, "inviter", None)
     return {
         "id": invite.id,
         "company_id": invite.company_id,
@@ -33,6 +36,8 @@ def serialize_invite(invite: CompanyInvite) -> dict[str, Any]:
         "expires_at": invite.expires_at,
         "created_at": invite.created_at,
         "message": invite.message,
+        "company_name": company.name if company is not None else None,
+        "invited_by_name": inviter.full_name if inviter is not None else None,
     }
 
 
@@ -88,10 +93,17 @@ def list_company_members(db: Session, company_id: str) -> list[dict[str, Any]]:
     return [serialize_member(row) for row in list_members(db, company_id)]
 
 
+_INVITE_LOAD = (
+    selectinload(CompanyInvite.company),
+    selectinload(CompanyInvite.inviter),
+)
+
+
 def list_pending_invites(db: Session, company_id: str) -> list[dict[str, Any]]:
     rows = list(
         db.scalars(
             select(CompanyInvite)
+            .options(*_INVITE_LOAD)
             .where(
                 CompanyInvite.company_id == company_id,
                 CompanyInvite.status == "PENDING",
@@ -100,6 +112,36 @@ def list_pending_invites(db: Session, company_id: str) -> list[dict[str, Any]]:
         ).all()
     )
     return [serialize_invite(i) for i in rows]
+
+
+def list_my_pending_invites(db: Session, user: User) -> list[dict[str, Any]]:
+    """Invites addressed to the current user's email (inbox for invitee)."""
+    email = (user.email or "").strip().lower()
+    if not email:
+        return []
+    rows = list(
+        db.scalars(
+            select(CompanyInvite)
+            .options(*_INVITE_LOAD)
+            .where(
+                func.lower(CompanyInvite.email) == email,
+                CompanyInvite.status == "PENDING",
+            )
+            .order_by(CompanyInvite.created_at.desc())
+        ).all()
+    )
+    # drop expired
+    out: list[dict[str, Any]] = []
+    now = utcnow()
+    for inv in rows:
+        exp = inv.expires_at
+        if exp is not None:
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if exp < now:
+                continue
+        out.append(serialize_invite(inv))
+    return out
 
 
 def create_invite(
@@ -138,7 +180,10 @@ def create_invite(
         existing.role = role
         existing.message = message
         existing.expires_at = utcnow() + timedelta(days=7)
+        if invited_by:
+            existing.invited_by = invited_by
         db.flush()
+        _notify_invitee(db, existing)
         return existing
 
     invite = CompanyInvite(
@@ -153,7 +198,32 @@ def create_invite(
     )
     db.add(invite)
     db.flush()
+    _notify_invitee(db, invite)
     return invite
+
+
+def _notify_invitee(db: Session, invite: CompanyInvite) -> None:
+    """If invitee already has an account — push in-app notification into their LK."""
+    invitee = db.scalar(select(User).where(func.lower(User.email) == invite.email))
+    if invitee is None:
+        return
+    company = db.get(Company, invite.company_id)
+    company_name = company.name if company else "компанию"
+    notify(
+        db,
+        user_id=invitee.id,
+        type="TEAM_INVITE",
+        title=f"Приглашение в команду «{company_name}»",
+        body=invite.message
+        or f"Вас пригласили с ролью {invite.role.value}. Откройте раздел «Команда» или перейдите по ссылке.",
+        payload={
+            "invite_id": invite.id,
+            "company_id": invite.company_id,
+            "company_name": company_name,
+            "code": invite.code,
+            "role": invite.role.value,
+        },
+    )
 
 
 def revoke_invite(db: Session, company_id: str, invite_id: str) -> CompanyInvite:

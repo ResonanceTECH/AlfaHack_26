@@ -190,6 +190,8 @@ class CompanyInviteOut(APIModel):
     expires_at: datetime | None = None
     created_at: datetime | None = None
     message: str | None = None
+    company_name: str | None = None
+    invited_by_name: str | None = None
 
 
 class CompanyDocumentOut(APIModel):
