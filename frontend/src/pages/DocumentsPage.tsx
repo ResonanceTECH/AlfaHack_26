@@ -114,16 +114,10 @@ export function DocumentsPage() {
   const [actionError, setActionError] = useState<string | null>(null)
 
   const docsQ = useQuery({
-    queryKey: [
-      'company-documents',
-      companyId,
-      category !== 'all' ? category : undefined,
-      search.trim() || undefined,
-    ],
+    queryKey: ['company-documents', companyId, category !== 'all' ? category : undefined],
     queryFn: () =>
       listCompanyDocuments(companyId!, {
         category: category !== 'all' ? category : undefined,
-        q: search.trim() || undefined,
       }),
     enabled: Boolean(companyId),
   })
@@ -300,6 +294,7 @@ export function DocumentsPage() {
             variant="contained"
             color="primary"
             startIcon={<UploadFileRoundedIcon />}
+            disabled={!companyId || uploadM.isPending}
             onClick={() => openUpload()}
             sx={{
               borderRadius: 2,
@@ -314,6 +309,22 @@ export function DocumentsPage() {
         </Stack>
       </Stack>
 
+      {actionError && (
+        <Box
+          sx={{
+            mb: 2,
+            px: 1.75,
+            py: 1.1,
+            borderRadius: 2,
+            bgcolor: '#FDE8E6',
+            color: '#C41E14',
+            fontSize: 13.5,
+            fontWeight: 700,
+          }}
+        >
+          {actionError}
+        </Box>
+      )}
       {flash && (
         <Box
           sx={{
@@ -497,7 +508,14 @@ export function DocumentsPage() {
             </Box>
           </Box>
           <Box component="tbody">
-            {filtered.map((d) => (
+            {docsQ.isLoading && (
+              <Box component="tr">
+                <Box component="td" colSpan={6} sx={{ py: 4, textAlign: 'center' }}>
+                  <CircularProgress size={24} sx={{ color: '#EF3124' }} />
+                </Box>
+              </Box>
+            )}
+            {!docsQ.isLoading && filtered.map((d) => (
               <Box
                 component="tr"
                 key={d.id}
@@ -540,47 +558,60 @@ export function DocumentsPage() {
                   <StatusChip status={d.status} />
                 </Box>
                 <Box component="td" sx={{ pr: '0 !important', textAlign: 'right' }}>
-                  {d.status === 'need_upload' ? (
+                  <Stack direction="row" spacing={0.5} justifyContent="flex-end">
+                    {d.status === 'need_upload' ? (
+                      <Button
+                        type="button"
+                        size="small"
+                        disabled={uploadM.isPending || !companyId}
+                        onClick={() => openUpload(d.id)}
+                        sx={{
+                          fontWeight: 700,
+                          textTransform: 'none',
+                          color: '#EF3124',
+                          minWidth: 0,
+                          px: 0.5,
+                        }}
+                      >
+                        Загрузить
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="small"
+                        disabled={!companyId}
+                        onClick={() => void openDoc(d)}
+                        sx={{
+                          fontWeight: 700,
+                          textTransform: 'none',
+                          color: '#EF3124',
+                          minWidth: 0,
+                          px: 0.5,
+                        }}
+                      >
+                        Открыть
+                      </Button>
+                    )}
                     <Button
                       type="button"
                       size="small"
-                      onClick={() => openUpload(d.id)}
+                      disabled={deleteM.isPending || !companyId}
+                      onClick={() => deleteM.mutate(d.id)}
                       sx={{
                         fontWeight: 700,
                         textTransform: 'none',
-                        color: '#EF3124',
+                        color: '#C41E14',
                         minWidth: 0,
                         px: 0.5,
                       }}
                     >
-                      Загрузить
+                      Удалить
                     </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      size="small"
-                      onClick={() =>
-                        navigate(
-                          d.id === 'contract'
-                            ? `/app/applications/${APP_REF}/contract`
-                            : `/app/documents/${d.id}`,
-                        )
-                      }
-                      sx={{
-                        fontWeight: 700,
-                        textTransform: 'none',
-                        color: '#EF3124',
-                        minWidth: 0,
-                        px: 0.5,
-                      }}
-                    >
-                      Открыть
-                    </Button>
-                  )}
+                  </Stack>
                 </Box>
               </Box>
             ))}
-            {filtered.length === 0 && (
+            {!docsQ.isLoading && filtered.length === 0 && (
               <Box component="tr">
                 <Box component="td" colSpan={6} sx={{ py: 4, textAlign: 'center' }}>
                   <Typography sx={{ color: '#9AA5B1', fontSize: 14 }}>

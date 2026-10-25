@@ -208,7 +208,7 @@ export function InviteAcceptPage() {
             Ссылка недействительна
           </Typography>
           <Typography sx={{ fontSize: 14, color: '#5A6B7D', lineHeight: 1.5, mb: 2.5 }}>
-            В приглашении нет кода или компании. Попросите владельца прислать новую ссылку.
+            В приглашении нет кода. Попросите владельца прислать новую ссылку.
           </Typography>
           <Button
             variant="contained"

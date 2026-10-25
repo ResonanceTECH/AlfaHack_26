@@ -191,7 +191,7 @@ function mapUser(u: AdminUser): DemoUser {
     email: u.email || u.login || '—',
     role,
     department: departmentFromRole(role),
-    mfa: false,
+    mfa: Boolean(u.mfaEnabled),
     lastLogin: formatLastLogin(u.lastLoginAt),
     status: normalizeStatus(String(u.status)),
   }
@@ -730,6 +730,30 @@ export function AdminUsersPage() {
           </ListItemIcon>
           <ListItemText>Изменить роль</ListItemText>
         </MenuItem>
+        {menuUser && (
+          <MenuItem
+            onClick={() => {
+              if (!menuUser) return
+              patchAdminUser(menuUser.id, { mfaEnabled: !menuUser.mfa })
+                .then(async () => {
+                  await invalidateUsers()
+                  setToast(menuUser.mfa ? 'MFA выключена' : 'MFA включена')
+                  setToastError(null)
+                })
+                .catch((err) => setToastError(apiError(err, 'Не удалось изменить MFA')))
+              closeMenu()
+            }}
+          >
+            <ListItemIcon>
+              {menuUser.mfa ? (
+                <CancelRoundedIcon fontSize="small" />
+              ) : (
+                <CheckCircleRoundedIcon fontSize="small" />
+              )}
+            </ListItemIcon>
+            <ListItemText>{menuUser.mfa ? 'Выключить MFA' : 'Включить MFA'}</ListItemText>
+          </MenuItem>
+        )}
         {menuUser?.status === 'disabled' ? (
           <MenuItem onClick={() => menuUser && openBlockDialog([menuUser.id], 'unblock')}>
             <ListItemIcon>

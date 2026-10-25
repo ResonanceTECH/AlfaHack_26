@@ -114,8 +114,6 @@ const ROLE_RIGHTS: Record<InviteRole, { label: string; ok: boolean }[]> = {
   ],
 }
 
-const INITIAL_ACTIVE: ActiveInvite[] = []
-
 function randomCodeSuffix(): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
   let s = ''
