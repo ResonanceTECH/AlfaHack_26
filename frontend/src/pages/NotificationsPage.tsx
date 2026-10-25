@@ -12,9 +12,11 @@ import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
 import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded'
 import PersonOutlineRoundedIcon from '@mui/icons-material/PersonOutlineRounded'
+import AssignmentRoundedIcon from '@mui/icons-material/AssignmentRounded'
 import { useMemo, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
+import { isAnalystRole } from '@/features/analyst/roles'
 
 const tileSx = {
   bgcolor: '#fff',
@@ -24,13 +26,14 @@ const tileSx = {
   p: { xs: 2, md: 2.25 },
 } as const
 
-type NotifCategory = 'applications' | 'documents' | 'payments' | 'system'
-type NotifKind = 'alert' | 'success' | 'doc' | 'time' | 'person'
+type EntrepreneurCategory = 'applications' | 'documents' | 'payments' | 'system'
+type AnalystCategory = 'queue' | 'sla' | 'documents' | 'system'
+type NotifKind = 'alert' | 'success' | 'doc' | 'time' | 'person' | 'queue'
 
 type Notification = {
   id: string
   kind: NotifKind
-  category: NotifCategory
+  category: EntrepreneurCategory | AnalystCategory
   title: string
   body: string
   time: string
@@ -38,7 +41,7 @@ type Notification = {
   href?: string
 }
 
-const INITIAL: Notification[] = [
+const ENTREPRENEUR_INITIAL: Notification[] = [
   {
     id: 'n1',
     kind: 'alert',
@@ -111,6 +114,90 @@ const INITIAL: Notification[] = [
   },
 ]
 
+/** Лента кредитного аналитика / менеджера банка */
+const ANALYST_INITIAL: Notification[] = [
+  {
+    id: 'a1',
+    kind: 'alert',
+    category: 'sla',
+    title: 'SLA < 4ч — решение не отправлено',
+    body: 'ABC-2026-1020 · ООО «Нова Трейд» · DECISION_PENDING',
+    time: '25.10 · 16:40',
+    unread: true,
+    href: '/app/analyst/cases/ABC-2026-1020/decision',
+  },
+  {
+    id: 'a2',
+    kind: 'success',
+    category: 'documents',
+    title: 'Клиент загрузил договор аренды',
+    body: 'ABC-2026-1042 · ООО «Кофе Плюс» · проверить комплект',
+    time: '25.10 · 15:12',
+    unread: true,
+    href: '/app/analyst/cases/ABC-2026-1042/documents',
+  },
+  {
+    id: 'a3',
+    kind: 'alert',
+    category: 'sla',
+    title: 'Counteroffer истёк',
+    body: 'ABC-2026-0988 · ИП Петрова · требуется действие',
+    time: '25.10 · 14:05',
+    unread: true,
+    href: '/app/analyst/cases/ABC-2026-0988/decision',
+  },
+  {
+    id: 'a4',
+    kind: 'queue',
+    category: 'queue',
+    title: 'Новая заявка в очереди',
+    body: 'ABC-2026-1055 · ООО «Хлеб и Ко» · овердрафт 1,2 млн ₽',
+    time: '25.10 · 12:30',
+    unread: true,
+    href: '/app/analyst',
+  },
+  {
+    id: 'a5',
+    kind: 'time',
+    category: 'sla',
+    title: 'ML unavailable — продолжить вручную',
+    body: 'ABC-2026-1011 · ИП Смирнов · RISK_REVIEW',
+    time: '25.10 · 11:18',
+    unread: true,
+    href: '/app/analyst/cases/ABC-2026-1011/risks',
+  },
+  {
+    id: 'a6',
+    kind: 'person',
+    category: 'queue',
+    title: 'Заявка назначена вам',
+    body: 'ABC-2026-1042 · ООО «Кофе Плюс» · IN_REVIEW',
+    time: '25.10 · 09:40',
+    unread: false,
+    href: '/app/analyst/cases/ABC-2026-1042',
+  },
+  {
+    id: 'a7',
+    kind: 'doc',
+    category: 'documents',
+    title: 'Справка об оборотах — нужна замена',
+    body: 'ABC-2026-1042 · нечитаемая печать на стр. 2',
+    time: '24.10 · 18:22',
+    unread: false,
+    href: '/app/analyst/cases/ABC-2026-1042/documents',
+  },
+  {
+    id: 'a8',
+    kind: 'success',
+    category: 'system',
+    title: 'Автопроверки завершены',
+    body: 'ABC-2026-1042 · 8 pass · 1 warn · 0 fail',
+    time: '24.10 · 17:55',
+    unread: false,
+    href: '/app/analyst/cases/ABC-2026-1042/checks',
+  },
+]
+
 const KIND_META: Record<
   NotifKind,
   { bg: string; color: string; Icon: typeof CheckCircleRoundedIcon }
@@ -120,24 +207,34 @@ const KIND_META: Record<
   doc: { bg: '#EEF1F4', color: '#5A6B7D', Icon: DescriptionOutlinedIcon },
   time: { bg: '#FFF0E0', color: '#C45A12', Icon: AccessTimeRoundedIcon },
   person: { bg: '#EEF1F4', color: '#5A6B7D', Icon: PersonOutlineRoundedIcon },
+  queue: { bg: '#EEF1F4', color: '#0B1F35', Icon: AssignmentRoundedIcon },
 }
 
-type TabKey = 'all' | NotifCategory
+type TabKey = 'all' | EntrepreneurCategory | AnalystCategory
 
 export function NotificationsPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
-  const [items, setItems] = useState(INITIAL)
+  const analyst = isAnalystRole(user?.role)
+
+  const [items, setItems] = useState(() => (analyst ? ANALYST_INITIAL : ENTREPRENEUR_INITIAL))
   const [tab, setTab] = useState<TabKey>('all')
   const [channels, setChannels] = useState({
     push: true,
     email: true,
   })
-  const [types, setTypes] = useState({
+  const [entrepreneurTypes, setEntrepreneurTypes] = useState({
     appStatus: true,
     docRequests: true,
     payments: true,
     advice: false,
+  })
+  const [analystTypes, setAnalystTypes] = useState({
+    sla: true,
+    queue: true,
+    clientDocs: true,
+    checks: true,
+    assignments: true,
   })
 
   const unreadCount = items.filter((i) => i.unread).length
@@ -147,13 +244,21 @@ export function NotificationsPage() {
     return items.filter((i) => i.category === tab)
   }, [items, tab])
 
-  const tabs: { key: TabKey; label: string; badge?: number }[] = [
-    { key: 'all', label: 'Все', badge: unreadCount || undefined },
-    { key: 'applications', label: 'Заявки' },
-    { key: 'documents', label: 'Документы' },
-    { key: 'payments', label: 'Платежи' },
-    { key: 'system', label: 'Система' },
-  ]
+  const tabs: { key: TabKey; label: string; badge?: number }[] = analyst
+    ? [
+        { key: 'all', label: 'Все', badge: unreadCount || undefined },
+        { key: 'sla', label: 'SLA' },
+        { key: 'queue', label: 'Очередь' },
+        { key: 'documents', label: 'Документы' },
+        { key: 'system', label: 'Система' },
+      ]
+    : [
+        { key: 'all', label: 'Все', badge: unreadCount || undefined },
+        { key: 'applications', label: 'Заявки' },
+        { key: 'documents', label: 'Документы' },
+        { key: 'payments', label: 'Платежи' },
+        { key: 'system', label: 'Система' },
+      ]
 
   if (user?.role === 'admin') {
     return <Navigate to="/app/admin/notifications" replace />
@@ -191,7 +296,9 @@ export function NotificationsPage() {
             Уведомления
           </Typography>
           <Typography sx={{ color: '#7A8795', fontSize: 14, mt: 0.6 }}>
-            {unreadCount > 0 ? `${unreadCount} новых` : 'Все прочитаны'} · за последние 30 дней
+            {analyst
+              ? `${unreadCount > 0 ? `${unreadCount} новых` : 'Все прочитаны'} · очередь и SLA по вашим заявкам`
+              : `${unreadCount > 0 ? `${unreadCount} новых` : 'Все прочитаны'} · за последние 30 дней`}
           </Typography>
         </Box>
         <Button
@@ -439,7 +546,7 @@ export function NotificationsPage() {
               ))}
             </Stack>
             <Typography sx={{ fontSize: 12, color: '#9AA5B1', mt: 1.5, lineHeight: 1.4 }}>
-              Тихие часы: 22:00–08:00
+              {analyst ? 'SLA-алерты не отключаются в тихие часы' : 'Тихие часы: 22:00–08:00'}
             </Typography>
           </Box>
 
@@ -456,35 +563,66 @@ export function NotificationsPage() {
               Типы уведомлений
             </Typography>
             <Stack spacing={0.15}>
-              {(
-                [
-                  ['appStatus', 'Статус заявок'],
-                  ['docRequests', 'Запросы документов'],
-                  ['payments', 'Платежи и сроки'],
-                  ['advice', 'Советы и рекомендации'],
-                ] as const
-              ).map(([key, label]) => (
-                <FormControlLabel
-                  key={key}
-                  control={
-                    <Checkbox
-                      checked={types[key]}
-                      onChange={(_, v) => setTypes((t) => ({ ...t, [key]: v }))}
-                      size="small"
-                      sx={{
-                        color: '#C5CCD3',
-                        '&.Mui-checked': { color: '#EF3124' },
-                      }}
+              {analyst
+                ? (
+                    [
+                      ['sla', 'Просрочка и SLA'],
+                      ['queue', 'Новые в очереди'],
+                      ['assignments', 'Назначения на меня'],
+                      ['clientDocs', 'Ответы клиента / документы'],
+                      ['checks', 'Автопроверки и ML'],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <FormControlLabel
+                      key={key}
+                      control={
+                        <Checkbox
+                          checked={analystTypes[key]}
+                          onChange={(_, v) => setAnalystTypes((t) => ({ ...t, [key]: v }))}
+                          size="small"
+                          sx={{
+                            color: '#C5CCD3',
+                            '&.Mui-checked': { color: '#EF3124' },
+                          }}
+                        />
+                      }
+                      label={
+                        <Typography sx={{ fontSize: 13.5, fontWeight: 600, color: '#0B1F35' }}>
+                          {label}
+                        </Typography>
+                      }
+                      sx={{ mx: 0, ml: -0.5 }}
                     />
-                  }
-                  label={
-                    <Typography sx={{ fontSize: 13.5, fontWeight: 600, color: '#0B1F35' }}>
-                      {label}
-                    </Typography>
-                  }
-                  sx={{ mx: 0, ml: -0.5 }}
-                />
-              ))}
+                  ))
+                : (
+                    [
+                      ['appStatus', 'Статус заявок'],
+                      ['docRequests', 'Запросы документов'],
+                      ['payments', 'Платежи и сроки'],
+                      ['advice', 'Советы и рекомендации'],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <FormControlLabel
+                      key={key}
+                      control={
+                        <Checkbox
+                          checked={entrepreneurTypes[key]}
+                          onChange={(_, v) => setEntrepreneurTypes((t) => ({ ...t, [key]: v }))}
+                          size="small"
+                          sx={{
+                            color: '#C5CCD3',
+                            '&.Mui-checked': { color: '#EF3124' },
+                          }}
+                        />
+                      }
+                      label={
+                        <Typography sx={{ fontSize: 13.5, fontWeight: 600, color: '#0B1F35' }}>
+                          {label}
+                        </Typography>
+                      }
+                      sx={{ mx: 0, ml: -0.5 }}
+                    />
+                  ))}
             </Stack>
           </Box>
         </Stack>

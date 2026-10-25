@@ -108,7 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user) return
     if (user.companyId) return
-    if (user.role === 'manager' || user.role === 'risk_analyst') return
+    if (user.role === 'analyst' || user.role === 'manager' || user.role === 'risk_analyst') return
     let cancelled = false
     void (async () => {
       try {

@@ -2,7 +2,7 @@
 
 React / TypeScript / Vite / MUI клиент. Данные только с FastAPI (`/api/v1`).
 
-Эндпоинты, которые использует фронт: **[docs/ENDPOINTS.md](./docs/ENDPOINTS.md)** (в т.ч. админ · обзор и пользователи/роли).
+Эндпоинты, которые использует фронт: **[docs/ENDPOINTS.md](./docs/ENDPOINTS.md)** (в т.ч. аналитик `/app/analyst/*`, админ · обзор и пользователи/роли).
 
 ## Версии
 

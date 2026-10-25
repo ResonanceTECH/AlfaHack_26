@@ -132,6 +132,13 @@ export function DashboardPage() {
   if (user?.role === 'admin') {
     return <Navigate to="/app/admin" replace />
   }
+  if (
+    user?.role === 'analyst' ||
+    user?.role === 'manager' ||
+    user?.role === 'risk_analyst'
+  ) {
+    return <Navigate to="/app/analyst" replace />
+  }
 
   if (isLoading) {
     return (

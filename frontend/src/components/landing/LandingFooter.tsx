@@ -13,7 +13,7 @@ const COLUMNS = [
   },
   {
     title: 'Банк',
-    links: [{ label: 'Очередь', to: '/app/manager' }],
+    links: [{ label: 'Очередь', to: '/app/analyst' }],
   },
   {
     title: 'Разработчикам',
