@@ -368,7 +368,12 @@ export function AiChatPage() {
             Объясняет условия и помогает выбрать продукт · решения принимает банк
           </Typography>
         </Box>
-        <Button variant="contained" color="primary" onClick={startNewDialog} sx={{ alignSelf: 'flex-start' }}>
+        <Button
+          variant="contained"
+          color="primary"
+          onClick={() => startNewDialog()}
+          sx={{ alignSelf: 'flex-start' }}
+        >
           + Новый диалог
         </Button>
       </Stack>
