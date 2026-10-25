@@ -1,18 +1,23 @@
 import {
   Box,
   Button,
+  Divider,
   IconButton,
   InputAdornment,
   Menu,
   MenuItem,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import MoreVertRoundedIcon from '@mui/icons-material/MoreVertRounded'
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
+import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
+import LinkRoundedIcon from '@mui/icons-material/LinkRounded'
+import PinOutlinedIcon from '@mui/icons-material/PinOutlined'
 import { useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { listCompanies } from '@/api/companies'
@@ -159,11 +164,74 @@ export function TeamPage() {
 
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<TeamRole>('accountant')
-  const [inviteMsg, setInviteMsg] = useState(`Подключайтесь к кабинету «${companyName.replace(/^ООО\s*/i, '').replace(/[«»"]/g, '')}»`)
+  const [inviteMsg, setInviteMsg] = useState(
+    `Подключайтесь к кабинету «${companyName.replace(/^ООО\s*/i, '').replace(/[«»"]/g, '')}»`,
+  )
   const [inviteSent, setInviteSent] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
+  const [codeCopied, setCodeCopied] = useState(false)
+  const [codeSent, setCodeSent] = useState(false)
+
+  const inviteCode = useMemo(() => {
+    const seed = (user?.companyId || company?.id || 'demo').replace(/[^a-zA-Z0-9]/g, '').slice(-4).toUpperCase()
+    const roleLetter = inviteRole === 'owner' ? 'O' : inviteRole === 'accountant' ? 'A' : 'V'
+    return `LR-${roleLetter}${seed}-4821`
+  }, [user?.companyId, company?.id, inviteRole])
+
+  const inviteLink = useMemo(() => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173'
+    const cid = user?.companyId || company?.id || 'demo'
+    return `${origin}/select-company?invite=${encodeURIComponent(inviteCode)}&company=${encodeURIComponent(cid)}&role=${inviteRole}`
+  }, [inviteCode, inviteRole, user?.companyId, company?.id])
 
   const activeCount = members.filter((m) => m.status === 'active').length
   const invitedCount = members.filter((m) => m.status === 'invited').length
+
+  async function copyText(text: string, kind: 'link' | 'code') {
+    try {
+      await navigator.clipboard.writeText(text)
+      if (kind === 'link') {
+        setLinkCopied(true)
+        window.setTimeout(() => setLinkCopied(false), 2000)
+      } else {
+        setCodeCopied(true)
+        window.setTimeout(() => setCodeCopied(false), 2000)
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function sendCodeOnly() {
+    const email = inviteEmail.trim()
+    if (email && !email.includes('@')) return
+    setCodeSent(true)
+    window.setTimeout(() => setCodeSent(false), 2200)
+    if (email.includes('@')) {
+      const name = email.split('@')[0] ?? 'Участник'
+      setMembers((list) => {
+        if (list.some((m) => m.email.toLowerCase() === email.toLowerCase())) return list
+        return [
+          ...list,
+          {
+            id: `inv_${Date.now()}`,
+            name: name.charAt(0).toUpperCase() + name.slice(1),
+            email,
+            role: inviteRole,
+            rights:
+              inviteRole === 'owner'
+                ? 'Все разделы и управление доступом'
+                : inviteRole === 'accountant'
+                  ? 'Документы, финансы, заявки'
+                  : 'Только просмотр заявок',
+            lastLogin: '—',
+            status: 'invited',
+            statusLabel: 'Приглашён',
+          },
+        ]
+      })
+    }
+  }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -554,6 +622,134 @@ export function TeamPage() {
               onChange={(e) => setInviteMsg(e.target.value)}
               sx={fieldSx}
             />
+
+            <Box
+              sx={{
+                p: 1.5,
+                borderRadius: 2,
+                bgcolor: 'rgba(11,31,53,0.03)',
+                border: '1px solid rgba(11,31,53,0.08)',
+              }}
+            >
+              <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 1 }}>
+                <LinkRoundedIcon sx={{ fontSize: 18, color: '#EF3124' }} />
+                <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#0B1F35' }}>
+                  Ссылка для уже зарегистрированных
+                </Typography>
+              </Stack>
+              <Typography sx={{ fontSize: 12, color: '#7A8795', mb: 1.1, lineHeight: 1.4 }}>
+                Скопируйте и отправьте коллеге в мессенджер — откроет кабинет по invite.
+              </Typography>
+              <TextField
+                size="small"
+                fullWidth
+                value={inviteLink}
+                InputProps={{
+                  readOnly: true,
+                  sx: { fontSize: 12, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' },
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <Tooltip title={linkCopied ? 'Скопировано' : 'Копировать ссылку'}>
+                        <IconButton
+                          edge="end"
+                          size="small"
+                          onClick={() => void copyText(inviteLink, 'link')}
+                          aria-label="Копировать ссылку"
+                        >
+                          {linkCopied ? (
+                            <CheckRoundedIcon sx={{ fontSize: 18, color: '#1B8A5A' }} />
+                          ) : (
+                            <ContentCopyRoundedIcon sx={{ fontSize: 18 }} />
+                          )}
+                        </IconButton>
+                      </Tooltip>
+                    </InputAdornment>
+                  ),
+                }}
+                sx={fieldSx}
+              />
+              <Button
+                type="button"
+                fullWidth
+                variant="outlined"
+                color="secondary"
+                startIcon={<ContentCopyRoundedIcon />}
+                onClick={() => void copyText(inviteLink, 'link')}
+                sx={{ mt: 1.25, borderRadius: 2, fontWeight: 700, textTransform: 'none' }}
+              >
+                {linkCopied ? 'Ссылка скопирована' : 'Скопировать ссылку'}
+              </Button>
+            </Box>
+
+            <Box
+              sx={{
+                p: 1.5,
+                borderRadius: 2,
+                bgcolor: 'rgba(11,31,53,0.03)',
+                border: '1px solid rgba(11,31,53,0.08)',
+              }}
+            >
+              <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 1 }}>
+                <PinOutlinedIcon sx={{ fontSize: 18, color: '#EF3124' }} />
+                <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#0B1F35' }}>
+                  Код приглашения
+                </Typography>
+              </Stack>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Box
+                  sx={{
+                    flex: 1,
+                    px: 1.5,
+                    py: 1.1,
+                    borderRadius: 2,
+                    border: '1px dashed rgba(11,31,53,0.18)',
+                    bgcolor: '#fff',
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    fontSize: 15,
+                    fontWeight: 750,
+                    letterSpacing: '0.04em',
+                    color: '#0B1F35',
+                    textAlign: 'center',
+                  }}
+                >
+                  {inviteCode}
+                </Box>
+                <Tooltip title={codeCopied ? 'Скопировано' : 'Копировать код'}>
+                  <IconButton
+                    onClick={() => void copyText(inviteCode, 'code')}
+                    sx={{
+                      border: '1px solid rgba(11,31,53,0.12)',
+                      borderRadius: 2,
+                      bgcolor: '#fff',
+                    }}
+                    aria-label="Копировать код"
+                  >
+                    {codeCopied ? (
+                      <CheckRoundedIcon sx={{ color: '#1B8A5A' }} />
+                    ) : (
+                      <ContentCopyRoundedIcon />
+                    )}
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+              <Button
+                type="button"
+                fullWidth
+                variant="outlined"
+                color="primary"
+                onClick={sendCodeOnly}
+                sx={{ mt: 1.25, borderRadius: 2, fontWeight: 700, textTransform: 'none' }}
+              >
+                {codeSent
+                  ? 'Код отправлен'
+                  : inviteEmail.trim().includes('@')
+                    ? 'Отправить только код на e-mail'
+                    : 'Отправить только код'}
+              </Button>
+            </Box>
+
+            <Divider sx={{ borderColor: 'rgba(11,31,53,0.08)' }} />
+
             <Button
               fullWidth
               variant="contained"
@@ -571,8 +767,9 @@ export function TeamPage() {
             >
               {inviteSent ? 'Отправлено' : 'Отправить приглашение'}
             </Button>
-            <Typography sx={{ fontSize: 12, color: '#9AA5B1', textAlign: 'center' }}>
-              Приглашение действует 7 дней
+            <Typography sx={{ fontSize: 12, color: '#9AA5B1', textAlign: 'center', lineHeight: 1.4 }}>
+              Приглашение действует 7 дней. Ссылка — для пользователей, уже зарегистрированных на
+              платформе; код можно отправить отдельно.
             </Typography>
           </Stack>
         </Box>
