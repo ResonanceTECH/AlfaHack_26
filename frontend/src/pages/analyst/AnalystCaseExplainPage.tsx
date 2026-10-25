@@ -1,59 +1,76 @@
-import { Box, Stack, Typography } from '@mui/material'
+import { Alert, Box, Button, CircularProgress, Stack, Typography } from '@mui/material'
+import { useState } from 'react'
+import { useOutletContext } from 'react-router-dom'
+import { fetchApplicationExplanation, formatAiError, type AiAgentResponse } from '@/api/ai'
+import { AiAgentReply } from '@/components/ai/AiAgentReply'
+import type { AnalystCaseOutlet } from '@/components/analyst/AnalystCaseShell'
 import { tileSx } from '@/features/analyst/styles'
 
-const FACTORS = [
-  { title: 'Положительный NCF', weight: 0.28, direction: 'за' },
-  { title: 'DSCR выше порога политики', weight: 0.22, direction: 'за' },
-  { title: 'Срок бизнеса > 5 лет', weight: 0.18, direction: 'за' },
-  { title: 'Кассовые разрывы в августе', weight: 0.16, direction: 'против' },
-  { title: 'Запрошенный платёж / NCF', weight: 0.1, direction: 'за' },
-  { title: 'Неполный комплект документов', weight: 0.06, direction: 'против' },
-]
-
 export function AnalystCaseExplainPage() {
+  const { applicationId } = useOutletContext<AnalystCaseOutlet>()
+  const [data, setData] = useState<AiAgentResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function load() {
+    if (!applicationId || loading) return
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetchApplicationExplanation(applicationId)
+      setData(res)
+    } catch (e) {
+      setData(null)
+      setError(formatAiError(e, 'Не удалось загрузить разбор'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <Box>
       <Box sx={{ ...tileSx, mb: 2 }}>
-        <Typography sx={{ fontWeight: 700, fontSize: 16, color: '#0B1F35', mb: 1 }}>
-          Объяснимость решения модели
-        </Typography>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          justifyContent="space-between"
+          alignItems={{ xs: 'stretch', sm: 'center' }}
+          spacing={1.25}
+          sx={{ mb: 1 }}
+        >
+          <Typography sx={{ fontWeight: 700, fontSize: 16, color: '#0B1F35' }}>
+            Объяснимость решения
+          </Typography>
+          <Button
+            variant="contained"
+            color="primary"
+            disabled={loading || !applicationId}
+            onClick={() => void load()}
+            sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2, boxShadow: 'none' }}
+          >
+            {loading ? <CircularProgress size={18} color="inherit" /> : data ? 'Обновить' : 'Загрузить разбор'}
+          </Button>
+        </Stack>
         <Typography sx={{ fontSize: 14, color: '#5A6B7D', lineHeight: 1.55, maxWidth: 720 }}>
-          Предварительная рекомендация: <b>одобрить с условием</b> закрытия замечания по справке об
-          оборотах. Ниже — вклад ключевых факторов в рекомендацию модели.
+          Backend сам учитывает роль аналитика и возвращает подробный разбор. Роль в запросе не
+          передаём. Числа из прозы не восстанавливаем — readiness_score ≠ кредитный скор.
         </Typography>
       </Box>
 
       <Box sx={tileSx}>
-        <Stack spacing={1.5}>
-          {FACTORS.map((f) => (
-            <Box key={f.title}>
-              <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.5 }}>
-                <Typography sx={{ fontSize: 13.5, fontWeight: 600, color: '#0B1F35' }}>
-                  {f.title}
-                </Typography>
-                <Typography
-                  sx={{
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: f.direction === 'за' ? '#2E7D32' : '#EF3124',
-                  }}
-                >
-                  {f.direction} · {(f.weight * 100).toFixed(0)}%
-                </Typography>
-              </Stack>
-              <Box sx={{ height: 8, borderRadius: 99, bgcolor: 'rgba(11,31,53,0.06)' }}>
-                <Box
-                  sx={{
-                    width: `${f.weight * 100}%`,
-                    height: '100%',
-                    borderRadius: 99,
-                    bgcolor: f.direction === 'за' ? '#2E7D32' : '#EF3124',
-                  }}
-                />
-              </Box>
-            </Box>
-          ))}
-        </Stack>
+        {error && (
+          <Alert severity="error" sx={{ mb: 1.5, borderRadius: 2 }}>
+            {error}
+          </Alert>
+        )}
+        {data ? (
+          <AiAgentReply data={data} />
+        ) : (
+          !loading && (
+            <Typography sx={{ fontSize: 13.5, color: '#7A8795' }}>
+              Нажмите «Загрузить разбор», чтобы получить объяснение по этой заявке.
+            </Typography>
+          )
+        )}
       </Box>
     </Box>
   )
