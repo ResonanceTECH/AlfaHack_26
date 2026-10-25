@@ -16,14 +16,10 @@ import {
 } from '@mui/material'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
-import { Link as RouterLink } from 'react-router-dom'
+import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  listCompanies,
-  updateCompany,
-  verifyCompanyRegistry,
-} from '@/api/companies'
+import { listCompanies, updateCompany } from '@/api/companies'
 import { useAuth } from '@/contexts/AuthContext'
 import { useAppStore } from '@/hooks/useAppStore'
 import { industries, regions } from '@/data/labels'
@@ -228,6 +224,7 @@ function CompletenessRing({ value }: { value: number }) {
 
 export function CompanyPage() {
   const { user, selectCompany } = useAuth()
+  const navigate = useNavigate()
   const { company, companyId, isLoading, isError, error: storeError, refetchAll } = useAppStore()
   const qc = useQueryClient()
 
@@ -239,7 +236,6 @@ export function CompanyPage() {
 
   const [tab, setTab] = useState<TabKey>('requisites')
   const [editOpen, setEditOpen] = useState(false)
-  const [verifying, setVerifying] = useState(false)
   const [flash, setFlash] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -295,25 +291,6 @@ export function CompanyPage() {
       setFlash('Профиль компании сохранён')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка сохранения')
-    }
-  }
-
-  async function onVerify() {
-    if (!companyId) return
-    setVerifying(true)
-    setError(null)
-    try {
-      const res = await verifyCompanyRegistry(companyId)
-      await qc.invalidateQueries({ queryKey: ['company', companyId] })
-      setFlash(
-        res.found
-          ? `ИНН проверен · статус ${res.registryStatus ?? 'ACTIVE'}`
-          : 'Компания не найдена в реестре',
-      )
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ошибка проверки ИНН')
-    } finally {
-      setVerifying(false)
     }
   }
 
@@ -412,8 +389,11 @@ export function CompanyPage() {
           <Button
             variant="contained"
             color="primary"
-            disabled={verifying}
-            onClick={() => void onVerify()}
+            onClick={() =>
+              navigate(
+                `/app/company/inn-check${company.inn ? `?inn=${encodeURIComponent(company.inn)}` : ''}`,
+              )
+            }
             sx={{
               borderRadius: 2,
               fontWeight: 700,
@@ -423,7 +403,7 @@ export function CompanyPage() {
               '&:hover': { boxShadow: 'none' },
             }}
           >
-            {verifying ? 'Проверяем…' : 'Проверить ИНН'}
+            Проверить ИНН
           </Button>
         </Stack>
       </Stack>
