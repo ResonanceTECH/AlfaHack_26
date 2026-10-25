@@ -24,6 +24,7 @@ import { ApplicationDetailPage } from '@/pages/ApplicationDetailPage'
 import { ManagerPage } from '@/pages/ManagerPage'
 import { StatementsPage } from '@/pages/StatementsPage'
 import { StatementUploadPage } from '@/pages/StatementUploadPage'
+import { StatementAnalysisPage } from '@/pages/StatementAnalysisPage'
 import { ForecastPage } from '@/pages/ForecastPage'
 import { ScenarioLabPage } from '@/pages/ScenarioLabPage'
 import { ReadinessPage } from '@/pages/ReadinessPage'
@@ -128,6 +129,7 @@ export function AppRouter() {
         />
         <Route path="statements" element={<StatementsPage />} />
         <Route path="statements/upload" element={<StatementUploadPage />} />
+        <Route path="statements/analysis" element={<StatementAnalysisPage />} />
         <Route path="forecast" element={<ForecastPage />} />
         <Route path="scenarios" element={<ScenarioLabPage />} />
         <Route path="readiness" element={<ReadinessPage />} />
