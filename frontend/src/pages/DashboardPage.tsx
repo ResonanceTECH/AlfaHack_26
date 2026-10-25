@@ -386,9 +386,7 @@ export function DashboardPage() {
             Подберите кредит под цель бизнеса
           </Typography>
           <Typography sx={{ fontSize: 13, color: 'rgba(255,255,255,0.82)', lineHeight: 1.4, mb: 2 }}>
-            {goal
-              ? `${goalLabels[goal.goalType]} · нужно ${formatMoney(goal.requiredAmount)}`
-              : 'Сравните условия и оформите заявку за несколько шагов'}
+            Умный помощник подскажет
           </Typography>
           <Stack direction="row" spacing={1} sx={{ mt: 'auto' }} flexWrap="wrap" useFlexGap>
             <Button
