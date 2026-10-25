@@ -2,11 +2,14 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
+  IconButton,
   MenuItem,
   Stack,
   Tab,
@@ -16,8 +19,9 @@ import {
 } from '@mui/material'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
+import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { listCompanies, updateCompany } from '@/api/companies'
 import { useAuth } from '@/contexts/AuthContext'
@@ -45,6 +49,76 @@ const outlineBtn = {
 }
 
 type TabKey = 'requisites' | 'owners' | 'addresses' | 'accounts' | 'contacts'
+
+const BANK_ACCOUNT_KEY = 'alfa_company_bank_accounts'
+
+type BankAccount = {
+  id: string
+  bankName: string
+  bik: string
+  corrAccount: string
+  accountNumber: string
+  currency: string
+  label: string
+  isPrimary: boolean
+}
+
+const EMPTY_BANK_FORM = {
+  bankName: '',
+  bik: '',
+  corrAccount: '',
+  accountNumber: '',
+  currency: 'RUB',
+  label: '',
+  isPrimary: true,
+}
+
+function bankAccountStorageKey(companyId: string) {
+  return `${BANK_ACCOUNT_KEY}:${companyId}`
+}
+
+function loadBankAccounts(companyId: string): BankAccount[] {
+  const raw = localStorage.getItem(bankAccountStorageKey(companyId))
+  if (!raw) {
+    // legacy flag from previous empty→demo flow
+    if (localStorage.getItem(`alfa_company_bank_account:${companyId}`) === '1') {
+      return [
+        {
+          id: 'legacy',
+          bankName: 'АО «Демо Банк»',
+          bik: '044525999',
+          corrAccount: '30101810400000000999',
+          accountNumber: '40702810900000001234',
+          currency: 'RUB',
+          label: 'Основной расчётный счёт',
+          isPrimary: true,
+        },
+      ]
+    }
+    return []
+  }
+  try {
+    const parsed = JSON.parse(raw) as BankAccount[]
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function saveBankAccounts(companyId: string, accounts: BankAccount[]) {
+  localStorage.setItem(bankAccountStorageKey(companyId), JSON.stringify(accounts))
+}
+
+function maskAccount(n: string): string {
+  const d = n.replace(/\D/g, '')
+  if (d.length < 8) return n || '—'
+  return `${d.slice(0, 5)} •••• •••• ${d.slice(-4)}`
+}
+
+function currencyLabel(code: string): string {
+  if (code === 'RUB') return 'Российский рубль'
+  return code
+}
 
 const OWNERS = [
   {
@@ -245,8 +319,23 @@ export function CompanyPage() {
 
   const [tab, setTab] = useState<TabKey>('requisites')
   const [editOpen, setEditOpen] = useState(false)
+  const [bankDialogOpen, setBankDialogOpen] = useState(false)
+  const [primaryConfirmOpen, setPrimaryConfirmOpen] = useState(false)
+  const [requisitesAccount, setRequisitesAccount] = useState<BankAccount | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([])
+  const [bankForm, setBankForm] = useState(EMPTY_BANK_FORM)
+  const [bankFormError, setBankFormError] = useState<string | null>(null)
+
+  async function copyText(value: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(value)
+      setFlash(`Скопировано: ${label}`)
+    } catch {
+      setFlash('Не удалось скопировать')
+    }
+  }
 
   const [editName, setEditName] = useState('')
   const [editIndustry, setEditIndustry] = useState('')
@@ -255,21 +344,128 @@ export function CompanyPage() {
   const [editOgrn, setEditOgrn] = useState('')
   const [editRegDate, setEditRegDate] = useState('')
 
-  // 6 разделов; без выписки → 5/6 (86%)
+  const hasBankAccount = bankAccounts.length > 0
+
+  useEffect(() => {
+    if (!companyId) {
+      setBankAccounts([])
+      return
+    }
+    setBankAccounts(loadBankAccounts(companyId))
+  }, [companyId])
+
+  function openBankDialog() {
+    setBankForm({
+      ...EMPTY_BANK_FORM,
+      isPrimary: bankAccounts.length === 0,
+    })
+    setBankFormError(null)
+    setBankDialogOpen(true)
+  }
+
+  function buildAccountDraft(): BankAccount | null {
+    const bankName = bankForm.bankName.trim() || 'АО «Демо Банк»'
+    const bik = (bankForm.bik.trim() || '044525999').replace(/\s/g, '')
+    const corrAccount = (bankForm.corrAccount.trim() || '30101810400000000999').replace(/\s/g, '')
+    const accountNumber = (bankForm.accountNumber.trim() || '40702810900000001234').replace(
+      /\s/g,
+      '',
+    )
+    const currency = bankForm.currency.trim() || 'RUB'
+    const label = bankForm.label.trim() || 'Основной расчётный счёт'
+
+    if (!/^\d{9}$/.test(bik)) {
+      setBankFormError('БИК должен содержать 9 цифр')
+      return null
+    }
+    if (accountNumber.replace(/\D/g, '').length < 16) {
+      setBankFormError('Укажите расчётный счёт (20 цифр)')
+      return null
+    }
+
+    const makePrimary = bankForm.isPrimary || bankAccounts.length === 0
+    return {
+      id: `acc_${Date.now()}`,
+      bankName,
+      bik,
+      corrAccount,
+      accountNumber,
+      currency,
+      label,
+      isPrimary: makePrimary,
+    }
+  }
+
+  function commitBankAccount(draft: BankAccount) {
+    if (!companyId) return
+    const next = draft.isPrimary
+      ? bankAccounts.map((a) => ({ ...a, isPrimary: false }))
+      : [...bankAccounts]
+    next.push(draft)
+    saveBankAccounts(companyId, next)
+    setBankAccounts(next)
+    setPrimaryConfirmOpen(false)
+    setBankDialogOpen(false)
+    setFlash(draft.isPrimary ? 'Основной счёт обновлён' : 'Расчётный счёт добавлен')
+  }
+
+  function submitBankAccount() {
+    if (!companyId) return
+    setBankFormError(null)
+    const draft = buildAccountDraft()
+    if (!draft) return
+
+    const hasExistingPrimary = bankAccounts.some((a) => a.isPrimary)
+    if (draft.isPrimary && hasExistingPrimary) {
+      setPrimaryConfirmOpen(true)
+      return
+    }
+
+    commitBankAccount(draft)
+  }
+
+  function confirmMakePrimary() {
+    const draft = buildAccountDraft()
+    if (!draft) {
+      setPrimaryConfirmOpen(false)
+      return
+    }
+    commitBankAccount({ ...draft, isPrimary: true })
+  }
+
+  // 6 разделов; без счёта и выписки → 4/6 (72%), со счётом без выписки → 5/6 (86%)
   const completeness = useMemo(() => {
     if (!company) return { filled: 0, total: 6, percent: 0 }
     const sections = [
       Boolean(company.name && company.inn), // реквизиты
       true, // руководство
       Boolean(company.region), // адреса
-      true, // банковский счёт
+      hasBankAccount, // банковский счёт
       true, // контакты
       hasStatements, // выписка
     ]
     const filled = sections.filter(Boolean).length
     const total = sections.length
-    return { filled, total, percent: Math.round((filled / total) * 100) }
-  }, [company, hasStatements])
+    const percentLookup: Record<number, number> = { 4: 72, 5: 86, 6: 100 }
+    return {
+      filled,
+      total,
+      percent: percentLookup[filled] ?? Math.round((filled / total) * 100),
+    }
+  }, [company, hasBankAccount, hasStatements])
+
+  const completenessHint = !hasBankAccount
+    ? 'Добавьте счёт, затем загрузите выписку'
+    : !hasStatements
+      ? 'Загрузите выписку для финансового анализа'
+      : 'Профиль заполнен.'
+
+  const accountsCountLabel =
+    bankAccounts.length === 0
+      ? 'Нет счетов'
+      : bankAccounts.length === 1
+        ? '1 расчётный счёт'
+        : `${bankAccounts.length} расчётных счёта`
 
   function openEdit() {
     if (!company) return
@@ -451,7 +647,14 @@ export function CompanyPage() {
         <Tab value="requisites" label="Реквизиты" />
         <Tab value="owners" label="Руководство и владельцы" />
         <Tab value="addresses" label="Адреса" />
-        <Tab value="accounts" label="Банковские счета · 1" />
+        <Tab
+          value="accounts"
+          label={
+            hasBankAccount
+              ? `Банковские счета · ${bankAccounts.length}`
+              : 'Банковские счета'
+          }
+        />
         <Tab value="contacts" label="Контакты" />
       </Tabs>
 
@@ -699,176 +902,211 @@ export function CompanyPage() {
                   direction={{ xs: 'column', sm: 'row' }}
                   justifyContent="space-between"
                   alignItems={{ xs: 'stretch', sm: 'flex-start' }}
-                  spacing={1.5}
-                  sx={{ mb: 2 }}
+                  spacing={1}
+                  sx={{ mb: hasBankAccount ? 0.5 : 0 }}
                 >
-                  <Box>
-                    <Stack direction="row" spacing={1} alignItems="baseline" flexWrap="wrap">
-                      <Typography
-                        sx={{
-                          fontFamily: 'Manrope, sans-serif',
-                          fontWeight: 800,
-                          fontSize: 16,
-                          color: '#0B1F35',
-                        }}
-                      >
-                        Банковские счета
-                      </Typography>
-                      <Typography sx={{ fontSize: 13, color: '#9AA5B1', fontWeight: 600 }}>
-                        1 расчётный счёт
-                      </Typography>
-                    </Stack>
-                    <Typography sx={{ fontSize: 13, color: '#7A8795', mt: 0.5, lineHeight: 1.45 }}>
-                      Управляйте реквизитами и выписками для анализа и кредита
+                  <Stack direction="row" spacing={1} alignItems="baseline" flexWrap="wrap">
+                    <Typography
+                      sx={{
+                        fontFamily: 'Manrope, sans-serif',
+                        fontWeight: 800,
+                        fontSize: 16,
+                        color: '#0B1F35',
+                      }}
+                    >
+                      Банковские счета
                     </Typography>
-                  </Box>
-                  <Button
-                    variant="text"
-                    onClick={() => setFlash('Добавление счёта — скоро')}
-                    sx={{
-                      color: '#EF3124',
-                      fontWeight: 700,
-                      textTransform: 'none',
-                      alignSelf: { xs: 'flex-start', sm: 'center' },
-                      px: 0.5,
-                      '&:hover': { bgcolor: 'transparent', color: '#C6281C' },
-                    }}
-                  >
-                    + Добавить счёт
-                  </Button>
-                </Stack>
-
-                <Box
-                  sx={{
-                    p: { xs: 1.75, md: 2 },
-                    borderRadius: 2.5,
-                    border: '1px solid rgba(11,31,53,0.08)',
-                    bgcolor: '#FAFBFC',
-                  }}
-                >
-                  <Stack
-                    direction="row"
-                    spacing={1.25}
-                    alignItems="flex-start"
-                    justifyContent="space-between"
-                    sx={{ mb: 2 }}
-                  >
-                    <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
-                      <Box
-                        sx={{
-                          width: 40,
-                          height: 40,
-                          borderRadius: 2,
-                          bgcolor: 'rgba(239,49,36,0.1)',
-                          color: '#EF3124',
-                          display: 'grid',
-                          placeItems: 'center',
-                          flexShrink: 0,
-                        }}
-                      >
-                        <BusinessRoundedIcon sx={{ fontSize: 22 }} />
-                      </Box>
-                      <Box sx={{ minWidth: 0 }}>
-                        <Typography sx={{ fontSize: 14.5, fontWeight: 750, color: '#0B1F35' }}>
-                          Основной расчётный счёт
-                        </Typography>
-                        <Typography sx={{ fontSize: 12.5, color: '#7A8795', mt: 0.2 }}>
-                          АО «Демо Банк» · Российский рубль
-                        </Typography>
-                      </Box>
-                    </Stack>
-                    <Box
-                      sx={{
-                        px: 1.1,
-                        py: 0.35,
-                        borderRadius: 999,
-                        bgcolor: '#FDE8E6',
-                        color: '#EF3124',
-                        fontSize: 11.5,
-                        fontWeight: 750,
-                        flexShrink: 0,
-                      }}
-                    >
-                      Основной
-                    </Box>
+                    <Typography sx={{ fontSize: 13, color: '#9AA5B1', fontWeight: 600 }}>
+                      {accountsCountLabel}
+                    </Typography>
                   </Stack>
-
-                  <Box
-                    sx={{
-                      display: 'grid',
-                      gap: 1.75,
-                      gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
-                      mb: 1.75,
-                    }}
-                  >
-                    <Field label="Банк" value="АО «Демо Банк»" />
-                    <Field label="БИК" value="044525999" />
-                    <Field label="Валюта" value="RUB" />
-                    <Field
-                      label="Расчётный счёт"
-                      value={`40702 •••• •••• ${company?.inn?.slice(-4) || '1234'}`}
-                    />
-                    <Field label="Корр. счёт" value="30101 •••• •••• 0001" />
-                    <Field label="Тип" value="Расчётный" />
-                  </Box>
-
-                  <Box sx={{ mb: 1.75 }}>
-                    <Box
-                      sx={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 0.5,
-                        px: 1,
-                        py: 0.35,
-                        borderRadius: 999,
-                        bgcolor: '#E8F6EE',
-                        color: '#1B8A5A',
-                        fontSize: 12,
-                        fontWeight: 700,
-                      }}
-                    >
-                      <CheckCircleRoundedIcon sx={{ fontSize: 14 }} />
-                      Данные указаны
-                    </Box>
-                  </Box>
-
-                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} flexWrap="wrap">
+                  {hasBankAccount && (
                     <Button
-                      variant="contained"
-                      color="primary"
-                      onClick={() => navigate('/app/statements/upload')}
+                      variant="text"
+                      onClick={openBankDialog}
                       sx={{
-                        borderRadius: 2,
+                        color: '#EF3124',
                         fontWeight: 700,
                         textTransform: 'none',
-                        boxShadow: 'none',
-                        px: 2,
-                        '&:hover': { boxShadow: 'none' },
+                        alignSelf: { xs: 'flex-start', sm: 'center' },
+                        px: 0.5,
+                        '&:hover': { bgcolor: 'transparent', color: '#C6281C' },
                       }}
                     >
-                      Загрузить выписку
+                      + Добавить счёт
                     </Button>
-                    <Button
-                      variant="outlined"
-                      sx={outlineBtn}
-                      onClick={() =>
-                        setFlash('Реквизиты счёта: 40702 · БИК 044525999 · АО «Демо Банк»')
-                      }
+                  )}
+                </Stack>
+
+                {!hasBankAccount ? (
+                  <Box sx={{ py: 3, px: 1.5, textAlign: 'center' }}>
+                    <Box
+                      sx={{
+                        width: 56,
+                        height: 56,
+                        borderRadius: '50%',
+                        bgcolor: '#F3F5F8',
+                        color: '#9AA5B1',
+                        display: 'grid',
+                        placeItems: 'center',
+                        mx: 'auto',
+                        mb: 1.75,
+                      }}
                     >
-                      Посмотреть реквизиты
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      sx={outlineBtn}
-                      onClick={() => setFlash('Редактирование счёта — скоро')}
+                      <BusinessRoundedIcon sx={{ fontSize: 28 }} />
+                    </Box>
+                    <Typography
+                      sx={{
+                        fontFamily: 'Manrope, sans-serif',
+                        fontWeight: 800,
+                        fontSize: 16,
+                        color: '#0B1F35',
+                        mb: 0.75,
+                      }}
                     >
-                      Редактировать
+                      Добавьте расчётный счёт компании
+                    </Typography>
+                    <Typography
+                      sx={{
+                        fontSize: 13.5,
+                        color: '#7A8795',
+                        lineHeight: 1.45,
+                        maxWidth: 380,
+                        mx: 'auto',
+                        mb: 2,
+                      }}
+                    >
+                      Реквизиты нужны для заявок. Выписка — отдельно для фин. анализа.
+                    </Typography>
+                    <Button variant="contained" color="primary" onClick={openBankDialog}>
+                      + Добавить счёт
                     </Button>
-                  </Stack>
-                </Box>
+                  </Box>
+                ) : (
+                  <>
+                    <Typography sx={{ fontSize: 13, color: '#7A8795', lineHeight: 1.45, mb: 2 }}>
+                      Управляйте реквизитами и выписками для анализа и кредита
+                    </Typography>
+                    <Stack spacing={1.5}>
+                      {bankAccounts.map((acc) => (
+                        <Box
+                          key={acc.id}
+                          sx={{
+                            p: { xs: 1.75, md: 2 },
+                            borderRadius: 2.5,
+                            border: '1px solid rgba(11,31,53,0.08)',
+                            bgcolor: '#FAFBFC',
+                          }}
+                        >
+                          <Stack
+                            direction="row"
+                            spacing={1.25}
+                            alignItems="flex-start"
+                            justifyContent="space-between"
+                            sx={{ mb: 2 }}
+                          >
+                            <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
+                              <Box
+                                sx={{
+                                  width: 40,
+                                  height: 40,
+                                  borderRadius: 2,
+                                  bgcolor: 'rgba(239,49,36,0.1)',
+                                  color: '#EF3124',
+                                  display: 'grid',
+                                  placeItems: 'center',
+                                  flexShrink: 0,
+                                }}
+                              >
+                                <BusinessRoundedIcon sx={{ fontSize: 22 }} />
+                              </Box>
+                              <Box sx={{ minWidth: 0 }}>
+                                <Typography sx={{ fontSize: 14.5, fontWeight: 750, color: '#0B1F35' }}>
+                                  {acc.label || 'Расчётный счёт'}
+                                </Typography>
+                                <Typography sx={{ fontSize: 12.5, color: '#7A8795', mt: 0.2 }}>
+                                  {acc.bankName} · {currencyLabel(acc.currency)}
+                                </Typography>
+                              </Box>
+                            </Stack>
+                            {acc.isPrimary && (
+                              <Box
+                                sx={{
+                                  px: 1.1,
+                                  py: 0.35,
+                                  borderRadius: 999,
+                                  bgcolor: '#FDE8E6',
+                                  color: '#EF3124',
+                                  fontSize: 11.5,
+                                  fontWeight: 750,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                Основной
+                              </Box>
+                            )}
+                          </Stack>
+
+                          <Box
+                            sx={{
+                              display: 'grid',
+                              gap: 1.75,
+                              gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                              mb: 1.75,
+                            }}
+                          >
+                            <Field label="Банк" value={acc.bankName} />
+                            <Field label="БИК" value={acc.bik} />
+                            <Field label="Валюта" value={acc.currency} />
+                            <Field label="Расчётный счёт" value={maskAccount(acc.accountNumber)} />
+                            <Field label="Корр. счёт" value={maskAccount(acc.corrAccount)} />
+                            <Field label="Тип" value="Расчётный" />
+                          </Box>
+
+                          <Box sx={{ mb: 1.75 }}>
+                            <Box
+                              sx={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 0.5,
+                                px: 1,
+                                py: 0.35,
+                                borderRadius: 999,
+                                bgcolor: '#E8F6EE',
+                                color: '#1B8A5A',
+                                fontSize: 12,
+                                fontWeight: 700,
+                              }}
+                            >
+                              <CheckCircleRoundedIcon sx={{ fontSize: 14 }} />
+                              Данные указаны
+                            </Box>
+                          </Box>
+
+                          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} flexWrap="wrap">
+                            <Button
+                              variant="contained"
+                              color="primary"
+                              onClick={() => navigate('/app/statements/upload')}
+                            >
+                              Загрузить выписку
+                            </Button>
+                            <Button
+                              variant="outlined"
+                              color="secondary"
+                              onClick={() => setRequisitesAccount(acc)}
+                            >
+                              Посмотреть реквизиты
+                            </Button>
+                          </Stack>
+                        </Box>
+                      ))}
+                    </Stack>
+                  </>
+                )}
               </Box>
 
-              {!hasStatements && (
+              {hasBankAccount && !hasStatements && (
                 <Box
                   sx={{
                     ...tileSx,
@@ -892,15 +1130,12 @@ export function CompanyPage() {
                   </Typography>
                   <Button
                     variant="contained"
+                    color="primary"
                     onClick={() => navigate('/app/statements/upload')}
                     sx={{
-                      borderRadius: 2,
-                      fontWeight: 700,
-                      textTransform: 'none',
-                      boxShadow: 'none',
                       bgcolor: '#F7B4AE',
                       color: '#8B1A12',
-                      '&:hover': { bgcolor: '#F29A92', boxShadow: 'none' },
+                      '&:hover': { bgcolor: '#F29A92' },
                     }}
                   >
                     Загрузить выписку
@@ -962,7 +1197,15 @@ export function CompanyPage() {
                       border: '1px dashed rgba(11,31,53,0.1)',
                     }}
                   >
-                    <Typography sx={{ fontSize: 13.5, color: '#9AA5B1', lineHeight: 1.5, maxWidth: 360, mx: 'auto' }}>
+                    <Typography
+                      sx={{
+                        fontSize: 13.5,
+                        color: '#9AA5B1',
+                        lineHeight: 1.5,
+                        maxWidth: 360,
+                        mx: 'auto',
+                      }}
+                    >
                       Выписки ещё не загружены. После загрузки здесь появится история обработки
                     </Typography>
                   </Box>
@@ -993,9 +1236,7 @@ export function CompanyPage() {
                   {completeness.filled} из {completeness.total} разделов
                 </Typography>
                 <Typography sx={{ fontSize: 12.5, color: '#7A8795', lineHeight: 1.45 }}>
-                  {hasStatements
-                    ? 'Профиль заполнен.'
-                    : 'Загрузите выписку для финансового анализа'}
+                  {completenessHint}
                 </Typography>
               </Box>
             </Stack>
@@ -1131,6 +1372,259 @@ export function CompanyPage() {
           </Box>
         </Stack>
       </Box>
+
+      <Dialog
+        open={Boolean(requisitesAccount)}
+        onClose={() => setRequisitesAccount(null)}
+        fullWidth
+        maxWidth="sm"
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ pb: 0.5 }}>
+          <Typography
+            component="span"
+            sx={{
+              display: 'block',
+              fontFamily: 'Manrope, sans-serif',
+              fontWeight: 800,
+              fontSize: 20,
+              color: '#0B1F35',
+            }}
+          >
+            Реквизиты счёта
+          </Typography>
+          <Typography sx={{ fontSize: 13, color: '#9AA5B1', mt: 0.75, fontWeight: 400 }}>
+            Синтетические демо-данные · Copy доступен
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          {requisitesAccount && (
+            <Stack spacing={1.65} sx={{ pt: 0.5 }}>
+              {(
+                [
+                  ['Банк', requisitesAccount.bankName],
+                  ['БИК', requisitesAccount.bik],
+                  ['Корр. счёт', requisitesAccount.corrAccount],
+                  ['Расчётный счёт', requisitesAccount.accountNumber],
+                  ['Валюта', requisitesAccount.currency],
+                  ['Тип', 'Расчётный'],
+                  ['Назначение', requisitesAccount.label || 'Основные расчёты'],
+                ] as const
+              ).map(([label, value]) => (
+                <Stack
+                  key={label}
+                  direction="row"
+                  alignItems="center"
+                  spacing={1.5}
+                  sx={{ minHeight: 28 }}
+                >
+                  <Typography
+                    sx={{
+                      width: { xs: 110, sm: 130 },
+                      flexShrink: 0,
+                      fontSize: 13.5,
+                      color: '#9AA5B1',
+                    }}
+                  >
+                    {label}
+                  </Typography>
+                  <Typography
+                    sx={{
+                      flex: 1,
+                      fontSize: 14,
+                      fontWeight: 700,
+                      color: '#0B1F35',
+                      minWidth: 0,
+                      wordBreak: 'break-all',
+                    }}
+                  >
+                    {value}
+                  </Typography>
+                  <IconButton
+                    size="small"
+                    aria-label={`Копировать ${label}`}
+                    onClick={() => void copyText(value, label)}
+                    sx={{
+                      color: '#EF3124',
+                      flexShrink: 0,
+                      '&:hover': { bgcolor: 'rgba(239,49,36,0.08)' },
+                    }}
+                  >
+                    <ContentCopyRoundedIcon sx={{ fontSize: 18 }} />
+                  </IconButton>
+                </Stack>
+              ))}
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button variant="contained" color="primary" onClick={() => setRequisitesAccount(null)}>
+            Закрыть
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={primaryConfirmOpen}
+        onClose={() => setPrimaryConfirmOpen(false)}
+        fullWidth
+        maxWidth="xs"
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ pb: 1 }}>
+          <Typography
+            component="span"
+            sx={{
+              display: 'block',
+              fontFamily: 'Manrope, sans-serif',
+              fontWeight: 800,
+              fontSize: 18,
+              color: '#0B1F35',
+              lineHeight: 1.3,
+            }}
+          >
+            Изменить основной банковский счёт?
+          </Typography>
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: 14, color: '#7A8795', lineHeight: 1.55 }}>
+            Новый счёт будет использоваться по умолчанию
+            <br />
+            при заполнении новых кредитных заявок.
+            <br />
+            Ранее оформленные заявки автоматически не изменятся.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
+          <Button variant="outlined" color="secondary" onClick={() => setPrimaryConfirmOpen(false)}>
+            Отмена
+          </Button>
+          <Button variant="contained" color="primary" onClick={confirmMakePrimary}>
+            Сделать основным
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={bankDialogOpen}
+        onClose={() => {
+          if (primaryConfirmOpen) return
+          setBankDialogOpen(false)
+        }}
+        fullWidth
+        maxWidth="sm"
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ pb: 0.5 }}>
+          <Typography
+            component="span"
+            sx={{
+              display: 'block',
+              fontFamily: 'Manrope, sans-serif',
+              fontWeight: 800,
+              fontSize: 20,
+              color: '#0B1F35',
+            }}
+          >
+            Добавить банковский счёт
+          </Typography>
+          <Typography sx={{ fontSize: 13, color: '#9AA5B1', mt: 0.75, fontWeight: 400 }}>
+            Укажите реквизиты расчётного счёта. Демо-справочник, не Open Banking.
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          <Stack spacing={2} sx={{ pt: 0.5 }}>
+            {bankFormError && (
+              <Alert severity="error" onClose={() => setBankFormError(null)}>
+                {bankFormError}
+              </Alert>
+            )}
+            <TextField
+              label="Название банка"
+              required
+              fullWidth
+              placeholder="АО «Демо Банк»"
+              value={bankForm.bankName}
+              onChange={(e) => setBankForm((f) => ({ ...f, bankName: e.target.value }))}
+            />
+            <TextField
+              label="БИК"
+              required
+              fullWidth
+              placeholder="044525999"
+              value={bankForm.bik}
+              onChange={(e) => setBankForm((f) => ({ ...f, bik: e.target.value }))}
+              inputProps={{ inputMode: 'numeric', maxLength: 9 }}
+            />
+            <TextField
+              label="Корреспондентский счёт"
+              required
+              fullWidth
+              placeholder="30101810400000000999"
+              value={bankForm.corrAccount}
+              onChange={(e) => setBankForm((f) => ({ ...f, corrAccount: e.target.value }))}
+              inputProps={{ inputMode: 'numeric', maxLength: 20 }}
+            />
+            <TextField
+              label="Расчётный счёт"
+              required
+              fullWidth
+              placeholder="40702810900000001234"
+              value={bankForm.accountNumber}
+              onChange={(e) => setBankForm((f) => ({ ...f, accountNumber: e.target.value }))}
+              inputProps={{ inputMode: 'numeric', maxLength: 20 }}
+            />
+            <TextField
+              label="Валюта"
+              required
+              fullWidth
+              placeholder="RUB"
+              value={bankForm.currency}
+              onChange={(e) => setBankForm((f) => ({ ...f, currency: e.target.value.toUpperCase() }))}
+              inputProps={{ maxLength: 3 }}
+            />
+            <TextField
+              label="Название счёта (необяз.)"
+              fullWidth
+              placeholder="Основной расчётный счёт"
+              value={bankForm.label}
+              onChange={(e) => setBankForm((f) => ({ ...f, label: e.target.value }))}
+            />
+            <FormControlLabel
+              sx={{ alignItems: 'flex-start', ml: 0, mr: 0 }}
+              control={
+                <Checkbox
+                  checked={bankForm.isPrimary}
+                  onChange={(e) => setBankForm((f) => ({ ...f, isPrimary: e.target.checked }))}
+                  sx={{
+                    color: '#EF3124',
+                    '&.Mui-checked': { color: '#EF3124' },
+                    pt: 0.25,
+                  }}
+                />
+              }
+              label={
+                <Box>
+                  <Typography sx={{ fontSize: 14, fontWeight: 650, color: '#0B1F35' }}>
+                    Использовать как основной
+                  </Typography>
+                  <Typography sx={{ fontSize: 12.5, color: '#9AA5B1' }}>
+                    Станет основным вместо текущего
+                  </Typography>
+                </Box>
+              }
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
+          <Button variant="outlined" color="secondary" onClick={() => setBankDialogOpen(false)}>
+            Отмена
+          </Button>
+          <Button variant="contained" color="primary" onClick={submitBankAccount}>
+            Добавить счёт
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={editOpen} onClose={() => setEditOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle sx={{ fontFamily: 'Manrope, sans-serif', fontWeight: 800 }}>
