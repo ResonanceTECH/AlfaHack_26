@@ -15,15 +15,25 @@ function persistSession(session: AuthSession): AuthSession {
   return session
 }
 
+/** Backend: ENTREPRENEUR | ANALYST | ADMIN (+ legacy manager / risk_analyst / accountant). */
+function normalizeRole(raw: unknown): User['role'] {
+  const r = String(raw ?? 'entrepreneur')
+    .trim()
+    .toLowerCase()
+  if (r === 'analyst' || r === 'manager' || r === 'risk_analyst') return r as User['role']
+  if (r === 'admin') return 'admin'
+  if (r === 'accountant') return 'accountant'
+  return 'entrepreneur'
+}
+
 function mapUser(raw: Record<string, unknown>): User {
-  const roleRaw = String(raw.role ?? 'entrepreneur').toLowerCase()
   const statusRaw = String(raw.status ?? 'active').toLowerCase()
   return {
     id: String(raw.id),
     email: (raw.email as string | null | undefined) ?? undefined,
     phone: (raw.phone as string | null | undefined) ?? undefined,
     fullName: String(raw.fullName ?? raw.full_name ?? ''),
-    role: (roleRaw as User['role']) || 'entrepreneur',
+    role: normalizeRole(raw.role),
     companyId: (raw.companyId ?? raw.company_id) as string | undefined,
     emailVerified: Boolean(raw.emailVerified ?? raw.email_verified),
     phoneVerified: Boolean(raw.phoneVerified ?? raw.phone_verified),
