@@ -2,9 +2,9 @@
 
 Эндпоинты API, которые дергает фронт. Базовый префикс: `/api/v1` (прокси Vite → backend).
 
-Экраны: **логин**, **забыли пароль**, **выбор / добавление компании**, **главная**, **профиль компании**, **финансовый профиль**, **календарь**, **профиль пользователя**, **команда**, **помощь**, **AI-консультант**, **админ · обзор**, **админ · аналитика конвейера**, **админ · каталог продуктов**, **админ · кредитная политика**, **админ · пользователи и роли**, **админ · аудит изменений**, **админ · уведомления**.
+Экраны: **логин**, **забыли пароль**, **выбор / добавление компании**, **главная**, **профиль компании**, **финансовый профиль**, **календарь**, **профиль пользователя**, **команда**, **помощь**, **AI-консультант**, **админ** (обзор / аналитика / продукты / политика / пользователи / аудит / уведомления).
 
-Данные только с бэка — без mock UI и без `?empty=1` (на главной заявки ещё подмешиваются из локального кэша после демо-отправки; админ-экраны пока на синтетике — см. секции ниже).
+Клиентские экраны — с бэка (на главной заявки ещё подмешиваются из локального кэша после демо-отправки). Админ-каталог ниже = реальный `backend/app/api/v1/admin.py` (45 маршрутов). UI-экраны overview/analytics/notifications пока на локальной синтетике — бэкенд-эндпоинтов под них нет.
 
 ## Логин — `/login`
 
@@ -25,7 +25,7 @@
 
 После успеха:
 - `admin` → `/app/admin`
-- `manager` / `risk_analyst` → `/app/manager`
+- `analyst` → `/app/manager` (если есть)
 - предприниматель с `companyId` → `/app`
 - иначе → `/select-company`
 
@@ -555,578 +555,250 @@ HTTP к бэку нет — FAQ, категории, документы и ко�
 
 ---
 
-## Админ · обзор системы — `/app/admin`
+## Админ — каталог API (`/api/v1/admin/*`)
 
-Код: `AdminOverviewPage.tsx` · layout: `AppLayout` (`adminGroups`) · gate: `Protected roles={['admin']}`.
+Источник правды: `backend/app/api/v1/admin.py` + схемы `backend/app/schemas/admin.py`.  
+Все маршруты требуют роль `ADMIN` (+ permission из таблицы ниже). Фронт: gate `Protected roles={['admin']}`, layout `AppLayout` (`adminGroups`).
 
-Сейчас HTTP к бэку **нет** — KPI, недельный барчарт, воронка, алерты и лента изменений — синтетика в странице. Ниже контракт, под который вешать `api/admin.ts`.
+| Permission | Маршруты |
+|------------|----------|
+| (только ADMIN) | `GET /admin/roles`, `GET /admin/permissions` |
+| `USERS_MANAGE` | users, companies, members |
+| `CATALOG_MANAGE` | credit-products |
+| `POLICY_EDIT` | policies (кроме publish) |
+| `POLICY_PUBLISH` | `POST .../policies/{id}/publish` |
+| `MODELS_MANAGE` | models, config/runtime |
+| `DEMO_RESET` | demo/* |
+| `AUDIT_READ` | audit/events |
 
-| Method | Path | Блок UI |
-|--------|------|---------|
-| `GET` | `/admin/overview` | KPI + недельки + воронка + алерты + изменения |
-| `POST` | `/admin/reports/export` | «Экспорт отчёта» |
-| `POST` | `/admin/incidents` | «Сообщить об инциденте» |
+### UI ↔ API
 
-Роль: только `ADMIN`. После логина редирект сюда (`LoginPage.goAfterAuth`).
-
-### `GET /admin/overview`
-
-Query (опц.): `periodDays=30`.
-
-```json
-{
-  "environment": "demo",
-  "generatedAt": "2026-10-25T10:11:00Z",
-  "kpis": {
-    "applications30d": 1284,
-    "applicationsDeltaPct": 8.2,
-    "approvalRatePct": 62,
-    "partialRatePct": 14,
-    "resolutionDays": 1.4,
-    "resolutionTargetDays": 1.5,
-    "availabilityPct": 99.94,
-    "openAlerts": 3,
-    "criticalAlerts": 1
-  },
-  "applicationsByWeek": [
-    { "week": 36, "count": 268, "current": false },
-    { "week": 43, "count": 118, "current": true }
-  ],
-  "funnel": [
-    { "stage": "submitted", "label": "Подано", "count": 1284 },
-    { "stage": "checks_passed", "label": "Проверки пройдены", "count": 1104 },
-    { "stage": "in_review", "label": "На рассмотрении", "count": 950 },
-    { "stage": "approved", "label": "Одобрено", "count": 796 },
-    { "stage": "accepted", "label": "Принято клиентом", "count": 402 }
-  ],
-  "alerts": [
-    {
-      "id": "INC-2026-0412",
-      "level": "critical",
-      "title": "Недоступна загрузка документов",
-      "meta": "INC-2026-0412"
-    }
-  ],
-  "recentChanges": [
-    {
-      "at": "2026-10-25T09:42:00Z",
-      "text": "Политика v12 → v13: порог DSCR 1.15 → 1.20"
-    }
-  ]
-}
-```
-
-### `POST /admin/reports/export`
-
-```json
-{ "format": "xlsx", "periodDays": 30 }
-```
-
-Ответ: файл или `{ "downloadUrl": "…" }`.
-
-### `POST /admin/incidents`
-
-```json
-{ "title": "…", "severity": "…", "severity": "high" }
-```
-
-Ответ: `{ "id": "INC-2026-0413", "status": "open" }`.
+| Экран | Код | Что реально есть на бэке | UI сейчас |
+|-------|-----|--------------------------|-----------|
+| `/app/admin` | `AdminOverviewPage` | — | синтетика |
+| `/app/admin/analytics` | `AdminAnalyticsPage` | — | синтетика |
+| `/app/admin/products` | `AdminProductsPage` | `/admin/credit-products*` | синтетика |
+| `/app/admin/policy` | `AdminPolicyPage` | `/admin/policies*` | синтетика |
+| `/app/admin/users` | `AdminUsersPage` | `/admin/users*`, `/roles`, `/permissions`, `/companies*` | синтетика |
+| `/app/admin/audit` | `AdminAuditPage` | `/admin/audit/events*` | синтетика |
+| `/app/admin/notifications` | `AdminNotificationsPage` | общего `/notifications` для admin нет | локально |
 
 ---
 
-## Админ · аналитика конвейера — `/app/admin/analytics`
+## Админ · роли и permissions
 
-Код: `AdminAnalyticsPage.tsx` · gate: `Protected roles={['admin']}`.
+| Method | Path | Ответ |
+|--------|------|--------|
+| `GET` | `/admin/roles` | `AdminRoleOut[]` |
+| `GET` | `/admin/permissions` | `AdminPermissionOut[]` |
 
-Сейчас HTTP к бэку **нет** — воронка, donut отказов, линия конверсии и SLA по сегментам — синтетика. Контракт ниже.
+`AdminRoleOut`: `{ role, title, description, permissions[] }`  
+`AdminPermissionOut`: `{ code, title }`
 
-| Method | Path | Блок UI |
-|--------|------|---------|
-| `GET` | `/admin/analytics/conveyor` | вся страница (после «Применить») |
-| `GET` | `/admin/analytics/conveyor/export` | «Экспорт CSV» |
+Роли системы: `ENTREPRENEUR` | `ANALYST` | `ADMIN`.
 
-Query (оба): `periodDays`, `productId`\|`all`, `channel`, `region`.
+---
 
-### `GET /admin/analytics/conveyor`
+## Админ · пользователи — `/app/admin/users`
+
+| Method | Path | Notes |
+|--------|------|--------|
+| `GET` | `/admin/users` | query: `role`, `status`, `q`, `limit` (1–100, def 50), `offset` |
+| `POST` | `/admin/users` | 201 |
+| `GET` | `/admin/users/{user_id}` | |
+| `PATCH` | `/admin/users/{user_id}` | partial |
+| `POST` | `/admin/users/{user_id}/disable` | status→DISABLED, revoke sessions |
+| `POST` | `/admin/users/{user_id}/reset-credentials` | body `{ password }` |
+
+### `AdminUserOut`
 
 ```json
 {
-  "periodDays": 30,
-  "funnel": [
-    {
-      "stage": "submitted",
-      "label": "Подана",
-      "count": 1284,
-      "conversionPct": 100,
-      "avgHours": 0.2,
-      "dropoffPct": 0
-    },
-    {
-      "stage": "manager",
-      "label": "Менеджер",
-      "count": 910,
-      "conversionPct": 93,
-      "avgHours": 22,
-      "dropoffPct": 7
-    }
-  ],
-  "rejections": {
-    "total": 154,
-    "reasons": [
-      { "key": "low_dscr", "label": "Низкий DSCR", "pct": 34 },
-      { "key": "credit_history", "label": "Кредитная история", "pct": 24 },
-      { "key": "missing_docs", "label": "Нехватка документов", "pct": 18 },
-      { "key": "revenue_drop", "label": "Падение выручки", "pct": 14 },
-      { "key": "other", "label": "Прочее", "pct": 10 }
-    ],
-    "counteroffer": { "sharePct": 14, "acceptedPct": 71 }
-  },
-  "approvalConversionByWeek": [
-    { "week": 36, "pct": 58 },
-    { "week": 43, "pct": 62 }
-  ],
-  "decisionSlaBySegment": [
-    { "segment": "A", "hours": 18 },
-    { "segment": "B+", "hours": 26 },
-    { "segment": "B", "hours": 30 },
-    { "segment": "C", "hours": 44 }
-  ],
-  "productBoard": [
-    {
-      "product": "working_capital",
-      "apps": 612,
-      "approvalPct": 64,
-      "takeUpPct": 54,
-      "volumeBn": 4.2
-    }
-  ],
-  "channelBoard": [
-    { "channel": "web", "apps": 742, "approvalPct": 61 }
-  ],
-  "volumeByWeek": [{ "week": 36, "volumeBn": 2.8 }]
+  "id": "usr_…",
+  "login": "admin",
+  "email": null,
+  "phone": null,
+  "full_name": "Админ",
+  "role": "ADMIN",
+  "status": "ACTIVE",
+  "is_active": true,
+  "permissions": ["USERS_MANAGE", "AUDIT_READ"],
+  "company_ids": [],
+  "last_login_at": "2026-10-25T10:00:00Z",
+  "created_at": "2026-01-01T00:00:00Z"
 }
 ```
 
-### `GET /admin/analytics/conveyor/export`
+Список: `{ "items": [...], "total": N }`.
 
-Те же query → `text/csv` (или `{ "downloadUrl": "…" }`).
+### `POST /admin/users`
+
+```json
+{
+  "login": "ivan",
+  "password": "secret12",
+  "full_name": "Иван Иванов",
+  "email": null,
+  "phone": null,
+  "role": "ENTREPRENEUR",
+  "status": "ACTIVE"
+}
+```
+
+### `PATCH /admin/users/{user_id}`
+
+Любые из: `login`, `email`, `phone`, `full_name`, `role`, `status`, `is_active`.  
+Нельзя снять с себя `ADMIN` / отключить себя через PATCH (409).
+
+### `POST .../disable` → `AdminDisableOut`
+
+```json
+{ "user_id": "usr_…", "status": "DISABLED", "is_active": false, "sessions_revoked": 2 }
+```
+
+### `POST .../reset-credentials`
+
+Body: `{ "password": "newpass1" }` → `{ "user_id", "message" }` (сессии отозваны).
+
+---
+
+## Админ · компании и members
+
+| Method | Path | Notes |
+|--------|------|--------|
+| `GET` | `/admin/companies` | `q`, `limit`, `offset` → `{ items, total }` |
+| `GET` | `/admin/companies/{company_id}/members` | `AdminMemberOut[]` |
+| `PUT` | `/admin/companies/{company_id}/members/{user_id}` | upsert |
+| `DELETE` | `/admin/companies/{company_id}/members/{user_id}` | 204 |
+
+`AdminCompanyBrief`: `{ id, inn, name, legal_form, registry_status, region, members_count }`
+
+`PUT` body: `{ "role": "MEMBER"|"OWNER"|…, "permissions": {} }`
 
 ---
 
 ## Админ · каталог продуктов — `/app/admin/products`
 
-Код: `AdminProductsPage.tsx` · gate: `Protected roles={['admin']}`.  
-Пункт меню «Каталог продуктов» (бывш. кредитные продукты).
+| Method | Path | Notes |
+|--------|------|--------|
+| `GET` | `/admin/credit-products` | `status`, `type`, `q`, `limit`, `offset` |
+| `POST` | `/admin/credit-products` | 201 |
+| `GET` | `/admin/credit-products/{product_id}` | + versions |
+| `PATCH` | `/admin/credit-products/{product_id}` | draft fields |
+| `POST` | `/admin/credit-products/{product_id}/publish` | body `{ changelog? }` |
+| `POST` | `/admin/credit-products/{product_id}/archive` | |
+| `GET` | `/admin/credit-products/{product_id}/versions` | `AdminCreditProductVersionOut[]` |
 
-Сейчас HTTP к бэку **нет** — таблица, требования и форма справа локальный стейт. Контракт ниже (рядом с публичным `GET /credit-products`).
+Список: `{ items: AdminCreditProductOut[], total }`.
 
-| Method | Path | Блок UI |
-|--------|------|---------|
-| `GET` | `/admin/credit-products` | таблица + subtitle (версия каталога) |
-| `GET` | `/admin/credit-products/{id}` | требования + форма редактирования |
-| `PATCH` | `/admin/credit-products/{id}` | «Сохранить» (черновик → согласование) |
-| `POST` | `/admin/credit-products` | «Новый продукт» |
-| `POST` | `/admin/credit-products/import` | «Импорт» (multipart) |
+Ключевые поля продукта: `code`, `name`, `type`, `amount_min/max`, `term_*`, `rate_*` / `annual_rate_percent`, `legal_forms`, `suitable_goals`, `status`, `version`, `is_active`, `rules[]`, `versions[]`.
 
-### `GET /admin/credit-products`
-
-```json
-{
-  "catalogVersion": "2026.4",
-  "items": [
-    {
-      "id": "P-101",
-      "name": "Бизнес-Оборот",
-      "type": "working_capital",
-      "rateFrom": 17.3,
-      "amountMax": 10000000,
-      "termMax": 36,
-      "commissionPct": 0,
-      "status": "active",
-      "version": 7,
-      "draftVersion": 8,
-      "showInSelection": true,
-      "allowCounteroffer": true
-    }
-  ]
-}
-```
-
-`status`: `active` | `draft` | `hidden`.
-
-### `GET /admin/credit-products/{id}`
-
-```json
-{
-  "id": "P-101",
-  "name": "Бизнес-Оборот",
-  "type": "working_capital",
-  "rateFrom": 17.3,
-  "amountMax": 10000000,
-  "termMax": 36,
-  "commissionPct": 0,
-  "goals": ["working_capital", "cash_gap"],
-  "showInSelection": true,
-  "allowCounteroffer": true,
-  "status": "active",
-  "version": 7,
-  "draftVersion": 8,
-  "requirements": [
-    {
-      "param": "Возраст бизнеса",
-      "condition": "≥ 12 мес.",
-      "hard": true,
-      "ruleId": "R-101"
-    }
-  ]
-}
-```
-
-### `PATCH /admin/credit-products/{id}`
-
-```json
-{
-  "name": "Бизнес-Оборот",
-  "rateFrom": 17.3,
-  "amountMax": 10000000,
-  "termMax": 36,
-  "commissionPct": 0,
-  "goals": ["working_capital", "cash_gap"],
-  "showInSelection": true,
-  "allowCounteroffer": true
-}
-```
-
-Ответ: продукт с инкрементом `draftVersion`; статус согласования в audit. Permission: `catalog.manage`.
+Нет на бэке: `/admin/credit-products/import`.
 
 ---
 
 ## Админ · кредитная политика — `/app/admin/policy`
 
-Код: `AdminPolicyPage.tsx` · gate: `Protected roles={['admin']}`.
+| Method | Path | Notes |
+|--------|------|--------|
+| `GET` | `/admin/policies` | `status`, `q`, `limit`, `offset` |
+| `POST` | `/admin/policies` | 201 · `{ code, name, description?, rules }` |
+| `GET` | `/admin/policies/{policy_id}` | + versions |
+| `PATCH` | `/admin/policies/{policy_id}` | `{ code?, name?, description?, rules? }` |
+| `GET` | `/admin/policies/{policy_id}/versions` | |
+| `POST` | `/admin/policies/{policy_id}/validate` | → `{ valid, errors[], warnings[], allowed_keys[] }` |
+| `POST` | `/admin/policies/{policy_id}/simulate` | 202 · body `{ draft_version?, scenario_ids?, compare_with_published? }` → `{ run_id, status }` |
+| `GET` | `/admin/policies/{policy_id}/simulations/{run_id}` | результат прогона |
+| `POST` | `/admin/policies/{policy_id}/publish` | `POLICY_PUBLISH` · `{ changelog? }` |
+| `GET` | `/admin/policies/{policy_id}/diff` | query: `from`, `to` (версии) → added/removed/changed |
 
-Сейчас HTTP к бэку **нет** — разделы, правила, DSL-редактор, diff и чеклист согласования — демо. Контракт ниже. Permission: `policy.edit` / `policy.publish`.
+`AdminPolicyOut`: `{ id, code, name, description, status, version, rules, parameter_source, published_at, versions[] }`.
 
-| Method | Path | Блок UI |
-|--------|------|---------|
-| `GET` | `/admin/policy/versions` | список версий слева |
-| `GET` | `/admin/policy/versions/{version}` | мета + разделы + правила |
-| `GET` | `/admin/policy/versions/{version}/rules/{ruleId}` | DSL в редакторе |
-| `PUT` | `/admin/policy/versions/{version}/rules/{ruleId}` | сохранить DSL |
-| `POST` | `/admin/policy/versions/{version}/validate` | «Проверить» |
-| `GET` | `/admin/policy/versions/{version}/diff?base=v12` | блок «Изменения» |
-| `POST` | `/admin/policy/versions/{version}/submit` | «Отправить на публикацию» |
+Старый путь `/admin/policy/versions…` в UI-доках — **не существует**. Рабочий ресурс — `/admin/policies`.
 
-### `GET /admin/policy/versions/{version}`
+---
+
+## Админ · ML-модели
+
+| Method | Path | Notes |
+|--------|------|--------|
+| `GET` | `/admin/models` | query `task?` |
+| `GET` | `/admin/models/active` | активные по task |
+| `GET` | `/admin/models/evaluations` | все evals |
+| `GET` | `/admin/models/{model_id}` | + evaluations |
+| `POST` | `/admin/models/{model_id}/validate` | совместимость/health |
+| `POST` | `/admin/models/{model_id}/activate` | `{ task, expected_model_version?, reason? }` |
+| `GET` | `/admin/models/{model_id}/evaluations` | |
+
+Отдельного экрана на фронте пока нет.
+
+---
+
+## Админ · runtime config
+
+| Method | Path |
+|--------|------|
+| `GET` | `/admin/config/runtime` |
+| `PATCH` | `/admin/config/runtime` |
+
+Patch body: `{ "parameters": { … } }` → `{ parameters, whitelist, applied, rejected, note }`.
+
+---
+
+## Админ · demo
+
+| Method | Path | Notes |
+|--------|------|--------|
+| `GET` | `/admin/demo/scenarios` | |
+| `GET` | `/admin/demo/scenarios/{scenario_id}` | |
+| `POST` | `/admin/demo/scenarios/{scenario_id}/load` | 202 → job |
+| `POST` | `/admin/demo/reset` | 202 · `{ workspace, confirm_phrase, seed_version? }` |
+| `GET` | `/admin/demo/jobs/{job_id}` | статус job |
+
+---
+
+## Админ · аудит — `/app/admin/audit`
+
+| Method | Path | Notes |
+|--------|------|--------|
+| `GET` | `/admin/audit/events` | `action`, `entity_type`, `actor_id`, `q`, `limit` (≤200), `offset` |
+| `GET` | `/admin/audit/events/{event_id}` | |
 
 ```json
 {
-  "version": "v13",
-  "status": "draft",
-  "basedOn": "v12",
-  "author": "Орлова Е.В.",
-  "sections": [
-    { "id": "admission", "label": "Допуск заёмщика", "ruleCount": 14 }
+  "items": [
+    {
+      "id": "aud_…",
+      "actor_id": "usr_…",
+      "actor_login": "admin",
+      "actor_role": "ADMIN",
+      "action": "admin_patch",
+      "entity_type": "user",
+      "entity_id": "usr_…",
+      "company_id": null,
+      "correlation_id": "…",
+      "details": {},
+      "created_at": "2026-10-25T10:00:00Z"
+    }
   ],
-  "rules": [
-    {
-      "id": "R-212",
-      "sectionId": "admission",
-      "condition": "dscr(requested) < 1.3",
-      "action": "counteroffer",
-      "priority": 60,
-      "status": "changed"
-    }
-  ]
+  "total": 42
 }
 ```
 
-`rule.status`: `active` | `changed` | `new` | `disabled`.
-
-### `PUT /admin/policy/versions/{version}/rules/{ruleId}`
-
-```json
-{
-  "dsl": "rule R-212 {\n  when dscr(requested_amount, term, rate) < 1.3\n  ...\n}"
-}
-```
-
-### `POST /admin/policy/versions/{version}/validate`
-
-```json
-{
-  "syntaxOk": true,
-  "priorityConflicts": [],
-  "testsChanged": 3,
-  "approvals": { "done": 0, "required": 2 }
-}
-```
-
-### `GET /admin/policy/versions/{version}/diff?base=v12`
-
-```json
-{
-  "added": 2,
-  "changed": 3,
-  "removed": 1,
-  "productsAffected": 2,
-  "lines": [
-    { "op": "del", "text": "R-212: dscr < 1.2" },
-    { "op": "add", "text": "R-212: dscr < 1.3" }
-  ]
-}
-```
+Секреты в `details` маскируются (`***`).  
+Нет на бэке: `/admin/audit`, `/admin/audit/export`, `/admin/audit/verify`.
 
 ---
 
-## Админ · пользователи и роли — `/app/admin/users`
+## Админ · UI-only (бэка нет)
 
-Код: `AdminUsersPage.tsx` · gate: `Protected roles={['admin']}`.
+Экраны ниже живут на синтетике. Этих маршрутов в `admin.py` **нет**:
 
-Сейчас HTTP к бэку **нет** — список в локальном стейте; UI умеет **смену роли** и **блокировку / разблокировку** (меню ⋮ + массовые действия по чекбоксам). Контракт ниже. Permission: `users.manage`.
+| UI path | Выдуманный контракт (не реализовывать как есть) |
+|---------|--------------------------------------------------|
+| overview | `GET /admin/overview`, `POST /admin/reports/export`, `POST /admin/incidents` |
+| analytics | `GET /admin/analytics/conveyor`, `…/export` |
+| notifications | `GET /notifications?audience=admin`, `/admin/notification-prefs` |
+| users (старый) | `…/block`, `…/unblock`, `/users/invite`, `/users/bulk`, `/users/export`, `/roles/permissions` |
 
-| Method | Path | Блок UI |
-|--------|------|---------|
-| `GET` | `/admin/users` | таблица + счётчики в subtitle |
-| `POST` | `/admin/users/invite` | «Пригласить» |
-| `GET` | `/admin/users/export` | «Экспорт» |
-| `PATCH` | `/admin/users/{id}` | «Изменить роль» (одно) |
-| `POST` | `/admin/users/bulk` | массовая смена роли / блок |
-| `POST` | `/admin/users/{id}/block` | «Заблокировать» |
-| `POST` | `/admin/users/{id}/unblock` | «Разблокировать» |
-| `GET` | `/admin/roles/permissions` | блок «Права ролей» |
-
-### `GET /admin/users`
-
-Роли продукта (**только 3**, = `UserRole` бэка): `entrepreneur` | `analyst` | `admin`.
-
-Query: `q`, `role` (`entrepreneur`\|`analyst`\|`admin`\|`all`), `status` (`active`\|`invited`\|`mfa_required`\|`disabled`\|`all`), `mfa` (`any`\|`on`\|`off`).
-
-```json
-{
-  "summary": {
-    "usersTotal": 38,
-    "rolesTotal": 3,
-    "mfaEnabledPct": 92
-  },
-  "items": [
-    {
-      "id": "user_admin_01",
-      "fullName": "Елена Орлова",
-      "email": "admin@demo.alfa",
-      "role": "admin",
-      "department": "Платформа",
-      "mfaEnabled": true,
-      "lastLoginAt": "2026-10-25T10:11:00Z",
-      "status": "active"
-    }
-  ]
-}
-```
-
-`status`: `active` | `invited` | `mfa_required` | `disabled` (= заблокирован, соответствует `UserStatus.DISABLED` на бэке).
-
-### `PATCH /admin/users/{id}`
-
-Смена роли (и опционально подразделения).
-
-```json
-{ "role": "analyst", "department": "Кредитный конвейер" }
-```
-
-Ответ: обновлённый user.  
-Ограничения: нельзя снять последнего активного `admin`; нельзя менять роль себе, если это лишит `users.manage` (или явный 403).
-
-### `POST /admin/users/{id}/block`
-
-```json
-{ "reason": "Компрометация учётки" }
-```
-
-Ответ: user со `status: "disabled"`. Сессии/refresh revoke.  
-Запрет: блок самого себя / последнего админа → `409`.
-
-### `POST /admin/users/{id}/unblock`
-
-Тело пустое или `{ "restoreStatus": "active" }`.  
-Ответ: user со статусом до блокировки (`active` / `mfa_required` / …).
-
-### `POST /admin/users/bulk`
-
-Массовые действия с чекбоксов.
-
-```json
-{
-  "ids": ["user_02", "user_04"],
-  "action": "set_role",
-  "role": "analyst"
-}
-```
-
-или
-
-```json
-{
-  "ids": ["user_04", "user_05"],
-  "action": "block",
-  "reason": "…"
-}
-```
-
-`action`: `set_role` | `block` | `unblock`.  
-Ответ: `{ "updated": 2, "skipped": [{ "id": "…", "reason": "last_admin" }] }`.
-
-### `POST /admin/users/invite`
-
-```json
-{
-  "email": "new@demo.alfa",
-  "fullName": "Новикова Е.П.",
-  "role": "analyst",
-  "department": "Онбординг"
-}
-```
-
-Ответ: пользователь со `status: "invited"`.
-
-### `GET /admin/users/export`
-
-Query те же, что у списка. Ответ: `xlsx` / `csv`.
-
-### `GET /admin/roles/permissions`
-
-```json
-{
-  "roles": ["entrepreneur", "analyst", "admin"],
-  "matrix": [
-    {
-      "key": "view_company_applications",
-      "label": "Просмотр заявок компании",
-      "grants": [true, true, true]
-    },
-    {
-      "key": "decide_limit_5m",
-      "label": "Решение по заявке (лимит 5 млн ₽)",
-      "grants": [false, true, true]
-    },
-    {
-      "key": "risk_conclusion",
-      "label": "Риск-заключение",
-      "grants": [false, true, true]
-    },
-    {
-      "key": "policy_edit",
-      "label": "Редактирование политики",
-      "grants": [false, false, true]
-    },
-    {
-      "key": "users_manage",
-      "label": "Блокировка / смена роли",
-      "grants": [false, false, true]
-    }
-  ]
-}
-```
-
-Порядок `grants` = порядок `roles` (предприниматель → аналитик → администратор). Permission-ключи бэка: `users.manage`, `policy.edit`, … (`Permission` в `backend/app/core/enums.py`).
-
----
-
-## Админ · аудит изменений — `/app/admin/audit`
-
-Код: `AdminAuditPage.tsx` · gate: `Protected roles={['admin']}`.
-
-Сейчас HTTP к бэку **нет** — таблица синтетическая. В UI колонка **ID актора** (`actorId`), без ФИО. Permission: `audit.read`.
-
-| Method | Path | Блок UI |
-|--------|------|---------|
-| `GET` | `/admin/audit` | таблица + footer-счётчики |
-| `GET` | `/admin/audit/export` | «Экспорт CSV» |
-| `POST` | `/admin/audit/verify` | «Проверить целостность» |
-
-### `GET /admin/audit`
-
-Query: `q` (поиск по `actorId` / объекту / `id` записи), `action`, `objectKind`, `periodDays`.
-
-```json
-{
-  "total": 1842,
-  "retentionYears": 5,
-  "chainVerifiedAt": "2026-10-23T06:00:00Z",
-  "items": [
-    {
-      "id": "aud_001",
-      "at": "2026-10-23T10:02:00Z",
-      "actorId": "user_admin_01",
-      "action": "change",
-      "objectKind": "policy",
-      "objectId": "policy_v13_R-212",
-      "objectLabel": "Политика v13 · R-212",
-      "change": "dscr < 1.2 → dscr < 1.3",
-      "ip": "10.20.14.7",
-      "result": "success"
-    }
-  ]
-}
-```
-
-`actorId`: id пользователя, либо `system` / `unknown` — **не** отображать ФИО на этом экране.  
-`action`: `change` | `create` | `access` | `config` | `decision` | `document` | `request` | `data` | `model`.  
-`result`: `success` | `block`.
-
-### `GET /admin/audit/export`
-
-Те же query → `text/csv`.
-
-### `POST /admin/audit/verify`
-
-```json
-{
-  "ok": true,
-  "checked": 1842,
-  "brokenAt": null,
-  "verifiedAt": "2026-10-25T19:30:00Z"
-}
-```
-
-При разрыве цепочки: `ok: false`, `brokenAt`: id первой битой записи.
-
----
-
-## Админ · уведомления — `/app/admin/notifications`
-
-Код: `AdminNotificationsPage.tsx` · gate: `Protected roles={['admin']}`.  
-Колокольчик в `AppLayout` для `admin` ведёт сюда (не на `/app/notifications`).
-
-Сейчас HTTP к бэку **нет** — список локальный (инциденты / политика / доступ / модели / KPI). Контракт ниже поверх общего `GET /notifications`.
-
-| Method | Path | Блок UI |
-|--------|------|---------|
-| `GET` | `/notifications?audience=admin` | лента + badge непрочитанных |
-| `PATCH` | `/notifications/{id}` | клик по карточке → `is_read: true` |
-| `POST` | `/notifications/read-all` | «Отметить все прочитанными» |
-| `GET`/`PATCH` | `/admin/notification-prefs` | каналы и типы справа |
-
-### `GET /notifications?audience=admin`
-
-Query: `unread`, `type` (`incident`\|`policy`\|`access`\|`model`\|`kpi`\|`system`), `limit`, `offset`.
-
-```json
-{
-  "unread_count": 5,
-  "total": 42,
-  "items": [
-    {
-      "id": "ntf_inc_0412",
-      "type": "incident",
-      "title": "INC-2026-0412 · загрузка документов недоступна",
-      "body": "Критичный инцидент · затронуто ~12% заявок",
-      "is_read": false,
-      "created_at": "2026-10-23T10:11:00Z",
-      "href": "/app/admin"
-    }
-  ]
-}
-```
-
-Типы админ-ленты ≠ клиентским (`app_status` / платежи): фокус на ops, RBAC и политике.
+Когда будете вешать HTTP — маппить на реальные пути выше (`disable` вместо `block`, `/admin/policies` вместо `/admin/policy/versions`, `/admin/audit/events` вместо `/admin/audit`).
