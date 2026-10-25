@@ -48,6 +48,8 @@ export const statusLabels: Record<ApplicationStatus, string> = {
   docs_requested: 'Нужны дополнительные данные или документы',
   approved: 'Предварительно одобрено',
   counteroffered: 'Предложены другие условия',
+  offer_accepted: 'Оферта принята',
+  agreement_preparation: 'Подготовка договора',
   rejected: 'Получен отказ',
   issued: 'Выдана',
 }
@@ -63,6 +65,8 @@ export const statusColors: Record<
   docs_requested: 'warning',
   approved: 'success',
   counteroffered: 'warning',
+  offer_accepted: 'success',
+  agreement_preparation: 'success',
   rejected: 'error',
   issued: 'success',
 }
