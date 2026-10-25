@@ -59,3 +59,20 @@ class TokenPairOut(APIModel):
     token_type: str = "bearer"
     expires_in: int
     refresh_token: str
+
+
+class EmailActionRequest(APIModel):
+    email: str = Field(min_length=3, max_length=255)
+
+
+class EmailActionOut(APIModel):
+    message: str
+    delivery_mode: str | None = None
+    email_masked: str | None = None
+    challenge_id: str | None = None
+
+
+class PasswordResetRequest(APIModel):
+    token: str = Field(min_length=10, max_length=2048)
+    password: str = Field(min_length=6, max_length=256)
+    password_confirm: str = Field(min_length=6, max_length=256)

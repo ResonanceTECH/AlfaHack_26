@@ -196,13 +196,33 @@ export async function requestDocuments(
   return mapApplication(data as Record<string, unknown>)
 }
 
+/** Analyst/bank queue — maps `/analyst/applications` into CreditApplication[]. */
 export async function listManagerApplications(params?: {
   status?: ApplicationStatus
   productId?: string
   assignedToMe?: boolean
 }): Promise<CreditApplication[]> {
-  const { data } = await api.get('/manager/applications', { params })
-  return (data as Record<string, unknown>[]).map(mapApplication)
+  const { data } = await api.get('/analyst/applications', {
+    params: {
+      status: params?.status ? String(params.status).toUpperCase() : undefined,
+      product_id: params?.productId || undefined,
+      assigned_to_me: params?.assignedToMe || undefined,
+      include_closed: true,
+      limit: 100,
+    },
+  })
+  const raw = data as Record<string, unknown>
+  const items = (raw.items ?? data) as Record<string, unknown>[]
+  return (Array.isArray(items) ? items : []).map((row) =>
+    mapApplication({
+      ...row,
+      // queue item uses amount; assignedAnalyst* → manager fields for UI
+      assignedManagerId: row.assignedAnalystId ?? row.assigned_analyst_id ?? row.assignedManagerId,
+      assignedManagerName:
+        row.assignedAnalystName ?? row.assigned_analyst_name ?? row.assignedManagerName,
+      productName: row.productName ?? row.product_name ?? row.companyName,
+    }),
+  )
 }
 
 export type PublicDecision = {
