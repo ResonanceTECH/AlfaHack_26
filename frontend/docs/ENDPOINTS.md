@@ -4,7 +4,7 @@
 
 Экраны: **логин / verify / reset**, **онбординг**, **выбор компании**, **главная**, **компания**, **цели**, **финпрофиль / выписки**, **подбор / сравнение / калькуляторы / сценарии**, **заявки (список + карточка + wizard)**, **документы**, **календарь**, **команда**, **профиль**, **помощь**, **уведомления**, **AI**, **аналитик**, **админ**.
 
-Кабинет предпринимателя: live через `api/companies|applications|credit|statements|auth|notifications` + `useAppStore`. Выписки/прогноз/readiness/калькулятор/ROI/сравнение — live (fallback на local math если пусто). Документы-реестр и команда — ещё демо/local. Аналитик — live `/analyst/*` (`api/analyst.ts`) + `/notifications`. Админ — live `api/admin.ts` (users/products/policy/audit/overview KPIs); analytics charts и MFA — ещё частично синтетика.
+Кабинет предпринимателя: live `api/companies|applications|credit|statements|auth|notifications|team|documents` + `useAppStore`. Выписки/прогноз/readiness/калькулятор/ROI/сравнение/команда/документы-реестр/профиль (`PATCH /auth/me`, sessions) — live. Аналитик — live `/analyst/*` + `/notifications`. Админ — live `api/admin.ts` (users+MFA, products, policy, audit, overview, analytics conveyor).
 
 ## Логин — `/login`
 
