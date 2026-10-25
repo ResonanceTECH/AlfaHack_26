@@ -12,6 +12,7 @@ import { OnboardingFinancesPage } from '@/pages/OnboardingFinancesPage'
 import { OnboardingConfirmPage } from '@/pages/OnboardingConfirmPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { CompanyPage } from '@/pages/CompanyPage'
+import { CompanyInnCheckPage } from '@/pages/CompanyInnCheckPage'
 import { BusinessGoalPage } from '@/pages/BusinessGoalPage'
 import { AiChatPage } from '@/pages/AiChatPage'
 import { RecommendationsPage } from '@/pages/RecommendationsPage'
@@ -107,6 +108,7 @@ export function AppRouter() {
       >
         <Route index element={<DashboardPage />} />
         <Route path="company" element={<CompanyPage />} />
+        <Route path="company/inn-check" element={<CompanyInnCheckPage />} />
         <Route path="goals" element={<BusinessGoalPage />} />
         <Route path="ai" element={<AiChatPage />} />
         <Route path="recommendations" element={<RecommendationsPage />} />
