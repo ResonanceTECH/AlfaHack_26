@@ -201,7 +201,7 @@ export function ApplicationEditPage() {
   function saveChanges() {
     if (choice === 'accept') {
       flashMsg('Условия банка приняты')
-      window.setTimeout(() => navigate('/app/applications'), 900)
+      window.setTimeout(() => navigate(`/app/applications/${app.id}/contract`), 700)
       return
     }
     if (choice === 'reject') {

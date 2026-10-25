@@ -12,6 +12,7 @@ import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded'
 import { useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 const tileSx = {
   bgcolor: '#fff',
@@ -120,6 +121,14 @@ const DEMO_DOCS: DocItem[] = [
     uploadedAt: '12.10.2026',
     status: 'accepted',
   },
+  {
+    id: 'contract',
+    title: 'Кредитный договор DEMO-ABC-1042',
+    category: 'Финансовые',
+    file: 'dogovor_demo.pdf · 420 КБ',
+    uploadedAt: '23.10.2026',
+    status: 'accepted',
+  },
 ]
 
 function StatusChip({ status }: { status: DocStatus }) {
@@ -152,6 +161,7 @@ function matchesTab(doc: DocItem, tab: TabKey) {
 }
 
 export function DocumentsPage() {
+  const navigate = useNavigate()
   const fileRef = useRef<HTMLInputElement | null>(null)
   const [docs, setDocs] = useState(DEMO_DOCS)
   const [tab, setTab] = useState<TabKey>('all')
@@ -583,7 +593,13 @@ export function DocumentsPage() {
                     <Button
                       type="button"
                       size="small"
-                      onClick={() => flashMsg(`Открыт: ${d.title}`)}
+                      onClick={() =>
+                        navigate(
+                          d.id === 'contract'
+                            ? `/app/applications/${APP_REF}/contract`
+                            : `/app/documents/${d.id}`,
+                        )
+                      }
                       sx={{
                         fontWeight: 700,
                         textTransform: 'none',

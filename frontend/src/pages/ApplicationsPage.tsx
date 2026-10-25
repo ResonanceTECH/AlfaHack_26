@@ -77,9 +77,9 @@ const DEMO: AppRow[] = [
     status: 'signed',
     statusLabel: 'Договор подписан',
     submitted: '02.09.2026',
-    nextStep: 'Платёж 28.10 · 114 000 ₽',
-    nextStepAction: 'text',
-    href: '/app/applications/ABC-2026-0987',
+    nextStep: 'Открыть договор',
+    nextStepAction: 'link',
+    href: '/app/applications/ABC-2026-0987/contract',
     editable: false,
     tab: 'contracts',
   },
@@ -283,26 +283,6 @@ export function ApplicationsPage() {
           </Typography>
         </Box>
         <Stack direction="row" spacing={1.25} flexWrap="wrap" useFlexGap alignItems="center">
-          <Button
-            component={RouterLink}
-            to="/app/readiness"
-            size="small"
-            sx={{
-              borderRadius: 999,
-              textTransform: 'none',
-              fontWeight: 800,
-              fontSize: 12.5,
-              px: 1.35,
-              py: 0.55,
-              minHeight: 0,
-              color: '#1B8A5A',
-              bgcolor: '#E6F5EE',
-              border: '1px solid rgba(27,138,90,0.25)',
-              '&:hover': { bgcolor: '#D8F0E4', borderColor: 'rgba(27,138,90,0.4)' },
-            }}
-          >
-            Готовность 78 · анализ
-          </Button>
           <Button
             variant="outlined"
             color="secondary"

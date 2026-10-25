@@ -208,23 +208,38 @@ export function TeamPage() {
             }`}
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          color="primary"
-          onClick={() => navigate('/app/team/invite')}
-          sx={{
-            borderRadius: 2,
-            fontWeight: 700,
-            textTransform: 'none',
-            px: 2.25,
-            py: 1.1,
-            boxShadow: 'none',
-            alignSelf: 'flex-start',
-            '&:hover': { boxShadow: 'none' },
-          }}
-        >
-          Пригласить сотрудника
-        </Button>
+        <Stack direction="row" spacing={1.25} flexWrap="wrap" useFlexGap>
+          <Button
+            variant="outlined"
+            color="secondary"
+            onClick={() => navigate('/app/team/tasks')}
+            sx={{
+              borderRadius: 2,
+              fontWeight: 700,
+              textTransform: 'none',
+              px: 2,
+              py: 1.1,
+            }}
+          >
+            Совместные задачи
+          </Button>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={() => navigate('/app/team/invite')}
+            sx={{
+              borderRadius: 2,
+              fontWeight: 700,
+              textTransform: 'none',
+              px: 2.25,
+              py: 1.1,
+              boxShadow: 'none',
+              '&:hover': { boxShadow: 'none' },
+            }}
+          >
+            Пригласить сотрудника
+          </Button>
+        </Stack>
       </Stack>
 
       <Box

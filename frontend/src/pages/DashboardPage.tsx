@@ -345,24 +345,6 @@ export function DashboardPage() {
                 >
                   Трекер заявки
                 </Button>
-                <Button
-                  component={RouterLink}
-                  to="/app/readiness"
-                  size="small"
-                  sx={{
-                    borderRadius: 999,
-                    textTransform: 'none',
-                    fontWeight: 800,
-                    fontSize: 12.5,
-                    px: 1.35,
-                    color: '#1B8A5A',
-                    bgcolor: '#E6F5EE',
-                    border: '1px solid rgba(27,138,90,0.25)',
-                    '&:hover': { bgcolor: '#D8F0E4' },
-                  }}
-                >
-                  Готовность {readinessQ.data?.score ?? 78} · анализ
-                </Button>
               </Stack>
 
               <Pipeline current={step} status={activeApp.status} />
@@ -749,28 +731,11 @@ function EmptyActive({ readiness }: { readiness?: number }) {
       <Typography sx={{ color: '#5A6B7D', fontSize: 14, lineHeight: 1.45, mb: 2, maxWidth: 440 }}>
         Когда отправите заявку, здесь будут сумма, предложение банка и этапы рассмотрения.
       </Typography>
-      <Button
-        component={RouterLink}
-        to="/app/readiness"
-        size="small"
-        sx={{
-          alignSelf: 'flex-start',
-          mb: 2,
-          borderRadius: 999,
-          textTransform: 'none',
-          fontWeight: 800,
-          fontSize: 12.5,
-          px: 1.35,
-          py: 0.55,
-          minHeight: 0,
-          color: '#1B8A5A',
-          bgcolor: '#E6F5EE',
-          border: '1px solid rgba(27,138,90,0.25)',
-          '&:hover': { bgcolor: '#D8F0E4' },
-        }}
-      >
-        Готовность {readiness ?? 78} · посмотреть анализ
-      </Button>
+      {readiness != null && (
+        <Typography sx={{ color: '#8A96A3', fontSize: 13, mb: 2 }}>
+          Профиль заполнен на {readiness}%
+        </Typography>
+      )}
       <Stack direction="row" spacing={1.25} sx={{ mt: 'auto' }}>
         <Button
           component={RouterLink}
