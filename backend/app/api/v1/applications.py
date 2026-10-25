@@ -768,7 +768,11 @@ def create_application(
 
 
 @router.get("/applications", response_model=list[ApplicationOut], deprecated=True)
-def list_my_applications(db: DbDep, user: CurrentUser, company_id: str | None = None) -> list[ApplicationOut]:
+def list_my_applications(
+    db: DbDep,
+    user: CurrentUser,
+    company_id: str | None = Query(default=None, alias="companyId"),
+) -> list[ApplicationOut]:
     if user.role in ANALYST_ROLES:
         q = (
             select(CreditApplication)
@@ -787,7 +791,9 @@ def list_my_applications(db: DbDep, user: CurrentUser, company_id: str | None = 
 
     if user.role == UserRole.ENTREPRENEUR:
         cid = resolve_company_id(db, user, company_id)
-        return list_company_applications(cid, db, user)
+        # нельзя звать FastAPI-handler с Query()-дефолтом как обычную функцию —
+        # иначе status_filter = Query(...) и SQLAlchemy падает LookupError
+        return list_company_applications(company_id=cid, db=db, user=user, status_filter=None)
 
     raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Недостаточно прав")
 
