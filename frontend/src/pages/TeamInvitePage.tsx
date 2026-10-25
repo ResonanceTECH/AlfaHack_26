@@ -143,8 +143,15 @@ export function TeamInvitePage() {
   const inviteLink = useMemo(() => {
     const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173'
     const cid = user?.companyId || company?.id || 'demo'
-    return `${origin}/select-company?invite=${encodeURIComponent(code)}&company=${encodeURIComponent(cid)}&role=${role}`
-  }, [code, role, user?.companyId, company?.id])
+    const qs = new URLSearchParams({
+      invite: code,
+      company: cid,
+      role,
+      companyName: company?.name || `ООО «${companyShort}»`,
+      from: user?.fullName || 'Владелец',
+    })
+    return `${origin}/select-company?${qs.toString()}`
+  }, [code, role, user?.companyId, user?.fullName, company?.id, company?.name, companyShort])
 
   function regenerateCode() {
     setCode(`INV-COFFEE-${randomCodeSuffix()}`)
