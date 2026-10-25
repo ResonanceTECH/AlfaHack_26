@@ -13,17 +13,21 @@ import CheckRoundedIcon from '@mui/icons-material/CheckRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
+import axios from 'axios'
 import { useMemo, useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { listCompanies } from '@/api/companies'
-import { useAuth } from '@/contexts/AuthContext'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  removeTeamMember,
-  ROLE_RIGHTS_TEXT,
-  updateTeamMemberRole,
-  upsertTeamMember,
-} from '@/features/team/store'
+  cancelInvite,
+  daysLeft,
+  inviteMember,
+  listInvites,
+  toInviteApiRole,
+  type CompanyInvite,
+} from '@/api/team'
+import { useAuth } from '@/contexts/AuthContext'
+import { useAppStore } from '@/hooks/useAppStore'
+import { ROLE_LABEL as TEAM_ROLE_LABEL, type TeamRole } from '@/features/team/store'
 
 const tileSx = {
   bgcolor: '#fff',
@@ -41,7 +45,7 @@ const fieldSx = {
   },
 } as const
 
-type InviteRole = 'accountant' | 'viewer' | 'owner'
+type InviteRole = 'accountant' | 'viewer'
 
 type ActiveInvite = {
   id: string
@@ -52,10 +56,44 @@ type ActiveInvite = {
   daysLeft: number
 }
 
+function apiError(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err)) {
+    const detail = err.response?.data?.detail
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail)) {
+      return detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join('; ')
+    }
+  }
+  if (err instanceof Error) return err.message
+  return fallback
+}
+
+function nameFromEmail(email: string): string {
+  const part = email.split('@')[0] ?? 'Участник'
+  return (
+    part
+      .split(/[._-]/)
+      .filter(Boolean)
+      .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+      .join(' ') || 'Участник'
+  )
+}
+
+function toActive(inv: CompanyInvite): ActiveInvite {
+  const code = inv.code || inv.id
+  return {
+    id: inv.id,
+    name: inv.fullName || nameFromEmail(inv.email),
+    email: inv.email,
+    role: inv.role === 'viewer' ? 'viewer' : 'accountant',
+    code: code.length > 8 ? `${code.slice(0, 6)}…${code.slice(-2)}` : code,
+    daysLeft: daysLeft(inv.expiresAt),
+  }
+}
+
 const ROLE_LABEL: Record<InviteRole, string> = {
   accountant: 'Бухгалтер',
   viewer: 'Наблюдатель',
-  owner: 'Владелец',
 }
 
 const ROLE_RIGHTS: Record<InviteRole, { label: string; ok: boolean }[]> = {
@@ -73,14 +111,6 @@ const ROLE_RIGHTS: Record<InviteRole, { label: string; ok: boolean }[]> = {
     { label: 'Видеть финансы', ok: false },
     { label: 'Принимать условия', ok: false },
     { label: 'Управлять командой', ok: false },
-    { label: 'Просмотр заявок', ok: true },
-  ],
-  owner: [
-    { label: 'Подавать заявки', ok: true },
-    { label: 'Загружать документы', ok: true },
-    { label: 'Видеть финансы', ok: true },
-    { label: 'Принимать условия', ok: true },
-    { label: 'Управлять командой', ok: true },
     { label: 'Просмотр заявок', ok: true },
   ],
 }

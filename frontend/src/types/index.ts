@@ -30,6 +30,8 @@ export type ApplicationStatus =
   | 'docs_requested'
   | 'approved'
   | 'counteroffered'
+  | 'offer_accepted'
+  | 'agreement_preparation'
   | 'rejected'
   | 'issued'
 
@@ -59,6 +61,7 @@ export interface User {
   emailVerified?: boolean
   phoneVerified?: boolean
   status?: UserStatus
+  mfaEnabled?: boolean
 }
 
 export type MemberRole = 'OWNER' | 'MEMBER' | 'VIEWER'
