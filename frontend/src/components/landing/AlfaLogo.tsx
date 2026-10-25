@@ -6,53 +6,57 @@ type AlfaLogoProps = {
   compact?: boolean
   /** Light surfaces (cabinet sidebar) vs dark hero */
   ink?: boolean
+  /** Icon only — no wordmark */
+  markOnly?: boolean
 }
 
-/** Red square + white A — classic Alfa mark */
-export function AlfaLogo({ to = '/', compact = false, ink = false }: AlfaLogoProps) {
+/** UI mark — `frontend/public/logo.png` */
+export const BRAND_LOGO_SRC = '/logo.png'
+/** Tab favicon — `frontend/public/favicon.png` */
+export const BRAND_FAVICON_SRC = '/favicon.png'
+
+const MARK_SRC = BRAND_LOGO_SRC
+
+/** App mark (briefcase) + wordmark «Линия решения» */
+export function AlfaLogo({
+  to = '/',
+  compact = false,
+  ink = false,
+  markOnly = false,
+}: AlfaLogoProps) {
+  const size = compact ? 28 : 36
+
   const mark = (
     <Stack direction="row" alignItems="center" spacing={1.25} sx={{ textDecoration: 'none' }}>
       <Box
+        component="img"
+        src={MARK_SRC}
+        alt=""
         aria-hidden
         sx={{
-          width: compact ? 28 : 36,
-          height: compact ? 28 : 36,
+          width: size,
+          height: size,
           borderRadius: 1.25,
-          bgcolor: '#EF3124',
-          display: 'grid',
-          placeItems: 'center',
+          objectFit: 'cover',
           flexShrink: 0,
+          display: 'block',
         }}
-      >
-        <Box
-          component="span"
+      />
+      {!markOnly && (
+        <Typography
           sx={{
-            color: '#fff',
+            color: ink ? '#0B1F35' : '#fff',
             fontFamily: 'Manrope, sans-serif',
-            fontWeight: 800,
-            fontSize: compact ? 16 : 20,
-            lineHeight: 1,
-            letterSpacing: '-0.04em',
-            borderBottom: '2px solid #fff',
-            pb: '1px',
+            fontWeight: 700,
+            fontSize: compact ? 15 : 17,
+            letterSpacing: '-0.02em',
+            lineHeight: 1.1,
+            whiteSpace: 'nowrap',
           }}
         >
-          A
-        </Box>
-      </Box>
-      <Typography
-        sx={{
-          color: ink ? '#0B1F35' : '#fff',
-          fontFamily: 'Manrope, sans-serif',
-          fontWeight: 700,
-          fontSize: compact ? 15 : 17,
-          letterSpacing: '-0.02em',
-          lineHeight: 1.1,
-          whiteSpace: 'nowrap',
-        }}
-      >
-        Альфа‑Банк
-      </Typography>
+          Линия решения
+        </Typography>
+      )}
     </Stack>
   )
 
@@ -62,9 +66,30 @@ export function AlfaLogo({ to = '/', compact = false, ink = false }: AlfaLogoPro
     <Box
       component={RouterLink}
       to={to}
+      aria-label="Линия решения"
       sx={{ textDecoration: 'none', display: 'inline-flex', '&:hover': { opacity: 0.9 } }}
     >
       {mark}
     </Box>
+  )
+}
+
+/** Sidebar / header mark without wordmark */
+export function AlfaMark({ size = 32 }: { size?: number }) {
+  return (
+    <Box
+      component="img"
+      src={MARK_SRC}
+      alt=""
+      aria-hidden
+      sx={{
+        width: size,
+        height: size,
+        borderRadius: 1.25,
+        objectFit: 'cover',
+        flexShrink: 0,
+        display: 'block',
+      }}
+    />
   )
 }

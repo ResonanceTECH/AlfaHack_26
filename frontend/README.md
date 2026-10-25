@@ -1,4 +1,4 @@
-# Alfa Credit — Frontend
+# Линия решения — Frontend
 
 React / TypeScript / Vite / MUI клиент. Данные только с FastAPI (`/api/v1`).
 

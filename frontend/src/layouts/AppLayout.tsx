@@ -38,6 +38,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { listCompanies } from '@/api/companies'
 import { useAuth } from '@/contexts/AuthContext'
+import { AlfaMark } from '@/components/landing/AlfaLogo'
 
 const DRAWER_WIDTH = 260
 const RAIL_WIDTH = 72
@@ -111,39 +112,6 @@ function initials(name?: string): string {
   if (!name) return '·'
   const parts = name.trim().split(/\s+/)
   return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || '·'
-}
-
-function AlfaMark({ size = 32 }: { size?: number }) {
-  return (
-    <Box
-      aria-hidden
-      sx={{
-        width: size,
-        height: size,
-        borderRadius: 1.25,
-        bgcolor: '#EF3124',
-        display: 'grid',
-        placeItems: 'center',
-        flexShrink: 0,
-      }}
-    >
-      <Box
-        component="span"
-        sx={{
-          color: '#fff',
-          fontFamily: 'Manrope, sans-serif',
-          fontWeight: 800,
-          fontSize: size * 0.55,
-          lineHeight: 1,
-          letterSpacing: '-0.04em',
-          borderBottom: '2px solid #fff',
-          pb: '1px',
-        }}
-      >
-        A
-      </Box>
-    </Box>
-  )
 }
 
 function pageTitle(pathname: string): string {
@@ -262,10 +230,10 @@ export function AppLayout() {
                     lineHeight: 1.15,
                   }}
                 >
-                  Альфа‑Банк
+                  Линия решения
                 </Typography>
                 <Typography sx={{ fontSize: 11, color: '#8A96A3', fontWeight: 600 }}>
-                  Бизнес Кредит
+                  Альфа‑Банк
                 </Typography>
               </Box>
             </Stack>

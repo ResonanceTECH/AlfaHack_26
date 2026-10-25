@@ -9,7 +9,7 @@ def _wrap_html(title: str, body_html: str) -> str:
 <head><meta charset="utf-8"><title>{title}</title></head>
 <body style="font-family:Arial,sans-serif;color:#0B1F35;line-height:1.5">
   <div style="max-width:560px;margin:0 auto;padding:24px">
-    <h1 style="color:#EF3124;font-size:20px;margin:0 0 16px">Alfa Business Credit</h1>
+    <h1 style="color:#EF3124;font-size:20px;margin:0 0 16px">Линия решения</h1>
     {body_html}
     <p style="color:#6B7A8D;font-size:12px;margin-top:32px">
       Если вы не запрашивали это письмо, просто проигнорируйте его.
@@ -22,7 +22,7 @@ def _wrap_html(title: str, body_html: str) -> str:
 def verification_email(token: str, full_name: str) -> tuple[str, str, str]:
     settings = get_settings()
     link = f"{settings.frontend_url.rstrip('/')}/verify-email?token={token}"
-    subject = "Подтвердите email — Alfa Business Credit"
+    subject = "Подтвердите email — Линия решения"
     text = (
         f"Здравствуйте, {full_name}!\n\n"
         f"Подтвердите адрес электронной почты, перейдя по ссылке:\n{link}\n\n"
@@ -42,7 +42,7 @@ def verification_email(token: str, full_name: str) -> tuple[str, str, str]:
 def password_reset_email(token: str, full_name: str) -> tuple[str, str, str]:
     settings = get_settings()
     link = f"{settings.frontend_url.rstrip('/')}/reset-password?token={token}"
-    subject = "Сброс пароля — Alfa Business Credit"
+    subject = "Сброс пароля — Линия решения"
     text = (
         f"Здравствуйте, {full_name}!\n\n"
         f"Чтобы задать новый пароль, перейдите по ссылке:\n{link}\n\n"
@@ -59,7 +59,7 @@ def password_reset_email(token: str, full_name: str) -> tuple[str, str, str]:
 
 
 def contact_linked_email(full_name: str, contact_type: str, masked: str) -> tuple[str, str, str]:
-    subject = "Привязан новый контакт — Alfa Business Credit"
+    subject = "Привязан новый контакт — Линия решения"
     text = (
         f"Здравствуйте, {full_name}!\n\n"
         f"К вашему аккаунту привязан новый {contact_type}: {masked}.\n"
@@ -75,7 +75,7 @@ def contact_linked_email(full_name: str, contact_type: str, masked: str) -> tupl
 
 
 def critical_change_email(full_name: str, change_description: str) -> tuple[str, str, str]:
-    subject = "Изменение данных аккаунта — Alfa Business Credit"
+    subject = "Изменение данных аккаунта — Линия решения"
     text = (
         f"Здравствуйте, {full_name}!\n\n"
         f"{change_description}\n\n"

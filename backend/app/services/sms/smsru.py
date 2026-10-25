@@ -18,7 +18,7 @@ class SmsRuProvider(SmsProvider):
             raise SmsDeliveryError("SMS_API_KEY не настроен")
 
         digits = phone.lstrip("+")
-        text = f"Код подтверждения Alfa Business Credit: {code}. Никому не сообщайте код."
+        text = f"Код подтверждения Линия решения: {code}. Никому не сообщайте код."
         params = {
             "api_id": settings.sms_api_key,
             "to": digits,

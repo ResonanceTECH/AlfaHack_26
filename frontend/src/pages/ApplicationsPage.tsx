@@ -3,7 +3,6 @@ import {
   Button,
   Chip,
   Paper,
-  Stack,
   Table,
   TableBody,
   TableCell,
@@ -81,12 +80,6 @@ export function ApplicationsPage() {
           </Table>
         </Paper>
       )}
-
-      <Stack sx={{ mt: 2 }}>
-        <Typography variant="caption" color="text.secondary">
-          Workflow: draft → submitted → in_review → docs_requested ↔ in_review → approved/rejected → issued
-        </Typography>
-      </Stack>
     </Box>
   )
 }
