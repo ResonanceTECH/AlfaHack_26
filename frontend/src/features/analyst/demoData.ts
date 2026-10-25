@@ -291,15 +291,15 @@ export const RISK_SUMMARY = {
       detail: 'Лимиты, документы, срок бизнеса',
     },
     {
-      title: 'ML Risk Assessment',
-      detail: 'PD/LGD proxy, объяснимость',
+      title: 'Оценка риска моделью',
+      detail: 'Вероятность дефолта и потери, объяснимость',
     },
     {
       title: 'Финансовые расчёты',
-      detail: 'NCF, DSCR, концентрация',
+      detail: 'Потоки, долговая нагрузка, концентрация',
     },
     {
-      title: 'AI Copilot',
+      title: 'AI-помощник',
       detail: 'Черновик — не решение',
     },
   ],
