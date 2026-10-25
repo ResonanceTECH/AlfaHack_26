@@ -17,8 +17,8 @@ const STATUS_ALIASES: Record<string, ApplicationStatus> = {
   approved: 'approved',
   rejected: 'rejected',
   counteroffered: 'counteroffered',
-  offer_accepted: 'approved',
-  agreement_preparation: 'approved',
+  offer_accepted: 'offer_accepted',
+  agreement_preparation: 'agreement_preparation',
   issued: 'issued',
 }
 

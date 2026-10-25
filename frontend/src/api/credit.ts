@@ -6,6 +6,8 @@ import type {
   GoalType,
   LegalForm,
   ProductType,
+  ProjectEvaluationInput,
+  ProjectEvaluationResult,
   ReadinessResult,
   RecommendationsResponse,
   ScheduleType,
@@ -282,5 +284,36 @@ export async function calculateCredit(input: {
     totalPayments: num(raw.totalPayments ?? raw.total_payments),
     overpayment: num(raw.overpayment),
     totalFees: num(raw.totalFees ?? raw.total_fees),
+  }
+}
+
+export async function evaluateProject(
+  input: ProjectEvaluationInput,
+): Promise<ProjectEvaluationResult> {
+  const { data } = await api.post('/projects/evaluate', input)
+  const raw = data as Record<string, unknown>
+  const flows = (raw.cashFlows ?? raw.cash_flows ?? []) as Record<string, unknown>[]
+  return {
+    simplePaybackMonths:
+      raw.simplePaybackMonths != null || raw.simple_payback_months != null
+        ? num(raw.simplePaybackMonths ?? raw.simple_payback_months)
+        : null,
+    discountedPaybackMonths:
+      raw.discountedPaybackMonths != null || raw.discounted_payback_months != null
+        ? num(raw.discountedPaybackMonths ?? raw.discounted_payback_months)
+        : null,
+    npv: num(raw.npv),
+    irr: raw.irr != null ? num(raw.irr) : null,
+    roi: num(raw.roi),
+    breakEvenUnits:
+      raw.breakEvenUnits != null || raw.break_even_units != null
+        ? num(raw.breakEvenUnits ?? raw.break_even_units)
+        : null,
+    cashFlows: flows.map((r) => ({
+      month: num(r.month),
+      cf: num(r.cf),
+      cumulative: num(r.cumulative),
+      discounted: num(r.discounted),
+    })),
   }
 }
