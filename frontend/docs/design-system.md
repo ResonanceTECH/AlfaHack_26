@@ -1,8 +1,7 @@
 # Design System — Линия решения
 
 **Живой UI-kit:** [/design-system](/design-system)  
-**Секция на лендинге:** [/#design-system](/#design-system)  
-Футер → **Разработчикам**.
+Футер лендинга → **Разработчикам**.
 
 ## Что внутри UI-kit
 
@@ -35,4 +34,3 @@ import { color, font, radius, shadow } from '@/theme/tokens'
 | [`src/theme/index.ts`](../src/theme/index.ts) | MUI theme |
 | [`src/pages/DesignSystemPage.tsx`](../src/pages/DesignSystemPage.tsx) | Витрина |
 | [`src/components/design-system/ProductKitDemos.tsx`](../src/components/design-system/ProductKitDemos.tsx) | Продуктовые демо |
-| [`src/components/landing/DesignSystemSection.tsx`](../src/components/landing/DesignSystemSection.tsx) | Блок на лендинге |
