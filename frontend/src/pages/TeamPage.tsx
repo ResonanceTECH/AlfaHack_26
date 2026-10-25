@@ -161,8 +161,25 @@ export function TeamPage() {
     })
   }, [members, search, roleFilter, statusFilter])
 
+  const removeM = useMutation({
+    mutationFn: async (id: string) => {
+      if (!companyId) throw new Error('Нет компании')
+      const row = members.find((m) => m.id === id)
+      if (row?.source === 'invite') {
+        await cancelInvite(companyId, id)
+      } else {
+        await removeMemberApi(companyId, id)
+      }
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['team'] })
+      setActionError(null)
+    },
+    onError: (err) => setActionError(apiError(err, 'Не удалось отозвать доступ')),
+  })
+
   function removeMember(id: string) {
-    setMembers(removeTeamMember(id))
+    removeM.mutate(id)
     setMenuAnchor(null)
     setMenuId(null)
   }
@@ -295,6 +312,12 @@ export function TeamPage() {
         </TextField>
       </Box>
 
+      {actionError && (
+        <Typography sx={{ color: '#C41E14', fontSize: 13, fontWeight: 600, mb: 1.5 }}>
+          {actionError}
+        </Typography>
+      )}
+
       <Box sx={{ ...tileSx, mb: 2, overflow: 'auto' }}>
         <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
           <Box component="thead">
@@ -318,7 +341,14 @@ export function TeamPage() {
             </Box>
           </Box>
           <Box component="tbody">
-            {filtered.map((m) => (
+            {loading && (
+              <Box component="tr">
+                <Box component="td" colSpan={6} sx={{ py: 4, textAlign: 'center' }}>
+                  <CircularProgress size={24} sx={{ color: '#EF3124' }} />
+                </Box>
+              </Box>
+            )}
+            {!loading && filtered.map((m) => (
               <Box
                 component="tr"
                 key={m.id}
@@ -373,7 +403,7 @@ export function TeamPage() {
                 </Box>
               </Box>
             ))}
-            {filtered.length === 0 && (
+            {!loading && filtered.length === 0 && (
               <Box component="tr">
                 <Box component="td" colSpan={6} sx={{ py: 3, textAlign: 'center' }}>
                   <Typography sx={{ color: '#9AA5B1', fontSize: 14 }}>
