@@ -42,15 +42,12 @@ export function AnalystCaseChecksPage() {
   const { caseId = 'ABC-2026-1042' } = useParams()
 
   return (
-    <Box>
-      <Typography sx={{ fontWeight: 700, fontSize: 16, color: '#0B1F35', mb: 0.5 }}>
-        Автоматические проверки
-      </Typography>
-      <Typography sx={{ fontSize: 13, color: '#8A96A3', mb: 2 }}>
-        Policy CP-2026.10 · ruleset v1.4
+    <Box sx={{ ...tileSx, p: { xs: 2, md: 2.25 } }}>
+      <Typography sx={{ fontWeight: 700, fontSize: 16, color: '#0B1F35', mb: 0.35 }}>
+        Автоматические проверки · Policy CP-2026.10 · ruleset v1.4
       </Typography>
 
-      <Box sx={{ ...tileSx, p: 0, overflow: 'auto', mb: 2 }}>
+      <Box sx={{ overflow: 'auto', mx: { xs: -0.5, md: 0 }, mt: 1.5 }}>
         <Table size="small" sx={{ minWidth: 720 }}>
           <TableHead>
             <TableRow>
@@ -72,10 +69,7 @@ export function AnalystCaseChecksPage() {
                   <TableCell sx={{ ...tdSx, color: '#5A6B7D' }}>{c.condition}</TableCell>
                   <TableCell sx={{ ...tdSx, color: '#7A8795' }}>{c.source}</TableCell>
                   <TableCell sx={tdSx}>
-                    <Box
-                      component="span"
-                      sx={{ ...statusPill, bgcolor: st.bg, color: st.color }}
-                    >
+                    <Box component="span" sx={{ ...statusPill, bgcolor: st.bg, color: st.color }}>
                       {st.label}
                     </Box>
                   </TableCell>
@@ -92,10 +86,11 @@ export function AnalystCaseChecksPage() {
         justifyContent="space-between"
         alignItems={{ xs: 'stretch', sm: 'center' }}
         spacing={1.5}
+        sx={{ mt: 2 }}
       >
-        <Typography sx={{ fontSize: 12.5, color: '#8A96A3', lineHeight: 1.45, maxWidth: 520 }}>
-          Failed блокирует решение. Warning — можно продолжить вручную (например, неполный комплект
-          документов).
+        <Typography sx={{ fontSize: 12.5, color: '#8A96A3', lineHeight: 1.45, maxWidth: 560 }}>
+          Failed = техническая ошибка. Warning по документам не блокирует ручной разбор, но блокирует
+          PREAPPROVED до закрытия.
         </Typography>
         <Stack direction="row" spacing={1} flexShrink={0}>
           <Button variant="outlined" sx={outlineBtn}>
