@@ -187,9 +187,8 @@ export async function removeMember(companyId: string, userId: string): Promise<v
 export async function acceptInvite(code: string): Promise<AcceptInviteResult> {
   const { data } = await api.post(`/invites/${encodeURIComponent(code)}/accept`)
   const raw = (data ?? {}) as Record<string, unknown>
-  const nested = (raw.company ?? raw.membership) as Record<string, unknown> | undefined
-  const companyId =
-    raw.companyId ?? raw.company_id ?? nested?.id ?? nested?.companyId ?? nested?.company_id
+  // Backend returns CompanyMemberOut: { userId, companyId, role, ... }
+  const companyId = raw.companyId ?? raw.company_id
   return {
     companyId: companyId != null && companyId !== '' ? str(companyId) : undefined,
   }

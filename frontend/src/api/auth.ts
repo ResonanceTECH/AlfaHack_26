@@ -1,5 +1,5 @@
 import type { AuthSession, User } from '@/types'
-import { api, clearSession } from '@/api/client'
+import { ACTIVE_COMPANY_KEY, api, clearSession } from '@/api/client'
 
 export type EmailAction = {
   message: string
@@ -46,8 +46,10 @@ function mapUser(raw: Record<string, unknown>): User {
 }
 
 function persistUser(user: User): User {
-  localStorage.setItem('alfa_user', JSON.stringify(user))
-  return user
+  const active = localStorage.getItem(ACTIVE_COMPANY_KEY) || undefined
+  const next = active ? { ...user, companyId: active } : user
+  localStorage.setItem('alfa_user', JSON.stringify(next))
+  return next
 }
 
 function mapSession(data: Record<string, unknown>): AuthSession {
