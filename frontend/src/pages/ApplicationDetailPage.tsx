@@ -147,11 +147,14 @@ function shortMoney(n: number): string {
 export function ApplicationDetailPage() {
   const { id } = useParams()
   const qc = useQueryClient()
+  const { user } = useAuth()
+  const { companyId: storeCompanyId } = useAppStore()
   const editable = Boolean(id && isEditableApplication(id))
+  const companyIdHint = storeCompanyId || user?.companyId
 
   const appQ = useQuery({
-    queryKey: ['application', id],
-    queryFn: () => getApplication(id!),
+    queryKey: ['application', id, companyIdHint],
+    queryFn: () => getApplication(id!, companyIdHint),
     enabled: Boolean(id) && !editable,
     retry: false,
   })
@@ -161,7 +164,11 @@ export function ApplicationDetailPage() {
     [id, appQ.dataUpdatedAt],
   )
   const app = appQ.data ?? localApp
-  const companyId = app?.companyId
+  const companyId = app?.companyId || companyIdHint
+
+  const [explanation, setExplanation] = useState<AiAgentResponse | null>(null)
+  const [explanationLoading, setExplanationLoading] = useState(false)
+  const [explanationError, setExplanationError] = useState<string | null>(null)
 
   const decisionQ = useQuery({
     queryKey: ['application', id, 'decision'],
