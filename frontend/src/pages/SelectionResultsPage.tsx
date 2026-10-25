@@ -1,7 +1,9 @@
 import {
+  Alert,
   Box,
   Button,
   Checkbox,
+  CircularProgress,
   FormControlLabel,
   MenuItem,
   Slider,
@@ -15,20 +17,38 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { fetchRecommendations } from '@/api/credit'
+import { formatAiError, postProductSelection, type AiAgentResponse } from '@/api/ai'
+import { fetchRecommendations, listProducts } from '@/api/credit'
+import { AiAgentReply } from '@/components/ai/AiAgentReply'
 import { SelectionStepper } from '@/features/selection/SelectionStepper'
 import { loadSelectionDraft, saveSelectionDraft } from '@/features/selection/draft'
-import { goalTitle, type SelectionDraft } from '@/features/selection/goalOptions'
+import {
+  GOAL_OPTIONS,
+  goalTitle,
+  type SelectionDraft,
+} from '@/features/selection/goalOptions'
 import { useAppStore } from '@/hooks/useAppStore'
 import { annuityPayment } from '@/utils/finance'
 import { formatMoney } from '@/utils/format'
-import type { ProductType } from '@/types'
+import type { CreditProduct, ProductType } from '@/types'
 import { productTypeLabels } from '@/data/labels'
-import {
-  DEMO_PRODUCTS,
-  REJECTED_PRODUCTS,
-  type DemoProduct,
-} from '@/features/selection/demoProducts'
+type MatchCard = {
+  productId: string
+  productType: ProductType
+  productName: string
+  matchScore: number
+  estimatedMonthlyPayment: number
+  estimatedRate: number
+  recommendedAmount: number
+  recommendedTerm: number
+  reasons: string[]
+  warnings: string[]
+  tag: string
+  badge: string
+  badgeTone: 'ok' | 'warn' | 'muted'
+  amountMax: number
+  termMax: number
+}
 
 const tileSx = {
   bgcolor: '#fff',
@@ -37,9 +57,6 @@ const tileSx = {
   boxShadow: '0 1px 8px rgba(11,31,53,0.04)',
   p: { xs: 2, md: 2.25 },
 } as const
-
-const DEMO = DEMO_PRODUCTS
-const REJECTED = REJECTED_PRODUCTS
 
 const TYPE_FILTERS: { key: ProductType | 'leasing'; label: string }[] = [
   { key: 'working_capital', label: 'Оборотный кредит' },
@@ -69,6 +86,11 @@ export function SelectionResultsPage() {
   const [speed, setSpeed] = useState<'1' | '3'>('1')
   const [filterAmount, setFilterAmount] = useState(draft.amount)
   const [filterTerm, setFilterTerm] = useState(draft.termMonths)
+  const [aiQuestion, setAiQuestion] = useState('')
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
+  const [aiReply, setAiReply] = useState<AiAgentResponse | null>(null)
+  const [aiCatalog, setAiCatalog] = useState<CreditProduct[]>([])
 
   useEffect(() => {
     const d = loadSelectionDraft(companyId)
@@ -82,52 +104,96 @@ export function SelectionResultsPage() {
     setCompareIds(draft.compareIds)
   }, [draft, companyId, setCompareIds])
 
+  const goalType =
+    GOAL_OPTIONS.find((g) => g.key === draft.goalKey)?.goalType ?? goal?.goalType
+
   const recQ = useQuery({
-    queryKey: ['recommendations', companyId, goal?.id, draft.amount, draft.termMonths],
+    queryKey: [
+      'credit-matches',
+      companyId,
+      goal?.id,
+      draft.amount,
+      draft.termMonths,
+      goalType,
+    ],
     queryFn: () =>
       fetchRecommendations({
         companyId: companyId!,
-        businessGoalId: goal?.id,
+        fundingNeedId: goal?.id,
         amount: draft.amount,
         termMonths: draft.termMonths,
+        goalType,
       }),
-    enabled: Boolean(companyId && goal),
+    enabled: Boolean(companyId && draft.amount && draft.termMonths && goalType),
     retry: false,
   })
 
-  const products: DemoProduct[] = useMemo(() => {
-    if (recQ.data?.recommendations?.length) {
-      return recQ.data.recommendations.map((r, i) => {
-        const demo = DEMO[i] ?? DEMO[2]!
-        return {
-          ...r,
-          tag: productTypeLabels[r.productType] ?? 'Кредит',
-          badge:
-            r.matchScore >= 85
-              ? 'Соответствует цели и сумме'
-              : r.warnings[0] ?? 'Условия требуют внимания',
-          badgeTone: (r.matchScore >= 85 ? 'ok' : r.warnings.length ? 'warn' : 'muted') as
-            | 'ok'
-            | 'warn'
-            | 'muted',
-          amountMax: r.recommendedAmount * 2,
-          termMax: r.recommendedTerm + 12,
-          estimatedMonthlyPayment:
-            r.estimatedMonthlyPayment ||
-            Math.round(annuityPayment(draft.amount, r.estimatedRate || 17.3, draft.termMonths)),
-        }
-      })
-    }
-    return DEMO.map((p) => ({
-      ...p,
+  const products: MatchCard[] = useMemo(() => {
+    if (!recQ.data?.recommendations?.length) return []
+    return recQ.data.recommendations.map((r) => ({
+      productId: r.productId,
+      productType: r.productType,
+      productName: r.productName,
+      matchScore: r.matchScore,
+      estimatedRate: r.estimatedRate,
+      recommendedAmount: r.recommendedAmount,
+      recommendedTerm: r.recommendedTerm,
+      reasons: r.reasons,
+      warnings: r.warnings,
+      tag: productTypeLabels[r.productType] ?? 'Кредит',
+      badge:
+        r.matchScore >= 85
+          ? 'Соответствует цели и сумме'
+          : r.warnings[0] ?? 'Условия требуют внимания',
+      badgeTone: (r.matchScore >= 85 ? 'ok' : r.warnings.length ? 'warn' : 'muted') as
+        | 'ok'
+        | 'warn'
+        | 'muted',
+      amountMax: r.recommendedAmount ? r.recommendedAmount * 2 : draft.amount * 2,
+      termMax: (r.recommendedTerm || draft.termMonths) + 12,
       estimatedMonthlyPayment:
-        p.productType === 'overdraft'
-          ? 0
-          : Math.round(annuityPayment(filterAmount, p.estimatedRate, filterTerm)),
-      recommendedAmount: filterAmount,
-      recommendedTerm: filterTerm,
+        r.estimatedMonthlyPayment ||
+        Math.round(annuityPayment(draft.amount, r.estimatedRate || 17.3, draft.termMonths)),
     }))
-  }, [recQ.data, draft.amount, draft.termMonths, filterAmount, filterTerm])
+  }, [recQ.data, draft.amount, draft.termMonths])
+
+  async function runAiSelection() {
+    if (!companyId || !aiQuestion.trim() || aiBusy) return
+    setAiBusy(true)
+    setAiError(null)
+    setAiReply(null)
+    setAiCatalog([])
+    try {
+      const res = await postProductSelection(companyId, {
+        question: aiQuestion.trim(),
+        amount: draft.amount || undefined,
+        termMonths: draft.termMonths || undefined,
+      })
+      setAiReply(res)
+      if (res.productIds?.length) {
+        const catalog = await listProducts()
+        setAiCatalog(catalog.filter((p) => res.productIds!.includes(p.id)))
+      }
+    } catch (e) {
+      setAiError(formatAiError(e, 'Не удалось подобрать продукт'))
+    } finally {
+      setAiBusy(false)
+    }
+  }
+
+  function applyPrefill() {
+    if (!aiReply?.prefill) return
+    const p = aiReply.prefill
+    setDraft((d) => ({
+      ...d,
+      amount: p.amount ?? d.amount,
+      termMonths: p.termMonths ?? d.termMonths,
+      selectedProductId: p.productId ?? d.selectedProductId,
+    }))
+    if (p.productId) setSelectedProduct(p.productId)
+    if (p.amount) setFilterAmount(p.amount)
+    if (p.termMonths) setFilterTerm(p.termMonths)
+  }
 
   const filtered = useMemo(() => {
     let list = products.filter((p) => {
@@ -171,7 +237,7 @@ export function SelectionResultsPage() {
     setDraft((d) => ({ ...d, amount: filterAmount, termMonths: filterTerm }))
   }
 
-  function badgeBg(tone: DemoProduct['badgeTone']) {
+  function badgeBg(tone: MatchCard['badgeTone']) {
     if (tone === 'ok') return { bg: '#E8F6EE', color: '#1B8A5A' }
     if (tone === 'warn') return { bg: '#FFF0E0', color: '#C45A12' }
     return { bg: '#EEF1F4', color: '#5A6B7D' }
@@ -211,7 +277,11 @@ export function SelectionResultsPage() {
           </Typography>
           <Typography sx={{ color: '#7A8795', fontSize: 14, mt: 0.55 }}>
             {goalTitle(draft.goalKey)} · {formatMoney(draft.amount)} · {draft.termMonths} мес ·
-            найдено {filtered.length} продукта, {REJECTED.length} не подошли
+            {recQ.isLoading
+              ? ' подбираем…'
+              : recQ.isError
+                ? ' ошибка подбора'
+                : ` найдено ${filtered.length}`}
           </Typography>
         </Box>
         <Stack direction="row" spacing={1.25} flexShrink={0}>
@@ -397,6 +467,120 @@ export function SelectionResultsPage() {
             </TextField>
           </Stack>
 
+          <Box sx={{ ...tileSx, mb: 0 }}>
+            <Typography
+              sx={{
+                fontFamily: 'Manrope, sans-serif',
+                fontWeight: 800,
+                fontSize: 15,
+                color: '#0B1F35',
+                mb: 0.5,
+              }}
+            >
+              AI-подбор продукта
+            </Typography>
+            <Typography sx={{ fontSize: 12.5, color: '#8A96A3', mb: 1, lineHeight: 1.4 }}>
+              Match score — соответствие потребности каталогу, не кредитная оценка и не вероятность
+              одобрения. Маппинг scoring_product задаёт backend.
+            </Typography>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mb: 1 }}>
+              <TextField
+                fullWidth
+                size="small"
+                placeholder="Например: нужен станок"
+                value={aiQuestion}
+                onChange={(e) => setAiQuestion(e.target.value)}
+                sx={{ bgcolor: '#fff' }}
+              />
+              <Button
+                variant="contained"
+                color="primary"
+                disabled={aiBusy || !aiQuestion.trim() || !companyId}
+                onClick={() => void runAiSelection()}
+                sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2, flexShrink: 0 }}
+              >
+                {aiBusy ? <CircularProgress size={18} color="inherit" /> : 'Подобрать'}
+              </Button>
+            </Stack>
+            {aiError && (
+              <Alert severity="error" sx={{ mb: 1, borderRadius: 2 }}>
+                {aiError}
+              </Alert>
+            )}
+            {aiReply && (
+              <Box sx={{ mb: 1 }}>
+                <AiAgentReply data={aiReply} dense />
+                {aiReply.prefill && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={applyPrefill}
+                    sx={{ mt: 1, textTransform: 'none', fontWeight: 700 }}
+                  >
+                    Перенести параметры в форму
+                  </Button>
+                )}
+                {aiReply.productIds && aiReply.productIds.length === 0 && (
+                  <Typography sx={{ mt: 1, fontSize: 13, color: '#7A8795' }}>
+                    Подходящих продуктов в каталоге нет.
+                  </Typography>
+                )}
+                {aiCatalog.length > 0 && (
+                  <Stack spacing={0.75} sx={{ mt: 1.25 }}>
+                    {aiCatalog.map((p) => (
+                      <Box
+                        key={p.id}
+                        sx={{
+                          p: 1.25,
+                          borderRadius: 2,
+                          bgcolor: '#F7F8FA',
+                          border: '1px solid rgba(11,31,53,0.06)',
+                        }}
+                      >
+                        <Typography sx={{ fontSize: 14, fontWeight: 700, color: '#0B1F35' }}>
+                          {p.name}
+                        </Typography>
+                        <Typography sx={{ fontSize: 12.5, color: '#7A8795' }}>
+                          {formatMoney(p.amountMin)}–{formatMoney(p.amountMax)} · {p.termMin}–
+                          {p.termMax} мес · {p.rateMin}–{p.rateMax}%
+                        </Typography>
+                        <Button
+                          size="small"
+                          sx={{ mt: 0.5, textTransform: 'none', fontWeight: 700, color: '#EF3124' }}
+                          onClick={() => {
+                            setSelectedProduct(p.id)
+                            setDraft((d) => ({ ...d, selectedProductId: p.id }))
+                            navigate('/app/applications/new')
+                          }}
+                        >
+                          Выбрать
+                        </Button>
+                      </Box>
+                    ))}
+                  </Stack>
+                )}
+              </Box>
+            )}
+          </Box>
+
+          {recQ.isLoading && (
+            <Box sx={{ display: 'grid', placeItems: 'center', py: 6 }}>
+              <CircularProgress sx={{ color: '#EF3124' }} />
+            </Box>
+          )}
+          {recQ.isError && (
+            <Alert severity="error" sx={{ borderRadius: 2 }}>
+              Не удалось получить подбор по правилам. Проверьте финансы компании и параметры
+              суммы/срока/цели.
+            </Alert>
+          )}
+          {!recQ.isLoading && !recQ.isError && filtered.length === 0 && (
+            <Alert severity="info" sx={{ borderRadius: 2 }}>
+              Подходящих продуктов нет — демо-карточки не подставляем. Измените сумму, срок или
+              цель.
+            </Alert>
+          )}
+
           {filtered.map((p, idx) => {
             const selected = draft.compareIds.includes(p.productId)
             const tone = badgeBg(p.badgeTone)
@@ -546,26 +730,6 @@ export function SelectionResultsPage() {
               </Box>
             )
           })}
-
-          <Stack
-            direction={{ xs: 'column', sm: 'row' }}
-            justifyContent="space-between"
-            alignItems={{ sm: 'center' }}
-            spacing={1}
-            sx={{
-              px: 2,
-              py: 1.5,
-              borderRadius: 2.5,
-              bgcolor: '#EEF1F4',
-            }}
-          >
-            <Typography sx={{ fontSize: 13.5, color: '#5A6B7D' }}>
-              Не подошли ({REJECTED.length}): {REJECTED.join(', ')}
-            </Typography>
-            <Button size="small" sx={{ color: '#EF3124', fontWeight: 700, textTransform: 'none' }}>
-              Показать →
-            </Button>
-          </Stack>
 
           <Stack
             direction="row"

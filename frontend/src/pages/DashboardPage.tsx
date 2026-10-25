@@ -38,12 +38,14 @@ function pipelineStep(status: ApplicationStatus): number {
   switch (status) {
     case 'draft':
     case 'submitted':
+    case 'validating':
       return 0
     case 'docs_requested':
       return 1
     case 'in_review':
       return 2
     case 'approved':
+    case 'counteroffered':
       return 3
     case 'rejected':
     case 'issued':
@@ -69,7 +71,9 @@ function estimateMonthly(amount: number, termMonths: number, annualRate: number)
 
 function pickActiveApp(apps: CreditApplication[]): CreditApplication | null {
   const active = apps.find((a) =>
-    ['submitted', 'in_review', 'docs_requested', 'approved'].includes(a.status),
+    ['submitted', 'validating', 'in_review', 'docs_requested', 'approved', 'counteroffered'].includes(
+      a.status,
+    ),
   )
   return active ?? apps.find((a) => a.status === 'draft') ?? apps[0] ?? null
 }

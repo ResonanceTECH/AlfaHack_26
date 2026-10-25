@@ -32,7 +32,11 @@ import {
   type DocumentRequest,
   type PublicDecision,
 } from '@/api/applications'
-import { fetchApplicationExplanation, type AiAgentResponse } from '@/api/ai'
+import {
+  fetchApplicationExplanation,
+  formatAiError,
+  type AiAgentResponse,
+} from '@/api/ai'
 import { AiAgentReply } from '@/components/ai/AiAgentReply'
 import { useAuth } from '@/contexts/AuthContext'
 import { useAppStore } from '@/hooks/useAppStore'
@@ -419,12 +423,7 @@ export function ApplicationDetailPage() {
       setExplanation(res)
     } catch (e) {
       setExplanation(null)
-      setExplanationError(
-        (e as { response?: { data?: { error?: { message?: string }; detail?: string } } })?.response
-          ?.data?.error?.message ||
-          (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
-          (e instanceof Error ? e.message : 'Не удалось загрузить объяснение'),
-      )
+      setExplanationError(formatAiError(e, 'Не удалось загрузить объяснение'))
     } finally {
       setExplanationLoading(false)
     }
@@ -676,6 +675,11 @@ export function ApplicationDetailPage() {
                     {shortMoney(offer.amount)} · {offer.termMonths} мес · {offer.rate.toFixed(1)}% ·
                     платёж ≈ {shortMoney(offer.monthlyPayment || 0)}
                   </Typography>
+                  {offer.expiresAt && (
+                    <Typography sx={{ mt: 0.35, fontSize: 12, color: '#8A96A3' }}>
+                      Действует до {formatDateTime(offer.expiresAt)}
+                    </Typography>
+                  )}
                   <Stack direction="row" spacing={1} sx={{ mt: 1.25 }}>
                     <Button
                       variant="contained"
@@ -708,6 +712,120 @@ export function ApplicationDetailPage() {
                   </Stack>
                 </Box>
               ))}
+            </Box>
+          )}
+
+          {decisionReady && (
+            <Box sx={tileSx}>
+              <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                justifyContent="space-between"
+                alignItems={{ xs: 'stretch', sm: 'center' }}
+                spacing={1.25}
+                sx={{ mb: 1.25 }}
+              >
+                <Typography
+                  sx={{
+                    fontFamily: 'Manrope, sans-serif',
+                    fontWeight: 800,
+                    fontSize: 16,
+                    color: '#0B1F35',
+                  }}
+                >
+                  Почему такое решение
+                </Typography>
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                  <Button
+                    variant="outlined"
+                    disabled={explanationLoading}
+                    onClick={() => void loadExplanation()}
+                    sx={{
+                      borderRadius: 2,
+                      fontWeight: 700,
+                      textTransform: 'none',
+                      borderColor: 'rgba(11,31,53,0.16)',
+                      color: '#0B1F35',
+                    }}
+                  >
+                    {explanationLoading ? (
+                      <CircularProgress size={18} />
+                    ) : explanation ? (
+                      'Обновить'
+                    ) : (
+                      'Показать объяснение'
+                    )}
+                  </Button>
+                  <Button
+                    component={RouterLink}
+                    to={`/app/ai?applicationId=${encodeURIComponent(app.id)}`}
+                    variant="contained"
+                    color="primary"
+                    sx={{
+                      borderRadius: 2,
+                      fontWeight: 700,
+                      textTransform: 'none',
+                      boxShadow: 'none',
+                    }}
+                  >
+                    Задать вопрос по заявке
+                  </Button>
+                </Stack>
+              </Stack>
+              {explanationError && (
+                <Alert severity="error" sx={{ mb: 1.25, borderRadius: 2 }}>
+                  {explanationError}
+                </Alert>
+              )}
+              {explanation ? (
+                <AiAgentReply data={explanation} />
+              ) : (
+                !explanationLoading &&
+                !explanationError && (
+                  <Typography sx={{ fontSize: 13.5, color: '#7A8795' }}>
+                    Загрузите объяснение решения или задайте вопрос в чате по этой заявке.
+                  </Typography>
+                )
+              )}
+            </Box>
+          )}
+
+          {app.statusHistory.length > 0 && (
+            <Box sx={tileSx}>
+              <Typography
+                sx={{
+                  fontFamily: 'Manrope, sans-serif',
+                  fontWeight: 800,
+                  fontSize: 16,
+                  color: '#0B1F35',
+                  mb: 1.25,
+                }}
+              >
+                История статусов
+              </Typography>
+              <Stack spacing={0.85}>
+                {[...app.statusHistory].reverse().map((h, i) => (
+                  <Stack
+                    key={`${h.status}-${h.at}-${i}`}
+                    direction="row"
+                    justifyContent="space-between"
+                    spacing={1}
+                    sx={{
+                      py: 0.65,
+                      borderBottom:
+                        i < app.statusHistory.length - 1
+                          ? '1px solid rgba(11,31,53,0.06)'
+                          : 'none',
+                    }}
+                  >
+                    <Typography sx={{ fontSize: 13.5, fontWeight: 650, color: '#0B1F35' }}>
+                      {statusLabels[h.status] ?? h.status}
+                    </Typography>
+                    <Typography sx={{ fontSize: 12.5, color: '#8A96A3', flexShrink: 0 }}>
+                      {formatDateTime(h.at)}
+                    </Typography>
+                  </Stack>
+                ))}
+              </Stack>
             </Box>
           )}
 

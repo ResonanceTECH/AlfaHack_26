@@ -412,7 +412,7 @@ export function AdminAnalyticsPage() {
                     ))}
                   </Pie>
                   <Tooltip
-                    formatter={(v: number, name: string) => [`${v}%`, name]}
+                    formatter={(v, name) => [`${v ?? 0}%`, String(name)]}
                     contentStyle={{
                       borderRadius: radius.button,
                       border: `1px solid ${color.semantic.divider}`,
@@ -633,7 +633,7 @@ export function AdminAnalyticsPage() {
                     tickLine={false}
                   />
                   <Tooltip
-                    formatter={(v: number) => [`${v}%`, 'Конверсия']}
+                    formatter={(v) => [`${v ?? 0}%`, 'Конверсия']}
                     labelFormatter={(l) => `Неделя ${l}`}
                     contentStyle={{
                       borderRadius: radius.button,
@@ -681,7 +681,7 @@ export function AdminAnalyticsPage() {
                   />
                   <YAxis tick={{ fill: color.text.muted, fontSize: 12 }} axisLine={false} tickLine={false} />
                   <Tooltip
-                    formatter={(v: number) => [`${v} ч`, 'SLA']}
+                    formatter={(v) => [`${v ?? 0} ч`, 'SLA']}
                     contentStyle={{
                       borderRadius: radius.button,
                       border: `1px solid ${color.semantic.divider}`,
@@ -739,7 +739,7 @@ export function AdminAnalyticsPage() {
                   />
                   <YAxis tick={{ fill: color.text.muted, fontSize: 12 }} axisLine={false} tickLine={false} />
                   <Tooltip
-                    formatter={(v: number) => [`${v} млрд`, 'Объём']}
+                    formatter={(v) => [`${v ?? 0} млрд`, 'Объём']}
                     labelFormatter={(l) => `Неделя ${l}`}
                     contentStyle={{
                       borderRadius: radius.button,

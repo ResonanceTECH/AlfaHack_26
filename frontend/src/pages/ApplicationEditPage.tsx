@@ -185,12 +185,13 @@ export function ApplicationEditPage() {
   if (!app) {
     return <Navigate to="/app/applications" replace />
   }
+  const current = app
 
   function resetForm() {
-    setAmount(app.editAmount)
-    setTerm(app.editTerm)
-    setRate(app.editRate)
-    setComment(app.comment)
+    setAmount(current.editAmount)
+    setTerm(current.editTerm)
+    setRate(current.editRate)
+    setComment(current.comment)
   }
 
   function flashMsg(msg: string) {
@@ -201,7 +202,7 @@ export function ApplicationEditPage() {
   function saveChanges() {
     if (choice === 'accept') {
       flashMsg('Условия банка приняты')
-      window.setTimeout(() => navigate(`/app/applications/${app.id}/contract`), 700)
+      window.setTimeout(() => navigate(`/app/applications/${current.id}/contract`), 700)
       return
     }
     if (choice === 'reject') {
