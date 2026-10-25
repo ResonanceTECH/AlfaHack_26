@@ -1,0 +1,122 @@
+[
+  {
+    "id": "E2E-01a",
+    "title": "Create draft",
+    "ok": "e1899d71-4454-4c2b-aead-bd3aa606db70",
+    "detail": "201 {'id': 'e1899d71-4454-4c2b-aead-bd3aa606db70', 'status': 'DRAFT', 'currentStep': 'CREDIT_PARAMETERS', 'version': 1, 'savedAt': '2026-10-25T21:19:30.693246Z', 'companyId': 'company_001', 'productId': 'working_capital_01', 'requestedAmount': '2000000.00', 'termMonths': 12}"
+  },
+  {
+    "id": "APP-08",
+    "title": "Idempotent",
+    "ok": true,
+    "detail": "e1899d71-4454-4c2b-aead-bd3aa606db70 vs e1899d71-4454-4c2b-aead-bd3aa606db70"
+  },
+  {
+    "id": "APP-06",
+    "title": "Submit 202 IN_REVIEW",
+    "ok": true,
+    "detail": "202 IN_REVIEW"
+  },
+  {
+    "id": "ANALYST-02",
+    "title": "Assign",
+    "ok": true,
+    "detail": "200 keys=['application', 'company', 'financials', 'workflow', 'checksSummary', 'openDocumentRequests', 'decisions', 'offers', 'allowedActions']"
+  },
+  {
+    "id": "ANALYST-15",
+    "title": "Propose APPROVED",
+    "ok": true,
+    "detail": "200 {'applicationId': 'e1899d71-4454-4c2b-aead-bd3aa606db70', 'status': 'APPROVED', 'currentStep': 'OFFER', 'decisionId': 'd8ee3ebf-9bd4-47a5-aeaa-57a2dcd81fe4', 'decisionType': 'APPROVED', 'offerId': 'e649bbb0-3de7-4dfb-9b4"
+  },
+  {
+    "id": "DEC-offers",
+    "title": "Offers listed",
+    "ok": true,
+    "detail": "200 1"
+  },
+  {
+    "id": "DEC-08",
+    "title": "Foreign accept denied",
+    "ok": true,
+    "detail": "404 {'error': {'code': 'HTTP_404', 'message': 'Компания не найдена', 'request_id': '59f3a1fc-82eb-4405-9b5e-dcaa30b7afab'}}"
+  },
+  {
+    "id": "DEC-05",
+    "title": "Accept offer",
+    "ok": true,
+    "detail": "200 {'applicationId': 'e1899d71-4454-4c2b-aead-bd3aa606db70', 'offerId': 'e649bbb0-3de7-4dfb-9b46-031f127145cd', 'status': 'AGREEMENT_PREPARATION', 'nextStep': 'AGREEMENT'}"
+  },
+  {
+    "id": "DEC-09",
+    "title": "Double accept",
+    "ok": false,
+    "detail": "200 {'applicationId': 'e1899d71-4454-4c2b-aead-bd3aa606db70', 'offerId': 'e649bbb0-3de7-4dfb-9b46-031f127145cd', 'status': 'AGREEMENT_PREPARATION', 'nextStep': 'AGREEMENT'}"
+  },
+  {
+    "id": "DEC-14",
+    "title": "Agreement",
+    "ok": "555b0aa0-a2f1-42d2-8dda-98be9bb78a81",
+    "detail": "200 {'id': '555b0aa0-a2f1-42d2-8dda-98be9bb78a81', 'applicationId': 'e1899d71-4454-4c2b-aead-bd3aa606db70', 'offerId': 'e649bbb0-3de7-4dfb-9b46-031f127145cd', 'companyId': 'company_001', 'number': 'DEMO-E1899D71', 'status': 'READY', 'amount': '2000000.00', 'termMonths': 12}"
+  },
+  {
+    "id": "DEC-14b",
+    "title": "Confirm agreement",
+    "ok": true,
+    "detail": "200 {'agreementId': '555b0aa0-a2f1-42d2-8dda-98be9bb78a81', 'status': 'CONFIRMED', 'confirmedAt': '2026-10-25T21:19:30.866863Z', 'message': 'Демонстрационное ознакомление зафиксировано'}"
+  },
+  {
+    "id": "DEC-15",
+    "title": "Double confirm",
+    "ok": true,
+    "detail": "409 {'error': {'code': 'ALREADY_CONFIRMED', 'message': 'Ознакомление уже зафиксировано', 'request_id': 'c88547f3-9b2d-4d7d-bf8a-d7379c9c284e'}}"
+  },
+  {
+    "id": "ANALYST-16",
+    "title": "Reject requires reason?",
+    "ok": true,
+    "detail": "200 {'applicationId': 'fac3a791-73cd-4787-bc0c-f8d2789c278a', 'status': 'REJECTED', 'currentStep': 'CLOSED', 'decisionId': '31e7dc8d-f7a3-406a-8af7-756c7bdec937', 'decisionType': 'REJECTED', 'offerId': No"
+  },
+  {
+    "id": "DEC-05b",
+    "title": "Accept seed counteroffer",
+    "ok": true,
+    "detail": "200 {'applicationId': 'app_counter_01', 'offerId': 'offer_counter_01', 'status': 'AGREEMENT_PREPARATION', 'nextStep': 'AGREEMENT'}"
+  },
+  {
+    "id": "ANALYST-08",
+    "title": "Doc requests visible to entrepreneur",
+    "ok": true,
+    "detail": "200 n=1"
+  },
+  {
+    "id": "ADMIN-01",
+    "title": "Create user",
+    "ok": true,
+    "detail": "201 {'id': '887f32f5-4e79-4ad6-8f68-c97806f11128', 'login': 'qa_ent3@demo.alfa', 'email': 'qa_ent3@demo.alfa', 'phone': None, 'fullName': 'QA3', 'role': 'ENTREPRENEUR', 'status': 'ACTI"
+  },
+  {
+    "id": "ADMIN-03",
+    "title": "Bad role",
+    "ok": true,
+    "detail": "422 {'error': {'code': 'VALIDATION_ERROR', 'message': 'Ошибка валидации: role', 'request_id': '0deb6159-777a-4a3d-8643-e570e8240a37', 'fields': [{'field': 'role', 'code': 'enum'}]}}"
+  },
+  {
+    "id": "ADMIN-04",
+    "title": "Disable revokes access",
+    "ok": true,
+    "detail": "disable_ok me=401 relogin=401 {'error': {'code': 'HTTP_401', 'message': 'Неверный логин или пароль', 'request_id': 'ae01e00c-4901-407d-b66b-15f076d53f"
+  },
+  {
+    "id": "ML-12",
+    "title": "Ent cannot propose",
+    "ok": true,
+    "detail": "403"
+  },
+  {
+    "id": "ADMIN-12",
+    "title": "Policy simulate",
+    "ok": true,
+    "detail": "202 {'runId': 'sim_f7d5c95e1d83', 'status': 'QUEUED'}"
+  }
+]
