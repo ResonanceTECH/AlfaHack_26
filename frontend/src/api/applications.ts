@@ -6,6 +6,29 @@ import type {
 } from '@/types'
 import { api, num, str } from '@/api/client'
 
+/** Backend: DRAFT / IN_REVIEW / … → frontend: draft / in_review / … */
+const STATUS_ALIASES: Record<string, ApplicationStatus> = {
+  draft: 'draft',
+  submitted: 'submitted',
+  validating: 'in_review',
+  in_review: 'in_review',
+  docs_requested: 'docs_requested',
+  approved: 'approved',
+  rejected: 'rejected',
+  counteroffered: 'approved',
+  offer_accepted: 'approved',
+  agreement_preparation: 'approved',
+  issued: 'issued',
+}
+
+export function normalizeApplicationStatus(raw: unknown): ApplicationStatus {
+  const key = String(raw ?? 'draft')
+    .trim()
+    .toLowerCase()
+    .replace(/-/g, '_')
+  return STATUS_ALIASES[key] ?? 'submitted'
+}
+
 function mapDoc(raw: Record<string, unknown>): ApplicationDocument {
   return {
     id: str(raw.id),
@@ -23,7 +46,7 @@ export function mapApplication(raw: Record<string, unknown>): CreditApplication 
     companyId: str(raw.companyId ?? raw.company_id),
     productId: str(raw.productId ?? raw.product_id),
     productName: str(raw.productName ?? raw.product_name),
-    status: (raw.status as ApplicationStatus) ?? 'draft',
+    status: normalizeApplicationStatus(raw.status),
     amount: num(raw.amount),
     termMonths: num(raw.termMonths ?? raw.term_months),
     rate: num(raw.rate),
@@ -44,7 +67,7 @@ export function mapApplication(raw: Record<string, unknown>): CreditApplication 
     })),
     statusHistory: ((raw.statusHistory ?? raw.status_history ?? []) as Record<string, unknown>[]).map(
       (h) => ({
-        status: h.status as ApplicationStatus,
+        status: normalizeApplicationStatus(h.status),
         at: str(h.at),
         by: str(h.by),
       }),
