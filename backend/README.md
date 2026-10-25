@@ -17,6 +17,17 @@ docker compose up --build
 
 Compose поднимает БД, Redis, миграции, seed и API.
 
+## Версии
+
+Python **3.12.8** (`.python-version`). Зависимости: `requirements.txt` (прямые `==`) + полный lock `requirements.lock`.
+
+```bash
+pip install -r requirements.lock   # предпочтительно (CI / Docker)
+# или: pip install -r requirements.txt && pip freeze > requirements.lock
+```
+
+Подробнее: [VERSIONS.md](../VERSIONS.md).
+
 ## Локальная разработка
 
 ```bash
@@ -25,8 +36,9 @@ docker compose up -d db redis
 
 cd backend
 python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
+.venv\Scripts\activate   # Windows
+# source .venv/bin/activate  # macOS/Linux
+pip install -r requirements.lock
 cp .env.example .env
 
 alembic upgrade head
@@ -34,14 +46,16 @@ python -m scripts.seed
 uvicorn app.main:app --reload --port 8000
 ```
 
-## Демо-аккаунты
+## Демо-аккаунты (seed)
 
-| Роль | Email | Пароль |
-|------|-------|--------|
-| Предприниматель | `ip@demo.alfa` | `demo1234` |
-| Менеджер | `manager@demo.alfa` | `demo1234` |
-| Бухгалтер | `buh@demo.alfa` | `demo1234` |
-| Чужой тенант | `ooo@demo.alfa` | `demo1234` |
+Пароль у всех: `demo1234`. Полный каталог синтетики — в корневом [README §9](../README.md#9-синтетические-тестовые-данные-и-учётные-записи).
+
+| Роль | Email |
+|------|-------|
+| Предприниматель (ИП) | `ip@demo.alfa` |
+| Предприниматель (ООО, другой тенант) | `ooo@demo.alfa` |
+| Аналитик | `analyst@demo.alfa` |
+| Админ | `admin@demo.alfa` |
 
 ## API (`/api/v1`)
 

@@ -367,6 +367,28 @@ PATCH:
 
 ---
 
+## Подбор кредита — `/app/recommendations`
+
+| Route | Код | Шаг |
+|-------|-----|-----|
+| `/app/recommendations` | `SelectionGoalPage.tsx` | Цель + параметры |
+| `/app/recommendations/budget` | `SelectionBudgetPage.tsx` | Статьи + слайдеры |
+| `/app/recommendations/results` | `SelectionResultsPage.tsx` | Фильтры + карточки |
+
+Draft: localStorage `alfa_selection_draft:{companyId}` (`features/selection/`).  
+Степпер: Цель → Бюджет → Подбор → Сравнение → Заявка.
+
+| Method | Path | Когда |
+|--------|------|--------|
+| `POST` | `/companies/{id}/funding-needs` | «Продолжить к бюджету» |
+| `POST` | `/credit/recommendations` | результаты (fallback — демо-продукты) |
+
+«Сравнить (N)» (N≥2) → `/app/compare` (`ComparePage.tsx`: таблица, diff-toggle, скачать TSV).  
+«Выбрать» → `/app/applications/new` (`ApplicationWizardPage`): карточка продукта, готовность, чекбокс, «Отправить заявку» → `POST` applications + submit (или демо-редирект).  
+Демо-продукты: `features/selection/demoProducts.ts`.
+
+---
+
 ## AI-консультант — `/app/ai`
 
 Код: `AiChatPage.tsx` · `POST /ai/chat` (`api/statements.ts` → `aiChat`).
@@ -380,7 +402,8 @@ PATCH:
 { "companyId": "company_001", "message": "…", "conversationId": null }
 ```
 
-Стартовый диалог в UI — демо-тред (как в макете); дальше — ответы бэка. При ошибке сети — локальный fallback.
+Стартовый диалог в UI — демо-тред (как в макете); дальше — ответы бэка. При ошибке сети — локальный fallback.  
+«+ Новый диалог» — пустой тред (welcome) + новый `conversationId` на первом сообщении; список тредов в localStorage `alfa_ai_threads:{companyId}`.
 
 ---
 

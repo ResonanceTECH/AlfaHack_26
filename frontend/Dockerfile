@@ -1,8 +1,8 @@
-# Build SPA
-FROM node:22-alpine AS build
+# Build SPA — Node 22 matches .nvmrc / package.json engines
+FROM node:22.14.0-alpine AS build
 
 WORKDIR /app
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .

@@ -15,7 +15,9 @@ import { CompanyPage } from '@/pages/CompanyPage'
 import { CompanyInnCheckPage } from '@/pages/CompanyInnCheckPage'
 import { BusinessGoalPage } from '@/pages/BusinessGoalPage'
 import { AiChatPage } from '@/pages/AiChatPage'
-import { RecommendationsPage } from '@/pages/RecommendationsPage'
+import { SelectionGoalPage } from '@/pages/SelectionGoalPage'
+import { SelectionBudgetPage } from '@/pages/SelectionBudgetPage'
+import { SelectionResultsPage } from '@/pages/SelectionResultsPage'
 import { ComparePage } from '@/pages/ComparePage'
 import { CalculatorPage } from '@/pages/CalculatorPage'
 import { ApplicationsPage } from '@/pages/ApplicationsPage'
@@ -113,7 +115,9 @@ export function AppRouter() {
         <Route path="company/inn-check" element={<CompanyInnCheckPage />} />
         <Route path="goals" element={<BusinessGoalPage />} />
         <Route path="ai" element={<AiChatPage />} />
-        <Route path="recommendations" element={<RecommendationsPage />} />
+        <Route path="recommendations" element={<SelectionGoalPage />} />
+        <Route path="recommendations/budget" element={<SelectionBudgetPage />} />
+        <Route path="recommendations/results" element={<SelectionResultsPage />} />
         <Route path="compare" element={<ComparePage />} />
         <Route path="calculator" element={<CalculatorPage />} />
         <Route path="applications" element={<ApplicationsPage />} />
