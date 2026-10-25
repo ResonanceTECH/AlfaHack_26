@@ -8,6 +8,7 @@ import {
   type AnalystApplicationCard,
 } from '@/api/analyst'
 import { CASE_TABS, type AnalystCase } from '@/features/analyst/demoData'
+import { clearLastAnalystCaseId, writeLastAnalystCaseId } from '@/features/analyst/lastCase'
 import { cardToCase } from '@/features/analyst/map'
 import { outlineBtn, primaryBtn, statusPill } from '@/features/analyst/styles'
 import { formatMoney } from '@/utils/format'
@@ -31,7 +32,7 @@ export function AnalystCaseShell() {
     queryKey: ['analyst', 'resolve', caseId],
     queryFn: () => resolveAnalystApplicationId(caseId),
     enabled: Boolean(caseId),
-    retry: 1,
+    retry: false,
   })
 
   const applicationId = resolveQ.data ?? ''
@@ -40,18 +41,37 @@ export function AnalystCaseShell() {
     queryKey: ['analyst', 'card', applicationId],
     queryFn: () => fetchAnalystCard(applicationId),
     enabled: Boolean(applicationId),
+    retry: false,
   })
 
   const resolvedId = cardQ.data?.application.id
   const rest = location.pathname.replace(`/app/analyst/cases/${caseId}`, '').replace(/^\//, '')
+  const loadFailed = Boolean(
+    caseId &&
+      !resolveQ.isLoading &&
+      !cardQ.isLoading &&
+      (resolveQ.isError || (applicationId && cardQ.isError) || (resolveQ.isSuccess && cardQ.isSuccess && !cardQ.data)),
+  )
 
   useEffect(() => {
     if (!caseId || !resolvedId || caseId === resolvedId) return
     const suffix = rest ? `/${rest}` : ''
+    writeLastAnalystCaseId(resolvedId)
     navigate(`/app/analyst/cases/${resolvedId}${suffix}`, { replace: true })
   }, [caseId, resolvedId, rest, navigate])
 
-  if (resolveQ.isLoading || (applicationId && cardQ.isLoading)) {
+  useEffect(() => {
+    if (resolvedId) writeLastAnalystCaseId(resolvedId)
+  }, [resolvedId])
+
+  // битый demo-id / 404 → чистим last case и уходим в очередь без красного алерта
+  useEffect(() => {
+    if (!loadFailed) return
+    clearLastAnalystCaseId()
+    navigate('/app/analyst', { replace: true, state: { caseMissing: caseId } })
+  }, [loadFailed, caseId, navigate])
+
+  if (resolveQ.isLoading || (applicationId && cardQ.isLoading) || loadFailed) {
     return (
       <Box sx={{ display: 'grid', placeItems: 'center', py: 8 }}>
         <CircularProgress size={32} sx={{ color: '#EF3124' }} />
@@ -59,10 +79,18 @@ export function AnalystCaseShell() {
     )
   }
 
-  if (resolveQ.isError || cardQ.isError || !cardQ.data) {
+  if (!cardQ.data) {
     return (
-      <Alert severity="error" sx={{ borderRadius: 2 }}>
-        Не удалось загрузить заявку{caseId ? ` «${caseId}»` : ''}. Проверьте доступ аналитика и id.
+      <Alert
+        severity="info"
+        sx={{ borderRadius: 2 }}
+        action={
+          <Button color="inherit" size="small" onClick={() => navigate('/app/analyst')}>
+            К очереди
+          </Button>
+        }
+      >
+        Заявка не найдена. Откройте актуальную из очереди.
       </Alert>
     )
   }
