@@ -1,27 +1,35 @@
 import {
   Box,
   Button,
-  Divider,
   IconButton,
   InputAdornment,
   Menu,
   MenuItem,
   Stack,
   TextField,
-  Tooltip,
   Typography,
 } from '@mui/material'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import MoreVertRoundedIcon from '@mui/icons-material/MoreVertRounded'
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
-import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
-import LinkRoundedIcon from '@mui/icons-material/LinkRounded'
-import PinOutlinedIcon from '@mui/icons-material/PinOutlined'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { listCompanies } from '@/api/companies'
 import { useAuth } from '@/contexts/AuthContext'
+import {
+  assignedRoles,
+  loadTeamMembers,
+  removeTeamMember,
+  ROLE_LABEL,
+  ROLE_RIGHTS_TEXT,
+  saveTeamMembers,
+  shouldShowRoleMatrix,
+  type TeamMember,
+  type TeamRole,
+  type TeamStatus,
+} from '@/features/team/store'
 
 const tileSx = {
   bgcolor: '#fff',
@@ -39,67 +47,30 @@ const fieldSx = {
   },
 } as const
 
-type TeamRole = 'owner' | 'accountant' | 'viewer'
-type TeamStatus = 'active' | 'invited'
+const MATRIX_ROWS: {
+  label: string
+  flags: Record<TeamRole, boolean>
+}[] = [
+  { label: 'Подавать заявки', flags: { owner: true, accountant: true, viewer: false } },
+  { label: 'Загружать документы', flags: { owner: true, accountant: true, viewer: false } },
+  { label: 'Видеть финансы', flags: { owner: true, accountant: true, viewer: false } },
+  { label: 'Принимать условия', flags: { owner: true, accountant: false, viewer: false } },
+  { label: 'Управлять командой', flags: { owner: true, accountant: false, viewer: false } },
+  { label: 'Просмотр заявок', flags: { owner: true, accountant: true, viewer: true } },
+]
 
-type Member = {
-  id: string
-  name: string
-  email: string
-  role: TeamRole
-  rights: string
-  lastLogin: string
-  status: TeamStatus
-  statusLabel: string
-}
-
-const ROLE_LABEL: Record<TeamRole, string> = {
-  owner: 'Владелец',
-  accountant: 'Бухгалтер',
-  viewer: 'Наблюдатель',
-}
-
-const DEMO_MEMBERS: Member[] = [
-  {
-    id: 'm1',
-    name: 'Миронов Сергей Павлович',
-    email: 'sergey.mironov@kofeplus.demo',
+function seedOwner(user: { id: string; fullName: string; email?: string } | null): TeamMember {
+  return {
+    id: user?.id || 'owner',
+    name: user?.fullName || 'Владелец компании',
+    email: user?.email || 'owner@company.demo',
     role: 'owner',
-    rights: 'Все разделы и управление доступом',
-    lastLogin: '23.10.2026 · 10:11',
+    rights: ROLE_RIGHTS_TEXT.owner,
+    lastLogin: 'сегодня',
     status: 'active',
     statusLabel: 'Активен',
-  },
-  {
-    id: 'm2',
-    name: 'Лебедева Ирина Олеговна',
-    email: 'buh@kofeplus.demo',
-    role: 'accountant',
-    rights: 'Документы, финансы, заявки',
-    lastLogin: '22.10.2026 · 18:40',
-    status: 'active',
-    statusLabel: 'Активна',
-  },
-  {
-    id: 'm3',
-    name: 'Громов Артём Викторович',
-    email: 'gromov@kofeplus.demo',
-    role: 'viewer',
-    rights: 'Только просмотр заявок',
-    lastLogin: '—',
-    status: 'invited',
-    statusLabel: 'Приглашён',
-  },
-]
-
-const MATRIX: { label: string; owner: boolean; accountant: boolean; viewer: boolean }[] = [
-  { label: 'Подавать заявки', owner: true, accountant: true, viewer: false },
-  { label: 'Загружать документы', owner: true, accountant: true, viewer: false },
-  { label: 'Видеть финансы', owner: true, accountant: true, viewer: false },
-  { label: 'Принимать условия', owner: true, accountant: false, viewer: false },
-  { label: 'Управлять командой', owner: true, accountant: false, viewer: false },
-  { label: 'Просмотр заявок', owner: true, accountant: true, viewer: true },
-]
+  }
+}
 
 function StatusChip({ status, label }: { status: TeamStatus; label: string }) {
   const active = status === 'active'
@@ -143,8 +114,10 @@ function MatrixIcon({ ok }: { ok: boolean }) {
 }
 
 export function TeamPage() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const locationKey = location.key
   const { user } = useAuth()
-  const inviteRef = useRef<HTMLDivElement | null>(null)
 
   const companiesQ = useQuery({
     queryKey: ['companies'],
@@ -155,83 +128,27 @@ export function TeamPage() {
     companiesQ.data?.find((c) => c.id === user?.companyId) ?? companiesQ.data?.[0] ?? null
   const companyName = company?.name || 'ООО «Кофе Плюс»'
 
-  const [members, setMembers] = useState(DEMO_MEMBERS)
+  const [members, setMembers] = useState<TeamMember[]>(() =>
+    loadTeamMembers(seedOwner(user)),
+  )
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState<'all' | TeamRole>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | TeamStatus>('all')
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null)
   const [menuId, setMenuId] = useState<string | null>(null)
 
-  const [inviteEmail, setInviteEmail] = useState('')
-  const [inviteRole, setInviteRole] = useState<TeamRole>('accountant')
-  const [inviteMsg, setInviteMsg] = useState(
-    `Подключайтесь к кабинету «${companyName.replace(/^ООО\s*/i, '').replace(/[«»"]/g, '')}»`,
-  )
-  const [inviteSent, setInviteSent] = useState(false)
-  const [linkCopied, setLinkCopied] = useState(false)
-  const [codeCopied, setCodeCopied] = useState(false)
-  const [codeSent, setCodeSent] = useState(false)
+  useEffect(() => {
+    setMembers(loadTeamMembers(seedOwner(user)))
+  }, [user, locationKey])
 
-  const inviteCode = useMemo(() => {
-    const seed = (user?.companyId || company?.id || 'demo').replace(/[^a-zA-Z0-9]/g, '').slice(-4).toUpperCase()
-    const roleLetter = inviteRole === 'owner' ? 'O' : inviteRole === 'accountant' ? 'A' : 'V'
-    return `LR-${roleLetter}${seed}-4821`
-  }, [user?.companyId, company?.id, inviteRole])
-
-  const inviteLink = useMemo(() => {
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173'
-    const cid = user?.companyId || company?.id || 'demo'
-    return `${origin}/select-company?invite=${encodeURIComponent(inviteCode)}&company=${encodeURIComponent(cid)}&role=${inviteRole}`
-  }, [inviteCode, inviteRole, user?.companyId, company?.id])
+  useEffect(() => {
+    saveTeamMembers(members)
+  }, [members])
 
   const activeCount = members.filter((m) => m.status === 'active').length
   const invitedCount = members.filter((m) => m.status === 'invited').length
-
-  async function copyText(text: string, kind: 'link' | 'code') {
-    try {
-      await navigator.clipboard.writeText(text)
-      if (kind === 'link') {
-        setLinkCopied(true)
-        window.setTimeout(() => setLinkCopied(false), 2000)
-      } else {
-        setCodeCopied(true)
-        window.setTimeout(() => setCodeCopied(false), 2000)
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-
-  function sendCodeOnly() {
-    const email = inviteEmail.trim()
-    if (email && !email.includes('@')) return
-    setCodeSent(true)
-    window.setTimeout(() => setCodeSent(false), 2200)
-    if (email.includes('@')) {
-      const name = email.split('@')[0] ?? 'Участник'
-      setMembers((list) => {
-        if (list.some((m) => m.email.toLowerCase() === email.toLowerCase())) return list
-        return [
-          ...list,
-          {
-            id: `inv_${Date.now()}`,
-            name: name.charAt(0).toUpperCase() + name.slice(1),
-            email,
-            role: inviteRole,
-            rights:
-              inviteRole === 'owner'
-                ? 'Все разделы и управление доступом'
-                : inviteRole === 'accountant'
-                  ? 'Документы, финансы, заявки'
-                  : 'Только просмотр заявок',
-            lastLogin: '—',
-            status: 'invited',
-            statusLabel: 'Приглашён',
-          },
-        ]
-      })
-    }
-  }
+  const showMatrix = shouldShowRoleMatrix(members)
+  const matrixRoles = assignedRoles(members)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -243,39 +160,8 @@ export function TeamPage() {
     })
   }, [members, search, roleFilter, statusFilter])
 
-  function scrollToInvite() {
-    inviteRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
-
-  function sendInvite() {
-    const email = inviteEmail.trim()
-    if (!email || !email.includes('@')) return
-    const name = email.split('@')[0] ?? 'Участник'
-    setMembers((list) => [
-      ...list,
-      {
-        id: `inv_${Date.now()}`,
-        name: name.charAt(0).toUpperCase() + name.slice(1),
-        email,
-        role: inviteRole,
-        rights:
-          inviteRole === 'owner'
-            ? 'Все разделы и управление доступом'
-            : inviteRole === 'accountant'
-              ? 'Документы, финансы, заявки'
-              : 'Только просмотр заявок',
-        lastLogin: '—',
-        status: 'invited',
-        statusLabel: 'Приглашён',
-      },
-    ])
-    setInviteEmail('')
-    setInviteSent(true)
-    window.setTimeout(() => setInviteSent(false), 2200)
-  }
-
   function removeMember(id: string) {
-    setMembers((list) => list.filter((m) => m.id !== id))
+    setMembers(removeTeamMember(id))
     setMenuAnchor(null)
     setMenuId(null)
   }
@@ -325,7 +211,7 @@ export function TeamPage() {
         <Button
           variant="contained"
           color="primary"
-          onClick={scrollToInvite}
+          onClick={() => navigate('/app/team/invite')}
           sx={{
             borderRadius: 2,
             fontWeight: 700,
@@ -341,7 +227,6 @@ export function TeamPage() {
         </Button>
       </Stack>
 
-      {/* Filters */}
       <Box
         sx={{
           display: 'grid',
@@ -394,16 +279,8 @@ export function TeamPage() {
         </TextField>
       </Box>
 
-      {/* Members table */}
       <Box sx={{ ...tileSx, mb: 2, overflow: 'auto' }}>
-        <Box
-          component="table"
-          sx={{
-            width: '100%',
-            borderCollapse: 'collapse',
-            minWidth: 720,
-          }}
-        >
+        <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
           <Box component="thead">
             <Box component="tr">
               <Box component="th" sx={thSx}>
@@ -429,7 +306,10 @@ export function TeamPage() {
               <Box
                 component="tr"
                 key={m.id}
+                onClick={() => navigate(`/app/team/${m.id}`)}
                 sx={{
+                  cursor: 'pointer',
+                  '&:hover': { bgcolor: 'rgba(11,31,53,0.02)' },
                   '& td': {
                     py: 1.5,
                     pr: 1.5,
@@ -466,6 +346,7 @@ export function TeamPage() {
                   <IconButton
                     size="small"
                     onClick={(e) => {
+                      e.stopPropagation()
                       setMenuAnchor(e.currentTarget)
                       setMenuId(m.id)
                     }}
@@ -498,6 +379,16 @@ export function TeamPage() {
         }}
       >
         <MenuItem
+          onClick={() => {
+            if (!menuId) return
+            navigate(`/app/team/${menuId}`)
+            setMenuAnchor(null)
+            setMenuId(null)
+          }}
+        >
+          Сменить роль
+        </MenuItem>
+        <MenuItem
           disabled={members.find((m) => m.id === menuId)?.role === 'owner'}
           onClick={() => menuId && removeMember(menuId)}
         >
@@ -505,15 +396,7 @@ export function TeamPage() {
         </MenuItem>
       </Menu>
 
-      {/* Bottom: matrix + invite */}
-      <Box
-        sx={{
-          display: 'grid',
-          gap: 2,
-          gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1.35fr) minmax(280px, 0.85fr)' },
-          alignItems: 'start',
-        }}
-      >
+      {showMatrix && (
         <Box sx={tileSx}>
           <Typography
             sx={{
@@ -526,27 +409,33 @@ export function TeamPage() {
           >
             Матрица ролей
           </Typography>
+          <Typography sx={{ fontSize: 13, color: '#7A8795', mb: 1.75, lineHeight: 1.45 }}>
+            Показаны только роли, которые уже назначены участникам команды.
+          </Typography>
           <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse' }}>
             <Box component="thead">
               <Box component="tr">
-                {['Возможность', 'Владелец', 'Бухгалтер', 'Наблюдатель'].map((h, i) => (
+                <Box component="th" sx={{ ...thSx, fontSize: 11.5 }}>
+                  Возможность
+                </Box>
+                {matrixRoles.map((role, i) => (
                   <Box
                     component="th"
-                    key={h}
+                    key={role}
                     sx={{
                       ...thSx,
-                      textAlign: i === 0 ? 'left' : 'center',
-                      pr: i === 3 ? 0 : 1.5,
+                      textAlign: 'center',
+                      pr: i === matrixRoles.length - 1 ? 0 : 1.5,
                       fontSize: 11.5,
                     }}
                   >
-                    {h}
+                    {ROLE_LABEL[role]}
                   </Box>
                 ))}
               </Box>
             </Box>
             <Box component="tbody">
-              {MATRIX.map((row) => (
+              {MATRIX_ROWS.map((row) => (
                 <Box
                   component="tr"
                   key={row.label}
@@ -563,217 +452,17 @@ export function TeamPage() {
                       {row.label}
                     </Typography>
                   </Box>
-                  <Box component="td" sx={{ textAlign: 'center' }}>
-                    <MatrixIcon ok={row.owner} />
-                  </Box>
-                  <Box component="td" sx={{ textAlign: 'center' }}>
-                    <MatrixIcon ok={row.accountant} />
-                  </Box>
-                  <Box component="td" sx={{ textAlign: 'center' }}>
-                    <MatrixIcon ok={row.viewer} />
-                  </Box>
+                  {matrixRoles.map((role) => (
+                    <Box component="td" key={role} sx={{ textAlign: 'center' }}>
+                      <MatrixIcon ok={row.flags[role]} />
+                    </Box>
+                  ))}
                 </Box>
               ))}
             </Box>
           </Box>
         </Box>
-
-        <Box ref={inviteRef} sx={tileSx}>
-          <Typography
-            sx={{
-              fontFamily: 'Manrope, sans-serif',
-              fontWeight: 800,
-              fontSize: 16,
-              color: '#0B1F35',
-              mb: 1.75,
-            }}
-          >
-            Пригласить участника
-          </Typography>
-          <Stack spacing={1.5}>
-            <TextField
-              label="E-mail"
-              placeholder="name@company.ru"
-              fullWidth
-              size="small"
-              value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
-              sx={fieldSx}
-            />
-            <TextField
-              select
-              label="Роль"
-              fullWidth
-              size="small"
-              value={inviteRole}
-              onChange={(e) => setInviteRole(e.target.value as TeamRole)}
-              sx={fieldSx}
-            >
-              <MenuItem value="accountant">Бухгалтер</MenuItem>
-              <MenuItem value="viewer">Наблюдатель</MenuItem>
-              <MenuItem value="owner">Владелец</MenuItem>
-            </TextField>
-            <TextField
-              label="Сообщение"
-              fullWidth
-              multiline
-              minRows={3}
-              value={inviteMsg}
-              onChange={(e) => setInviteMsg(e.target.value)}
-              sx={fieldSx}
-            />
-
-            <Box
-              sx={{
-                p: 1.5,
-                borderRadius: 2,
-                bgcolor: 'rgba(11,31,53,0.03)',
-                border: '1px solid rgba(11,31,53,0.08)',
-              }}
-            >
-              <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 1 }}>
-                <LinkRoundedIcon sx={{ fontSize: 18, color: '#EF3124' }} />
-                <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#0B1F35' }}>
-                  Ссылка для уже зарегистрированных
-                </Typography>
-              </Stack>
-              <Typography sx={{ fontSize: 12, color: '#7A8795', mb: 1.1, lineHeight: 1.4 }}>
-                Скопируйте и отправьте коллеге в мессенджер — откроет кабинет по invite.
-              </Typography>
-              <TextField
-                size="small"
-                fullWidth
-                value={inviteLink}
-                InputProps={{
-                  readOnly: true,
-                  sx: { fontSize: 12, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' },
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <Tooltip title={linkCopied ? 'Скопировано' : 'Копировать ссылку'}>
-                        <IconButton
-                          edge="end"
-                          size="small"
-                          onClick={() => void copyText(inviteLink, 'link')}
-                          aria-label="Копировать ссылку"
-                        >
-                          {linkCopied ? (
-                            <CheckRoundedIcon sx={{ fontSize: 18, color: '#1B8A5A' }} />
-                          ) : (
-                            <ContentCopyRoundedIcon sx={{ fontSize: 18 }} />
-                          )}
-                        </IconButton>
-                      </Tooltip>
-                    </InputAdornment>
-                  ),
-                }}
-                sx={fieldSx}
-              />
-              <Button
-                type="button"
-                fullWidth
-                variant="outlined"
-                color="secondary"
-                startIcon={<ContentCopyRoundedIcon />}
-                onClick={() => void copyText(inviteLink, 'link')}
-                sx={{ mt: 1.25, borderRadius: 2, fontWeight: 700, textTransform: 'none' }}
-              >
-                {linkCopied ? 'Ссылка скопирована' : 'Скопировать ссылку'}
-              </Button>
-            </Box>
-
-            <Box
-              sx={{
-                p: 1.5,
-                borderRadius: 2,
-                bgcolor: 'rgba(11,31,53,0.03)',
-                border: '1px solid rgba(11,31,53,0.08)',
-              }}
-            >
-              <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 1 }}>
-                <PinOutlinedIcon sx={{ fontSize: 18, color: '#EF3124' }} />
-                <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#0B1F35' }}>
-                  Код приглашения
-                </Typography>
-              </Stack>
-              <Stack direction="row" spacing={1} alignItems="center">
-                <Box
-                  sx={{
-                    flex: 1,
-                    px: 1.5,
-                    py: 1.1,
-                    borderRadius: 2,
-                    border: '1px dashed rgba(11,31,53,0.18)',
-                    bgcolor: '#fff',
-                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                    fontSize: 15,
-                    fontWeight: 750,
-                    letterSpacing: '0.04em',
-                    color: '#0B1F35',
-                    textAlign: 'center',
-                  }}
-                >
-                  {inviteCode}
-                </Box>
-                <Tooltip title={codeCopied ? 'Скопировано' : 'Копировать код'}>
-                  <IconButton
-                    onClick={() => void copyText(inviteCode, 'code')}
-                    sx={{
-                      border: '1px solid rgba(11,31,53,0.12)',
-                      borderRadius: 2,
-                      bgcolor: '#fff',
-                    }}
-                    aria-label="Копировать код"
-                  >
-                    {codeCopied ? (
-                      <CheckRoundedIcon sx={{ color: '#1B8A5A' }} />
-                    ) : (
-                      <ContentCopyRoundedIcon />
-                    )}
-                  </IconButton>
-                </Tooltip>
-              </Stack>
-              <Button
-                type="button"
-                fullWidth
-                variant="outlined"
-                color="primary"
-                onClick={sendCodeOnly}
-                sx={{ mt: 1.25, borderRadius: 2, fontWeight: 700, textTransform: 'none' }}
-              >
-                {codeSent
-                  ? 'Код отправлен'
-                  : inviteEmail.trim().includes('@')
-                    ? 'Отправить только код на e-mail'
-                    : 'Отправить только код'}
-              </Button>
-            </Box>
-
-            <Divider sx={{ borderColor: 'rgba(11,31,53,0.08)' }} />
-
-            <Button
-              fullWidth
-              variant="contained"
-              color="primary"
-              disabled={!inviteEmail.trim().includes('@')}
-              onClick={sendInvite}
-              sx={{
-                borderRadius: 2,
-                fontWeight: 700,
-                textTransform: 'none',
-                py: 1.15,
-                boxShadow: 'none',
-                '&:hover': { boxShadow: 'none' },
-              }}
-            >
-              {inviteSent ? 'Отправлено' : 'Отправить приглашение'}
-            </Button>
-            <Typography sx={{ fontSize: 12, color: '#9AA5B1', textAlign: 'center', lineHeight: 1.4 }}>
-              Приглашение действует 7 дней. Ссылка — для пользователей, уже зарегистрированных на
-              платформе; код можно отправить отдельно.
-            </Typography>
-          </Stack>
-        </Box>
-      </Box>
+      )}
     </Box>
   )
 }

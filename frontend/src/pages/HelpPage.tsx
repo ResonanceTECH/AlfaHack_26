@@ -386,7 +386,7 @@ export function HelpPage() {
                 fullWidth
                 variant="contained"
                 color="primary"
-                onClick={() => navigate('/app/ai')}
+                onClick={() => navigate('/app/ai?new=manager')}
                 sx={{
                   borderRadius: 2,
                   fontWeight: 700,

@@ -236,7 +236,24 @@ export function StatementsPage() {
             Источник: выписка и данные бухгалтерии · период ноя 2025 – окт 2026
           </Typography>
         </Box>
-        <Stack direction="row" spacing={1.25} flexShrink={0}>
+        <Stack direction="row" spacing={1.25} flexShrink={0} flexWrap="wrap" useFlexGap>
+          <Button
+            size="small"
+            onClick={() => navigate('/app/readiness')}
+            sx={{
+              borderRadius: 999,
+              textTransform: 'none',
+              fontWeight: 800,
+              fontSize: 12.5,
+              px: 1.35,
+              color: '#1B8A5A',
+              bgcolor: '#E6F5EE',
+              border: '1px solid rgba(27,138,90,0.25)',
+              '&:hover': { bgcolor: '#D8F0E4' },
+            }}
+          >
+            Готовность 78 · анализ
+          </Button>
           <Button
             variant="outlined"
             onClick={() => {
