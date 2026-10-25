@@ -143,39 +143,84 @@ function StatusPill({
 }
 
 function CompletenessRing({ value }: { value: number }) {
-  const r = 36
+  const size = 104
+  const stroke = 7
+  const r = (size - stroke) / 2
   const c = 2 * Math.PI * r
-  const offset = c * (1 - value / 100)
+  const clamped = Math.min(100, Math.max(0, value))
+  const offset = c * (1 - clamped / 100)
   return (
-    <Box sx={{ position: 'relative', width: 96, height: 96, flexShrink: 0 }}>
-      <svg width="96" height="96" viewBox="0 0 96 96">
-        <circle cx="48" cy="48" r={r} fill="none" stroke="#E8EBEE" strokeWidth="8" />
+    <Box
+      sx={{
+        position: 'relative',
+        width: size,
+        height: size,
+        flexShrink: 0,
+      }}
+    >
+      <Box
+        component="svg"
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        sx={{ display: 'block' }}
+      >
         <circle
-          cx="48"
-          cy="48"
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke="#E8EBEE"
+          strokeWidth={stroke}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
           r={r}
           fill="none"
           stroke="#EF3124"
-          strokeWidth="8"
+          strokeWidth={stroke}
           strokeLinecap="round"
           strokeDasharray={c}
           strokeDashoffset={offset}
-          transform="rotate(-90 48 48)"
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
         />
-      </svg>
+      </Box>
       <Box
         sx={{
           position: 'absolute',
-          inset: 0,
-          display: 'grid',
-          placeItems: 'center',
+          // keep label inside the ring hole (stroke eats ~7px each side)
+          inset: stroke + 6,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
           textAlign: 'center',
+          pointerEvents: 'none',
         }}
       >
-        <Typography sx={{ fontSize: 18, fontWeight: 800, color: '#0B1F35', lineHeight: 1.1 }}>
-          {value}%
+        <Typography
+          sx={{
+            fontSize: 17,
+            fontWeight: 800,
+            color: '#0B1F35',
+            lineHeight: 1,
+            letterSpacing: '-0.02em',
+          }}
+        >
+          {clamped}%
         </Typography>
-        <Typography sx={{ fontSize: 10, color: '#9AA5B1', fontWeight: 600 }}>заполнено</Typography>
+        <Typography
+          sx={{
+            fontSize: 9,
+            color: '#9AA5B1',
+            fontWeight: 600,
+            lineHeight: 1.2,
+            mt: 0.35,
+          }}
+        >
+          заполнено
+        </Typography>
       </Box>
     </Box>
   )
@@ -205,22 +250,20 @@ export function CompanyPage() {
   const [editOgrn, setEditOgrn] = useState('')
   const [editRegDate, setEditRegDate] = useState('')
 
+  // 6 разделов профиля; «счёт в другом банке» всегда незакрыт → 5/6
   const completeness = useMemo(() => {
-    if (!company) return 0
-    let filled = 0
-    const checks = [
-      Boolean(company.name),
-      Boolean(company.inn),
-      Boolean(company.ogrn),
-      Boolean(company.industry),
-      Boolean(company.region),
-      Boolean(company.registrationDate),
-      company.employeesCount > 0,
-      company.registryStatus === 'ACTIVE',
+    if (!company) return { filled: 0, total: 6, percent: 0 }
+    const sections = [
+      Boolean(company.name && company.inn), // реквизиты
+      true, // руководство
+      Boolean(company.region), // адреса
+      true, // счёт в Альфа-Банке
+      true, // контакты
+      false, // счёт в другом банке
     ]
-    filled = checks.filter(Boolean).length
-    // mock: 5/6 sections ≈ 86%
-    return Math.round((filled / checks.length) * 100)
+    const filled = sections.filter(Boolean).length
+    const total = sections.length
+    return { filled, total, percent: Math.round((filled / total) * 100) }
   }, [company])
 
   function openEdit() {
@@ -736,10 +779,12 @@ export function CompanyPage() {
               Полнота профиля
             </Typography>
             <Stack direction="row" spacing={1.75} alignItems="center" sx={{ mb: 1.75 }}>
-              <CompletenessRing value={Math.min(100, Math.max(completeness, 70))} />
+              <CompletenessRing value={completeness.percent} />
               <Typography sx={{ fontSize: 13.5, color: '#5A6B7D', lineHeight: 1.45 }}>
-                {completeness >= 85 ? '5 из 6 разделов.' : 'Профиль почти готов.'} Добавьте счёт в
-                другом банке — это ускорит проверку заявки.
+                {completeness.filled} из {completeness.total} разделов.
+                {completeness.filled < completeness.total
+                  ? ' Добавьте счёт в другом банке — это ускорит проверку заявки.'
+                  : ' Профиль заполнен.'}
               </Typography>
             </Stack>
             <Button
