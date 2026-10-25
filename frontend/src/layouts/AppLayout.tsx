@@ -38,12 +38,25 @@ import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
 import PolicyRoundedIcon from '@mui/icons-material/PolicyRounded'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
+import ViewListRoundedIcon from '@mui/icons-material/ViewListRounded'
+import FolderSharedRoundedIcon from '@mui/icons-material/FolderSharedRounded'
+import NotificationImportantRoundedIcon from '@mui/icons-material/NotificationImportantRounded'
+import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded'
+import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded'
+import BarChartRoundedIcon from '@mui/icons-material/BarChartRounded'
+import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
+import ShieldRoundedIcon from '@mui/icons-material/ShieldRounded'
+import CenterFocusStrongRoundedIcon from '@mui/icons-material/CenterFocusStrongRounded'
+import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
+import PersonRoundedIcon from '@mui/icons-material/PersonRounded'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { listCompanies } from '@/api/companies'
 import { useAuth } from '@/contexts/AuthContext'
 import { AlfaMark } from '@/components/landing/AlfaLogo'
+import { DEFAULT_CASE_ID } from '@/features/analyst/demoData'
+import { isAnalystRole } from '@/features/analyst/roles'
 
 const DRAWER_WIDTH = 260
 const RAIL_WIDTH = 72
@@ -100,18 +113,70 @@ const entrepreneurGroups: NavGroup[] = [
   },
 ]
 
-const managerGroups: NavGroup[] = [
-  {
-    title: 'Работа',
-    items: [
-      {
-        to: '/app/manager',
-        label: 'Очередь заявок',
-        icon: <AssignmentRoundedIcon sx={iconSx} />,
-      },
-    ],
-  },
-]
+const LAST_CASE_KEY = 'alfa_analyst_last_case'
+
+function buildAnalystGroups(caseId: string): NavGroup[] {
+  const base = `/app/analyst/cases/${caseId}`
+  return [
+    {
+      title: 'Рабочий стол',
+      items: [
+        {
+          to: '/app/analyst',
+          label: 'Очередь заявок',
+          icon: <ViewListRoundedIcon sx={iconSx} />,
+          end: true,
+        },
+        {
+          to: '/app/analyst/mine',
+          label: 'Мои заявки',
+          icon: <FolderSharedRoundedIcon sx={iconSx} />,
+        },
+        {
+          to: '/app/analyst/attention',
+          label: 'Требуют внимания',
+          icon: <NotificationImportantRoundedIcon sx={iconSx} />,
+        },
+        {
+          to: '/app/analyst/workflow',
+          label: 'Рабочий процесс и SLA',
+          icon: <ScheduleRoundedIcon sx={iconSx} />,
+        },
+      ],
+    },
+    {
+      title: 'Заявка',
+      items: [
+        { to: base, label: 'Обзор', icon: <GridViewRoundedIcon sx={iconSx} />, end: true },
+        { to: `${base}/company`, label: 'Компания', icon: <ApartmentRoundedIcon sx={iconSx} /> },
+        { to: `${base}/finance`, label: 'Финансы', icon: <BarChartRoundedIcon sx={iconSx} /> },
+        { to: `${base}/documents`, label: 'Документы', icon: <TopicRoundedIcon sx={iconSx} /> },
+        { to: `${base}/checks`, label: 'Проверки', icon: <FactCheckRoundedIcon sx={iconSx} /> },
+        { to: `${base}/risks`, label: 'Риски', icon: <ShieldRoundedIcon sx={iconSx} /> },
+        {
+          to: `${base}/explainability`,
+          label: 'Объяснимость',
+          icon: <CenterFocusStrongRoundedIcon sx={iconSx} />,
+        },
+        { to: `${base}/ai`, label: 'AI Copilot', icon: <AutoAwesomeRoundedIcon sx={iconSx} /> },
+        { to: `${base}/decision`, label: 'Решение', icon: <TaskAltRoundedIcon sx={iconSx} /> },
+        { to: `${base}/history`, label: 'История', icon: <HistoryRoundedIcon sx={iconSx} /> },
+      ],
+    },
+    {
+      title: 'Сервис',
+      items: [
+        {
+          to: '/app/notifications',
+          label: 'Уведомления',
+          icon: <NotificationsNoneRoundedIcon sx={iconSx} />,
+        },
+        { to: '/app/help', label: 'Помощь', icon: <SupportAgentRoundedIcon sx={iconSx} /> },
+        { to: '/app/profile', label: 'Профиль', icon: <PersonRoundedIcon sx={iconSx} /> },
+      ],
+    },
+  ]
+}
 
 const adminGroups: NavGroup[] = [
   {
@@ -199,7 +264,29 @@ function pageTitle(pathname: string): string {
   if (pathname.startsWith('/app/documents/') && pathname !== '/app/documents') {
     return 'Документ'
   }
-  const flat = [...entrepreneurGroups, ...managerGroups, ...adminGroups].flatMap((g) => g.items)
+  if (pathname === '/app/analyst' || pathname === '/app/analyst/') return 'Очередь заявок'
+  if (pathname === '/app/analyst/mine') return 'Мои заявки'
+  if (pathname === '/app/analyst/attention') return 'Требуют внимания'
+  if (pathname === '/app/analyst/workflow') return 'Рабочий процесс и SLA'
+  if (pathname.includes('/app/analyst/cases/')) {
+    const parts = pathname.split('/')
+    const tab = parts[5]
+    const labels: Record<string, string> = {
+      company: 'Компания',
+      finance: 'Финансы',
+      documents: 'Документы',
+      checks: 'Проверки',
+      risks: 'Риски',
+      explainability: 'Объяснимость',
+      ai: 'AI Copilot',
+      decision: 'Решение',
+      history: 'История',
+    }
+    return tab && labels[tab] ? labels[tab] : 'Обзор'
+  }
+  const flat = [...entrepreneurGroups, ...adminGroups, ...buildAnalystGroups(DEFAULT_CASE_ID)].flatMap(
+    (g) => g.items,
+  )
   const exact = flat.find((i) => i.to === pathname)
   if (exact) return exact.label
   if (pathname === '/app/admin' || pathname === '/app/admin/') return 'Обзор'
@@ -238,13 +325,30 @@ export function AppLayout() {
   const companiesQ = useQuery({
     queryKey: ['companies'],
     queryFn: listCompanies,
-    enabled: Boolean(user) && user?.role !== 'manager' && user?.role !== 'admin',
+    enabled: Boolean(user) && !isAnalystRole(user?.role) && user?.role !== 'admin',
   })
+
+  const analystCaseId = useMemo(() => {
+    const m = location.pathname.match(/\/app\/analyst\/cases\/([^/]+)/)
+    if (m?.[1]) {
+      try {
+        localStorage.setItem(LAST_CASE_KEY, m[1])
+      } catch {
+        /* ignore */
+      }
+      return m[1]
+    }
+    try {
+      return localStorage.getItem(LAST_CASE_KEY) || DEFAULT_CASE_ID
+    } catch {
+      return DEFAULT_CASE_ID
+    }
+  }, [location.pathname])
 
   const groups = useMemo(() => {
     if (!user) return []
     if (user.role === 'admin') return adminGroups
-    if (user.role === 'manager') return managerGroups
+    if (isAnalystRole(user.role)) return buildAnalystGroups(analystCaseId)
     if (user.role === 'accountant') {
       return entrepreneurGroups
         .map((g) => ({
@@ -256,7 +360,7 @@ export function AppLayout() {
         .filter((g) => g.items.length > 0)
     }
     return entrepreneurGroups
-  }, [user])
+  }, [user, analystCaseId])
 
   const activeCompany =
     companiesQ.data?.find((c) => c.id === user?.companyId) ?? companiesQ.data?.[0] ?? null
@@ -422,7 +526,7 @@ export function AppLayout() {
         ))}
       </Box>
 
-      {user?.role !== 'manager' && user?.role !== 'admin' && (
+      {!isAnalystRole(user?.role) && user?.role !== 'admin' && (
         <Box
           sx={{
             m: rail ? 1 : 1.5,
