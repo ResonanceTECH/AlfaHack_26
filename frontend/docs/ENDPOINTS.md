@@ -567,7 +567,7 @@ Legacy URL `/app/manager` → redirect `/app/analyst`.
 | `…/ai` | `AnalystCaseAiPage` | `POST /ai/chat` (общий) | локальный чат |
 | `…/decision` | `AnalystCaseDecisionPage` | `POST /analyst/applications/{id}/propose` | синтетика |
 | `…/history` | `AnalystCaseHistoryPage` | `statusHistory` / comments в `ApplicationOut` | синтетика |
-| `/app/notifications` | `NotificationsPage` | `GET/PATCH /notifications*` | смешанно |
+| `/app/notifications` | `NotificationsPage` (ветка analyst) | `GET/PATCH /notifications*` | синтетика: SLA / очередь / docs клиента |
 | `/app/help` | `HelpPage` | — | статика |
 | `/app/profile` | `ProfilePage` | `GET /auth/me`, logout | как у всех |
 
@@ -779,11 +779,15 @@ UI-маппинг:
 
 ### Уведомления аналитика — `/app/notifications`
 
+Код: `NotificationsPage.tsx` · при `isAnalystRole` отдельная лента (не предпринимательская): вкладки **SLA / Очередь / Документы / Система**, клики → `/app/analyst/cases/...`.
+
 | Method | Path | Когда |
 |--------|------|--------|
-| `GET` | `/notifications` | список (`unread`, `type`, `limit`, `offset`) |
+| `GET` | `/notifications` | список (`unread`, `type`, `limit`, `offset`) — целевой |
 | `PATCH` | `/notifications/{id}` | `{ "isRead": true }` |
 | `POST` | `/notifications/read-all` | прочитать все |
+
+**Сейчас UI:** локальный демо-фид (SLA&lt;4ч, ответ клиента, ML unavailable, назначения). Типы prefs: просрочка SLA, очередь, назначения, docs клиента, автопроверки.
 
 ---
 
