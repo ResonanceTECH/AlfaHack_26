@@ -129,6 +129,8 @@ class ScenarioCreateIn(APIModel):
     expense_change_pct: float = 0
     stress: bool = False
     parameters: dict[str, Any] = Field(default_factory=dict)
+    params: dict[str, Any] | None = None
+    persist: bool = True
 
 
 class ScenarioOut(APIModel):
@@ -136,7 +138,14 @@ class ScenarioOut(APIModel):
     company_id: str
     name: str
     parameters: dict[str, Any] = Field(default_factory=dict)
+    params: dict[str, Any] = Field(default_factory=dict)
     result: dict[str, Any] = Field(default_factory=dict)
+    series: list[dict[str, Any]] = Field(default_factory=list)
+    monthly_payment: Money | None = None
+    cash_flow_after_payment: Money | None = None
+    min_balance: Money | None = None
+    deficit_months: list[int] = Field(default_factory=list)
+    explanation: str | None = None
     created_at: datetime | None = None
 
 

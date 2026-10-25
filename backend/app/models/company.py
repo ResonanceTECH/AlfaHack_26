@@ -4,7 +4,7 @@ from datetime import date, datetime
 from typing import Any, Optional
 from uuid import uuid4
 
-from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -67,6 +67,53 @@ class CompanyMembership(Base):
 
 
 CompanyMember = CompanyMembership
+
+
+class CompanyInvite(Base):
+    __tablename__ = "company_invites"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    company_id: Mapped[str] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), index=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    role: Mapped[MemberRole] = mapped_column(
+        Enum(
+            MemberRole,
+            name="member_role",
+            create_constraint=False,
+            values_callable=lambda x: [e.value for e in x],
+        ),
+        nullable=False,
+    )
+    code: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    invited_by: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="PENDING", nullable=False)
+    message: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    company = relationship("Company", backref="invites")
+    inviter = relationship("User", foreign_keys=[invited_by])
+
+
+class CompanyDocument(Base):
+    __tablename__ = "company_documents"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    company_id: Mapped[str] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    category: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="NEED_UPLOAD", nullable=False, index=True)
+    file_name: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    file_path: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    mime_type: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    size_bytes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    uploaded_by: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    uploaded_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    company = relationship("Company", backref="vault_documents")
+    uploader = relationship("User", foreign_keys=[uploaded_by])
 
 
 class RegistrySnapshot(Base):

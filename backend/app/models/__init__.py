@@ -11,7 +11,14 @@ from app.models.application import (
     DocumentRequest,
 )
 from app.models.audit import AuditEvent, OutboxEvent
-from app.models.company import Company, CompanyMember, CompanyMembership, RegistrySnapshot
+from app.models.company import (
+    Company,
+    CompanyDocument,
+    CompanyInvite,
+    CompanyMember,
+    CompanyMembership,
+    RegistrySnapshot,
+)
 from app.models.credit import (
     CreditProduct,
     CreditProductRule,
@@ -47,6 +54,8 @@ __all__ = [
     "Company",
     "CompanyMembership",
     "CompanyMember",
+    "CompanyInvite",
+    "CompanyDocument",
     "RegistrySnapshot",
     "FinancialSnapshot",
     "FinancialStatement",

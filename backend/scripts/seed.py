@@ -32,6 +32,8 @@ from app.models import (  # noqa: F401
     ApplicationDocument,
     ApplicationWorkflow,
     Company,
+    CompanyDocument,
+    CompanyInvite,
     CompanyMember,
     CreditApplication,
     CreditDecision,
@@ -67,6 +69,8 @@ USER_ENT_01 = "user_ent_01"
 USER_ENT_02 = "user_ent_02"
 USER_ANALYST = "user_analyst_01"
 USER_ADMIN = "user_admin_01"
+USER_ACC = "user_acc_01"
+USER_VIEW = "user_view_01"
 
 COMPANY_IP = "company_001"
 COMPANY_OOO = "company_002"
@@ -265,7 +269,9 @@ def _seed_users(db, pwd: str, now: datetime) -> None:
                 full_name="Иван Петров",
                 role=UserRole.ENTREPRENEUR,
                 status=UserStatus.ACTIVE,
+                mfa_enabled=False,
                 email_verified_at=now,
+                last_login_at=now - timedelta(hours=2),
             ),
             User(
                 id=USER_ENT_02,
@@ -275,6 +281,7 @@ def _seed_users(db, pwd: str, now: datetime) -> None:
                 full_name="Мария Козлова",
                 role=UserRole.ENTREPRENEUR,
                 status=UserStatus.ACTIVE,
+                mfa_enabled=False,
                 email_verified_at=now,
             ),
             User(
@@ -285,7 +292,9 @@ def _seed_users(db, pwd: str, now: datetime) -> None:
                 full_name="Анна Соколова",
                 role=UserRole.ANALYST,
                 status=UserStatus.ACTIVE,
+                mfa_enabled=True,
                 email_verified_at=now,
+                last_login_at=now - timedelta(hours=1),
             ),
             User(
                 id=USER_ADMIN,
@@ -295,7 +304,33 @@ def _seed_users(db, pwd: str, now: datetime) -> None:
                 full_name="Елена Васильева",
                 role=UserRole.ADMIN,
                 status=UserStatus.ACTIVE,
+                mfa_enabled=True,
                 email_verified_at=now,
+                last_login_at=now - timedelta(minutes=40),
+            ),
+            User(
+                id=USER_ACC,
+                login="accountant@demo.alfa",
+                email="accountant@demo.alfa",
+                password_hash=pwd,
+                full_name="Ольга Бухгалтерова",
+                role=UserRole.ENTREPRENEUR,
+                status=UserStatus.ACTIVE,
+                mfa_enabled=False,
+                email_verified_at=now,
+                last_login_at=now - timedelta(days=1),
+            ),
+            User(
+                id=USER_VIEW,
+                login="viewer@demo.alfa",
+                email="viewer@demo.alfa",
+                password_hash=pwd,
+                full_name="Павел Наблюдатель",
+                role=UserRole.ENTREPRENEUR,
+                status=UserStatus.ACTIVE,
+                mfa_enabled=False,
+                email_verified_at=now,
+                last_login_at=now - timedelta(days=4),
             ),
         ]
     )
@@ -474,9 +509,124 @@ def _seed_company_ip(db, now: datetime) -> None:
             company_id=COMPANY_IP,
             user_id=USER_ENT_01,
             role=MemberRole.OWNER,
-            permissions={"read": True, "write": True, "submit": True},
+            permissions={"read": True, "write": True, "submit": True, "manage_team": True},
         )
     )
+    db.add(
+        CompanyMember(
+            company_id=COMPANY_IP,
+            user_id=USER_ACC,
+            role=MemberRole.MEMBER,
+            permissions={"read": True, "write": True, "submit": False},
+        )
+    )
+    db.add(
+        CompanyMember(
+            company_id=COMPANY_IP,
+            user_id=USER_VIEW,
+            role=MemberRole.VIEWER,
+            permissions={"read": True, "write": False, "submit": False},
+        )
+    )
+    db.add(
+        CompanyInvite(
+            id="invite_pending_01",
+            company_id=COMPANY_IP,
+            email="lawyer@demo.alfa",
+            role=MemberRole.VIEWER,
+            code="demoinvite01",
+            invited_by=USER_ENT_01,
+            expires_at=now + timedelta(days=7),
+            status="PENDING",
+            message="Доступ к кабинету для юриста",
+        )
+    )
+    for doc in [
+        {
+            "id": "cdoc_001",
+            "title": "Свидетельство о регистрации ИП",
+            "category": "Учредительные",
+            "status": "ACCEPTED",
+            "file_name": "egrip_petrov.pdf",
+            "size_bytes": 310_000,
+            "uploaded_at": now - timedelta(days=14),
+        },
+        {
+            "id": "cdoc_002",
+            "title": "Бух. отчётность 2025",
+            "category": "Финансовые",
+            "status": "ACCEPTED_REMARK",
+            "file_name": "otchet_2025.xlsx",
+            "size_bytes": 860_000,
+            "uploaded_at": now - timedelta(days=8),
+            "review_comment": "Нет пояснений к прочим расходам",
+        },
+        {
+            "id": "cdoc_003",
+            "title": "Выписка по расчётному счёту",
+            "category": "Финансовые",
+            "status": "PENDING",
+            "file_name": "extract_sep2026.pdf",
+            "size_bytes": 2_400_000,
+            "uploaded_at": now - timedelta(days=5),
+        },
+        {
+            "id": "cdoc_004",
+            "title": "Договор аренды склада",
+            "category": "Имущество",
+            "status": "NEED_UPLOAD",
+        },
+        {
+            "id": "cdoc_005",
+            "title": "Паспорт владельца",
+            "category": "Владельцы",
+            "status": "ACCEPTED",
+            "file_name": "passport_scan.pdf",
+            "size_bytes": 540_000,
+            "uploaded_at": now - timedelta(days=11),
+        },
+        {
+            "id": "cdoc_006",
+            "title": "Согласие на обработку ПДн",
+            "category": "Согласия",
+            "status": "ACCEPTED",
+            "file_name": "consent_pd.pdf",
+            "size_bytes": 120_000,
+            "uploaded_at": now - timedelta(days=11),
+        },
+        {
+            "id": "cdoc_007",
+            "title": "Справка об отсутствии задолженности",
+            "category": "Финансовые",
+            "status": "NEED_UPLOAD",
+        },
+        {
+            "id": "cdoc_008",
+            "title": "Выписка из ЕГРИП",
+            "category": "Учредительные",
+            "status": "ACCEPTED",
+            "file_name": "egrip_extract.pdf",
+            "size_bytes": 280_000,
+            "uploaded_at": now - timedelta(days=14),
+        },
+    ]:
+        uploaded_at = doc.get("uploaded_at")
+        db.add(
+            CompanyDocument(
+                id=doc["id"],
+                company_id=COMPANY_IP,
+                title=doc["title"],
+                category=doc["category"],
+                status=doc["status"],
+                file_name=doc.get("file_name"),
+                file_path="" if doc.get("file_name") else None,
+                mime_type="application/pdf" if doc.get("file_name") else None,
+                size_bytes=doc.get("size_bytes"),
+                uploaded_by=USER_ENT_01 if doc.get("file_name") else None,
+                uploaded_at=uploaded_at,
+                review_comment=doc.get("review_comment"),
+            )
+        )
     db.add(
         RegistrySnapshot(
             id="reg_ip_001",
@@ -1072,10 +1222,13 @@ def seed(*, force: bool = False) -> None:
         print(f"  INN IP  = {INN_IP}")
         print(f"  INN OOO = {INN_OOO}")
         print("  Аккаунты (пароль demo1234):")
-        print("    ip@demo.alfa       ENTREPRENEUR  company_001 (approved/counter/docs/draft)")
-        print("    ooo@demo.alfa      ENTREPRENEUR  company_002 (rejected/unstable, isolation)")
-        print("    analyst@demo.alfa  ANALYST")
-        print("    admin@demo.alfa    ADMIN")
+        print("    ip@demo.alfa          ENTREPRENEUR  company_001 OWNER")
+        print("    accountant@demo.alfa  ENTREPRENEUR  company_001 MEMBER")
+        print("    viewer@demo.alfa      ENTREPRENEUR  company_001 VIEWER")
+        print("    ooo@demo.alfa         ENTREPRENEUR  company_002 (rejected/unstable)")
+        print("    analyst@demo.alfa     ANALYST  mfa")
+        print("    admin@demo.alfa       ADMIN  mfa")
+        print("  Invite pending: lawyer@demo.alfa code=demoinvite01")
         print("  Сценарии: demo_approved, demo_counteroffer, demo_missing_docs,")
         print("            demo_rejected, demo_unstable_cashflow, demo_combined_funding")
     except Exception:
