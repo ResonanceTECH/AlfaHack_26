@@ -19,7 +19,7 @@ class Settings(BaseSettings):
         populate_by_name=True,
     )
 
-    app_name: str = "Alfa Business Credit API"
+    app_name: str = "Линия решения API"
     app_env: str = "development"
     debug: bool = True
     api_v1_prefix: str = "/api/v1"
