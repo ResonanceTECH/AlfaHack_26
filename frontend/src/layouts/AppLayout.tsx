@@ -164,11 +164,6 @@ function buildAnalystGroups(caseId: string): NavGroup[] {
     {
       title: 'Сервис',
       items: [
-        {
-          to: '/app/notifications',
-          label: 'Уведомления',
-          icon: <NotificationsNoneRoundedIcon sx={iconSx} />,
-        },
         { to: '/app/help', label: 'Помощь', icon: <SupportAgentRoundedIcon sx={iconSx} /> },
         { to: '/app/profile', label: 'Профиль', icon: <PersonRoundedIcon sx={iconSx} /> },
       ],
