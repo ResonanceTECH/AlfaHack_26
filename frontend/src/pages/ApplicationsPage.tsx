@@ -171,6 +171,15 @@ function mapApiStatus(status: ApplicationStatus): {
         nextStepAction: 'link',
         editable: false,
       }
+    case 'offer_accepted':
+    case 'agreement_preparation':
+      return {
+        status: 'signed',
+        tab: 'contracts',
+        nextStep: 'Ознакомьтесь с договором',
+        nextStepAction: 'link',
+        editable: false,
+      }
     case 'issued':
       return {
         status: 'signed',

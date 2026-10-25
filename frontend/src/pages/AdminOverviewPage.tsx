@@ -18,8 +18,11 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { useQuery } from '@tanstack/react-query'
+import { listAdminProducts, listAdminUsers, listAuditEvents } from '@/api/admin'
 import { PageHeader } from '@/components/common/PageHeader'
 import { color, font, radius, shadow } from '@/theme/tokens'
+import { formatDateTime } from '@/utils/format'
 
 const tileSx = {
   bgcolor: color.background.paper,
@@ -193,6 +196,31 @@ function KpiCard({
 }
 
 export function AdminOverviewPage() {
+  const usersQ = useQuery({
+    queryKey: ['admin', 'users', { limit: 100 }],
+    queryFn: () => listAdminUsers({ limit: 100 }),
+  })
+  const productsQ = useQuery({
+    queryKey: ['admin', 'products'],
+    queryFn: () => listAdminProducts({ limit: 100 }),
+  })
+  const auditQ = useQuery({
+    queryKey: ['admin', 'audit', { limit: 20 }],
+    queryFn: () => listAuditEvents({ limit: 20 }),
+  })
+
+  const userTotal = usersQ.data?.total
+  const products = productsQ.data?.items ?? []
+  const activeProducts = products.filter((p) => {
+    const s = p.status.toUpperCase()
+    return s === 'PUBLISHED' || s === 'ACTIVE' || p.isActive
+  }).length
+  const productTotal = productsQ.data?.total ?? products.length
+  const liveChanges = (auditQ.data?.items ?? []).slice(0, 4).map((e) => ({
+    when: e.createdAt ? formatDateTime(e.createdAt) : '—',
+    text: `${e.actorLogin || e.actorId || 'system'}: ${e.action} · ${e.entityType} ${e.entityId ?? ''}`.trim(),
+  }))
+  const changeRows = liveChanges.length ? liveChanges : changes
   const maxFunnel = funnel[0]!.value
 
   return (
@@ -257,7 +285,12 @@ export function AdminOverviewPage() {
           <KpiCard label="Availability" value="99.94%" hint="за 30 дней" />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
-          <KpiCard label="Открытые алерты" value="3" hint="1 критичный" accent />
+          <KpiCard
+            label="Пользователи"
+            value={userTotal != null ? userTotal.toLocaleString('ru-RU') : '—'}
+            hint={usersQ.isError ? 'ошибка загрузки' : 'из /admin/users'}
+            accent
+          />
         </Grid>
       </Grid>
 
@@ -284,7 +317,11 @@ export function AdminOverviewPage() {
           <KpiCard label="Take-up rate" value="50%" hint="одобрено → принято" />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
-          <KpiCard label="Активных продуктов" value="4 / 6" hint="в подборе" />
+          <KpiCard
+            label="Активных продуктов"
+            value={productsQ.isLoading ? '—' : `${activeProducts} / ${productTotal}`}
+            hint={productsQ.isError ? 'ошибка загрузки' : 'в каталоге'}
+          />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
           <KpiCard label="Counteroffer share" value="14%" hint="принято 71%" />
@@ -684,13 +721,13 @@ export function AdminOverviewPage() {
               Последние изменения
             </Typography>
             <Stack spacing={0} divider={undefined}>
-              {changes.map((c, i) => (
+              {changeRows.map((c, i) => (
                 <Box
-                  key={c.when}
+                  key={`${c.when}-${c.text}`}
                   sx={{
                     py: 1.35,
                     borderBottom:
-                      i < changes.length - 1 ? `1px solid ${color.semantic.divider}` : 'none',
+                      i < changeRows.length - 1 ? `1px solid ${color.semantic.divider}` : 'none',
                   }}
                 >
                   <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: color.text.muted, mb: 0.35 }}>

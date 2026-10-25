@@ -1,6 +1,7 @@
 import {
   Box,
   Button,
+  CircularProgress,
   IconButton,
   InputAdornment,
   Menu,
@@ -13,20 +14,17 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import MoreVertRoundedIcon from '@mui/icons-material/MoreVertRounded'
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
-import { useEffect, useMemo, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { listCompanies } from '@/api/companies'
+import axios from 'axios'
+import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { cancelInvite, inviteToMember, listInvites, listMembers, removeMember as removeMemberApi } from '@/api/team'
 import { useAuth } from '@/contexts/AuthContext'
+import { useAppStore } from '@/hooks/useAppStore'
 import {
   assignedRoles,
-  loadTeamMembers,
-  removeTeamMember,
   ROLE_LABEL,
-  ROLE_RIGHTS_TEXT,
-  saveTeamMembers,
   shouldShowRoleMatrix,
-  type TeamMember,
   type TeamRole,
   type TeamStatus,
 } from '@/features/team/store'
@@ -59,17 +57,16 @@ const MATRIX_ROWS: {
   { label: 'Просмотр заявок', flags: { owner: true, accountant: true, viewer: true } },
 ]
 
-function seedOwner(user: { id: string; fullName: string; email?: string } | null): TeamMember {
-  return {
-    id: user?.id || 'owner',
-    name: user?.fullName || 'Владелец компании',
-    email: user?.email || 'owner@company.demo',
-    role: 'owner',
-    rights: ROLE_RIGHTS_TEXT.owner,
-    lastLogin: 'сегодня',
-    status: 'active',
-    statusLabel: 'Активен',
+function apiError(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err)) {
+    const detail = err.response?.data?.detail
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail)) {
+      return detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join('; ')
+    }
   }
+  if (err instanceof Error) return err.message
+  return fallback
 }
 
 function StatusChip({ status, label }: { status: TeamStatus; label: string }) {
@@ -115,40 +112,44 @@ function MatrixIcon({ ok }: { ok: boolean }) {
 
 export function TeamPage() {
   const navigate = useNavigate()
-  const location = useLocation()
-  const locationKey = location.key
   const { user } = useAuth()
+  const { companyId: storeCompanyId, company } = useAppStore()
+  const qc = useQueryClient()
+  const companyId = storeCompanyId || user?.companyId
+  const companyName = company?.name || 'Компания'
 
-  const companiesQ = useQuery({
-    queryKey: ['companies'],
-    queryFn: listCompanies,
-    enabled: Boolean(user),
+  const membersQ = useQuery({
+    queryKey: ['team', 'members', companyId],
+    queryFn: () => listMembers(companyId!),
+    enabled: Boolean(companyId),
   })
-  const company =
-    companiesQ.data?.find((c) => c.id === user?.companyId) ?? companiesQ.data?.[0] ?? null
-  const companyName = company?.name || 'ООО «Кофе Плюс»'
+  const invitesQ = useQuery({
+    queryKey: ['team', 'invites', companyId],
+    queryFn: () => listInvites(companyId!),
+    enabled: Boolean(companyId),
+  })
 
-  const [members, setMembers] = useState<TeamMember[]>(() =>
-    loadTeamMembers(seedOwner(user)),
-  )
+  const members = useMemo(() => {
+    const list = membersQ.data ?? []
+    const emails = new Set(list.map((m) => m.email.toLowerCase()))
+    const invited = (invitesQ.data ?? [])
+      .map(inviteToMember)
+      .filter((m) => m.email && !emails.has(m.email.toLowerCase()))
+    return [...list, ...invited]
+  }, [membersQ.data, invitesQ.data])
+
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState<'all' | TeamRole>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | TeamStatus>('all')
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null)
   const [menuId, setMenuId] = useState<string | null>(null)
-
-  useEffect(() => {
-    setMembers(loadTeamMembers(seedOwner(user)))
-  }, [user, locationKey])
-
-  useEffect(() => {
-    saveTeamMembers(members)
-  }, [members])
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const activeCount = members.filter((m) => m.status === 'active').length
   const invitedCount = members.filter((m) => m.status === 'invited').length
   const showMatrix = shouldShowRoleMatrix(members)
   const matrixRoles = assignedRoles(members)
+  const loading = membersQ.isLoading || invitesQ.isLoading
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()

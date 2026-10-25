@@ -10,6 +10,7 @@ import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
   CartesianGrid,
   Cell,
@@ -22,6 +23,11 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import {
+  fetchFinanceSeries,
+  fetchFinanceSummary,
+  fetchTransactionsAnalytics,
+} from '@/api/statements'
 import { useAppStore } from '@/hooks/useAppStore'
 import { formatMoney } from '@/utils/format'
 
@@ -155,15 +161,57 @@ function KpiCard({
 
 export function StatementsPage() {
   const navigate = useNavigate()
-  const { financials, refetchAll } = useAppStore()
+  const { companyId, financials, refetchAll } = useAppStore()
   const [flash, setFlash] = useState<string | null>(null)
 
-  const baseRev = financials.avgMonthlyRevenue || 1_533_000
+  const seriesQ = useQuery({
+    queryKey: ['finance', 'series', companyId],
+    queryFn: () => fetchFinanceSeries(companyId!, '12m'),
+    enabled: Boolean(companyId),
+  })
+  const summaryQ = useQuery({
+    queryKey: ['finance', 'summary', companyId],
+    queryFn: () => fetchFinanceSummary(companyId!, '12m'),
+    enabled: Boolean(companyId),
+  })
+  const analyticsQ = useQuery({
+    queryKey: ['finance', 'analytics', companyId],
+    queryFn: () => fetchTransactionsAnalytics(companyId!, '6m'),
+    enabled: Boolean(companyId),
+  })
+
+  const baseRev = financials.avgMonthlyRevenue || summaryQ.data?.revenue || 1_533_000
   const baseExp =
-    financials.operatingExpenses || Math.round(baseRev * 0.86)
-  const baseBal = financials.cashBalance || 2_100_000
+    financials.operatingExpenses ||
+    summaryQ.data?.outflow ||
+    Math.round(baseRev * 0.86)
+  const baseBal = financials.cashBalance || summaryQ.data?.cashBalance || 2_100_000
 
   const series = useMemo(() => {
+    const apiPoints = seriesQ.data?.points ?? []
+    if (apiPoints.length > 0) {
+      return apiPoints.map((p, i) => {
+        const revenue = Math.round(p.inflow)
+        const expenses = Math.round(p.outflow)
+        const profit = Math.round(p.net)
+        const balance = Math.round(p.cashBalance ?? baseBal)
+        const d = new Date(p.period)
+        const m = Number.isNaN(d.getTime()) ? i % 12 : d.getMonth()
+        const y = Number.isNaN(d.getTime()) ? 2026 : d.getFullYear()
+        return {
+          key: p.period || `${y}-${m}`,
+          label: MONTHS_RU[m]!,
+          full: `${MONTHS_FULL[m]} ${y}`,
+          short: `${MONTHS_FULL[m]!.slice(0, 3)} ${String(y).slice(2)}`,
+          revenue,
+          expenses,
+          profit,
+          balance,
+          revMln: +(revenue / 1_000_000).toFixed(2),
+          expMln: +(expenses / 1_000_000).toFixed(2),
+        }
+      })
+    }
     const avgShapeRev = SHAPE.reduce((s, x) => s + x.rev, 0) / SHAPE.length
     const scaleRev = baseRev / avgShapeRev
     const scaleExp = baseExp / (SHAPE.reduce((s, x) => s + x.exp, 0) / SHAPE.length)
@@ -186,7 +234,7 @@ export function StatementsPage() {
         expMln: +(expenses / 1_000_000).toFixed(2),
       }
     })
-  }, [baseRev, baseExp, baseBal])
+  }, [seriesQ.data, baseRev, baseExp, baseBal])
 
   const totals = useMemo(() => {
     const revenue = series.reduce((s, x) => s + x.revenue, 0)
@@ -199,14 +247,35 @@ export function StatementsPage() {
     return { revenue, expenses, profit, avgBalance, minBal, margin, expShare }
   }, [series])
 
-  const expensePie = useMemo(
-    () =>
-      EXPENSE_SPLIT.map((e) => ({
-        ...e,
-        value: Math.round((totals.expenses * e.pct) / 100),
-      })),
-    [totals.expenses],
-  )
+  const CAT_COLORS = ['#EF3124', '#0B1F35', '#8A96A3', '#C5CCD3', '#E8EBEE', '#5A6B7D']
+  const CAT_LABELS: Record<string, string> = {
+    revenue: 'Выручка',
+    opex: 'Операционные',
+    salary: 'ФОТ',
+    tax: 'Налоги',
+    rent: 'Аренда',
+    supplier: 'Поставщики',
+    other: 'Прочее',
+    loan_out: 'Кредитные платежи',
+    loan_in: 'Кредитные поступления',
+  }
+
+  const expensePie = useMemo(() => {
+    const cats = (analyticsQ.data?.byCategory ?? []).filter((c) => c.amount > 0)
+    if (cats.length > 0) {
+      const sum = cats.reduce((s, c) => s + c.amount, 0) || 1
+      return cats.slice(0, 6).map((c, i) => ({
+        name: CAT_LABELS[c.category] ?? c.category,
+        pct: Math.round((c.amount / sum) * 100),
+        color: CAT_COLORS[i % CAT_COLORS.length]!,
+        value: Math.round(c.amount),
+      }))
+    }
+    return EXPENSE_SPLIT.map((e) => ({
+      ...e,
+      value: Math.round((totals.expenses * e.pct) / 100),
+    }))
+  }, [analyticsQ.data, totals.expenses])
 
   const tableRows = useMemo(() => [...series].reverse().slice(0, 5), [series])
 
@@ -453,7 +522,7 @@ export function StatementsPage() {
             </Box>
           </Box>
           <Stack spacing={0.85} sx={{ mt: 0.5 }}>
-            {EXPENSE_SPLIT.map((e) => (
+            {expensePie.map((e) => (
               <Stack key={e.name} direction="row" alignItems="center" spacing={1}>
                 <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: e.color }} />
                 <Typography sx={{ flex: 1, fontSize: 13, color: '#5A6B7D' }}>{e.name}</Typography>

@@ -10,8 +10,10 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { calculateCredit, listProducts } from '@/api/credit'
 import {
   Cell,
   Line,
@@ -60,6 +62,44 @@ export function CalculatorPage() {
 
   const startDate = '2026-11-28'
 
+  const catalogQ = useQuery({
+    queryKey: ['products'],
+    queryFn: listProducts,
+  })
+  const catalog = catalogQ.data ?? []
+  const usingCatalog = catalog.length > 0
+  const productId = usingCatalog && catalog.some((p) => p.id === product) ? product : undefined
+
+  useEffect(() => {
+    if (usingCatalog && !catalog.some((p) => p.id === product)) {
+      setProduct(catalog[0]!.id)
+    }
+  }, [usingCatalog, catalog, product])
+
+  const [debounced, setDebounced] = useState({ amount, term, rate, scheduleType, productId })
+  useEffect(() => {
+    const t = window.setTimeout(
+      () => setDebounced({ amount, term, rate, scheduleType, productId }),
+      280,
+    )
+    return () => window.clearTimeout(t)
+  }, [amount, term, rate, scheduleType, productId])
+
+  const calcQ = useQuery({
+    queryKey: ['credit-calc', debounced],
+    queryFn: () =>
+      calculateCredit({
+        productId: debounced.productId,
+        amount: debounced.amount,
+        termMonths: debounced.term,
+        annualRatePercent: debounced.rate,
+        repaymentType: debounced.scheduleType === 'annuity' ? 'ANNUITY' : 'DIFFERENTIATED',
+        startDate,
+      }),
+    enabled: debounced.amount > 0 && debounced.term > 0,
+    retry: false,
+  })
+
   const result = useMemo(
     () =>
       buildPaymentSchedule({
@@ -72,9 +112,10 @@ export function CalculatorPage() {
     [amount, term, rate, scheduleType],
   )
 
-  const payment = result.rows[0]?.payment ?? 0
-  const totalPay = result.totalPayment
-  const overpay = result.totalInterest
+  const api = calcQ.data
+  const payment = api?.monthlyPayment || result.rows[0]?.payment || 0
+  const totalPay = api?.totalPayments || result.totalPayment
+  const overpay = api?.overpayment || result.totalInterest
   const interestShare = totalPay > 0 ? Math.round((overpay / totalPay) * 100) : 0
 
   const pie = [
@@ -213,12 +254,37 @@ export function CalculatorPage() {
             size="small"
             label="Продукт"
             value={product}
-            onChange={(e) => setProduct(e.target.value)}
+            onChange={(e) => {
+              const id = e.target.value
+              setProduct(id)
+              const p = catalog.find((x) => x.id === id)
+              if (p) {
+                if (p.rateMin) setRate(p.rateMin)
+                setAmount((a) =>
+                  Math.min(p.amountMax || a, Math.max(p.amountMin || a, a)),
+                )
+                setTerm((t) => Math.min(p.termMax || t, Math.max(p.termMin || t, t)))
+              }
+            }}
             sx={{ mb: 2, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
           >
-            <MenuItem value="turnover">Бизнес-Оборот</MenuItem>
-            <MenuItem value="invest">Бизнес-Инвест</MenuItem>
-            <MenuItem value="overdraft">Овердрафт</MenuItem>
+            {usingCatalog
+              ? catalog.map((p) => (
+                  <MenuItem key={p.id} value={p.id}>
+                    {p.name}
+                  </MenuItem>
+                ))
+              : [
+                  <MenuItem key="turnover" value="turnover">
+                    Бизнес-Оборот
+                  </MenuItem>,
+                  <MenuItem key="invest" value="invest">
+                    Бизнес-Инвест
+                  </MenuItem>,
+                  <MenuItem key="overdraft" value="overdraft">
+                    Овердрафт
+                  </MenuItem>,
+                ]}
           </TextField>
 
           <ParamSlider

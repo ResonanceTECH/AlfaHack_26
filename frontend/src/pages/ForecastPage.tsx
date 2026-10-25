@@ -10,6 +10,11 @@ import {
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import { useMemo, useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { fetchForecast } from '@/api/statements'
+import { useAuth } from '@/contexts/AuthContext'
+import { useAppStore } from '@/hooks/useAppStore'
+import type { CashflowForecastPoint } from '@/types'
 import {
   CartesianGrid,
   Legend,
@@ -33,8 +38,52 @@ const tileSx = {
 
 const MONTHS = ['ноя', 'дек', 'янв', 'фев', 'мар', 'апр'] as const
 
+function mln(n: number) {
+  return Math.round((n / 1_000_000) * 100) / 100
+}
+
+function monthLabel(iso: string) {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 7)
+  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' })
+}
+
+function groupForecastMonths(points: CashflowForecastPoint[]) {
+  const byMonth = new Map<
+    string,
+    { key: string; label: string; inflow: number; outflow: number; close: number }
+  >()
+  for (const p of points) {
+    const d = new Date(p.date)
+    const key = Number.isNaN(d.getTime())
+      ? p.date.slice(0, 7)
+      : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const label = Number.isNaN(d.getTime())
+      ? key
+      : d.toLocaleDateString('ru-RU', { month: 'short' })
+    const prev = byMonth.get(key)
+    if (!prev) {
+      byMonth.set(key, {
+        key,
+        label,
+        inflow: p.predictedInflow,
+        outflow: p.predictedOutflow,
+        close: p.closingBalance,
+      })
+    } else {
+      prev.inflow += p.predictedInflow
+      prev.outflow += p.predictedOutflow
+      prev.close = p.closingBalance
+    }
+  }
+  return [...byMonth.values()]
+}
+
 export function ForecastPage() {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const { companyId: storeCompanyId } = useAppStore()
+  const companyId = storeCompanyId || user?.companyId
   const [revenueGrowth, setRevenueGrowth] = useState(6)
   const [decPeak, setDecPeak] = useState(1.3)
   const [loanAmount] = useState(3_000_000)
@@ -77,17 +126,66 @@ export function ForecastPage() {
     })
   }, [revenueGrowth, decPeak, payment, includeGoal, includeTax, loanAmount])
 
-  const chartData = rows.map((r) => ({
-    month: r.month,
-    without: r.balNo,
-    withLoan: r.balYes,
-  }))
+  const chartData: { month: string; without: number; withLoan?: number; inflow?: number; outflow?: number }[] =
+    rows.map((r) => ({
+      month: r.month,
+      without: r.balNo,
+      withLoan: r.balYes,
+    }))
 
   const firstNeg = rows.find((r) => r.balNo < 0)
   const minNo = Math.min(...rows.map((r) => r.balNo))
-  const conclusion = firstNeg
+  const localConclusion = firstNeg
     ? `Без финансирования остаток на счёте уйдёт в минус уже в ${firstNeg.month} (${firstNeg.balNo} млн ₽), минимум ${minNo} млн ₽. С кредитом ${(loanAmount / 1_000_000).toFixed(0)} млн ₽ остаток остаётся положительным.`
     : `С текущими допущениями остаток без кредита остаётся в плюсе. Кредит ${(loanAmount / 1_000_000).toFixed(0)} млн ₽ даёт запас ликвидности.`
+
+  const forecastQ = useQuery({
+    queryKey: ['forecast', companyId, 90],
+    queryFn: () => fetchForecast(companyId!, 90),
+    enabled: !!companyId,
+    retry: false,
+  })
+  const apiForecast = forecastQ.data
+  const apiPoints = apiForecast?.points ?? []
+  const useApi = apiPoints.length > 0
+
+  const apiMonths = useMemo(() => (useApi ? groupForecastMonths(apiPoints) : []), [useApi, apiPoints])
+
+  const apiChartData = useMemo(() => {
+    if (!useApi) return [] as typeof chartData
+    const src =
+      apiPoints.length > 20
+        ? apiMonths.map((m) => ({
+            month: m.label,
+            without: mln(m.close),
+            inflow: mln(m.inflow),
+            outflow: mln(m.outflow),
+          }))
+        : apiPoints.map((p) => ({
+            month: monthLabel(p.date),
+            without: mln(p.closingBalance),
+            inflow: mln(p.predictedInflow),
+            outflow: mln(p.predictedOutflow),
+          }))
+    return src as typeof chartData
+  }, [useApi, apiPoints, apiMonths])
+
+  const chartDataLive = useApi ? apiChartData : chartData
+
+  const apiConclusion = useMemo(() => {
+    if (!apiForecast) return null
+    if (apiForecast.warning) return apiForecast.warning
+    if (apiForecast.cashGapAmount != null && apiForecast.cashGapDate) {
+      return `Кассовый разрыв ≈ ${mln(apiForecast.cashGapAmount)} млн ₽ около ${monthLabel(apiForecast.cashGapDate)}.`
+    }
+    if (apiForecast.minimumBalance < 0) {
+      return `Минимальный остаток по прогнозу ${mln(apiForecast.minimumBalance)} млн ₽.`
+    }
+    return null
+  }, [apiForecast])
+
+  const conclusion = apiConclusion ?? localConclusion
+  const alertTone = Boolean(apiForecast?.warning || (apiForecast?.cashGapAmount != null && apiForecast.cashGapAmount > 0) || firstNeg)
 
   function toApplication() {
     saveScenarioHandoff({
@@ -170,8 +268,8 @@ export function ForecastPage() {
           px: 1.75,
           py: 1.4,
           borderRadius: 2.5,
-          bgcolor: '#FDE8E6',
-          border: '1px solid rgba(196,30,20,0.2)',
+          bgcolor: alertTone ? '#FDE8E6' : '#E6F5EE',
+          border: alertTone ? '1px solid rgba(196,30,20,0.2)' : '1px solid rgba(27,138,90,0.25)',
           mb: 2,
         }}
       >
@@ -180,7 +278,7 @@ export function ForecastPage() {
             width: 22,
             height: 22,
             borderRadius: '50%',
-            bgcolor: '#EF3124',
+            bgcolor: alertTone ? '#EF3124' : '#1B8A5A',
             color: '#fff',
             display: 'grid',
             placeItems: 'center',
@@ -190,7 +288,14 @@ export function ForecastPage() {
         >
           <CloseRoundedIcon sx={{ fontSize: 14 }} />
         </Box>
-        <Typography sx={{ fontSize: 13.5, color: '#7A3A35', lineHeight: 1.5, fontWeight: 600 }}>
+        <Typography
+          sx={{
+            fontSize: 13.5,
+            color: alertTone ? '#7A3A35' : '#1B5C40',
+            lineHeight: 1.5,
+            fontWeight: 600,
+          }}
+        >
           {conclusion}
         </Typography>
       </Box>
@@ -213,7 +318,7 @@ export function ForecastPage() {
           </Typography>
           <Box sx={{ height: 260 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
+              <LineChart data={chartDataLive}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(11,31,53,0.06)" />
                 <XAxis dataKey="month" tick={{ fontSize: 12, fill: '#9AA5B1' }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 12, fill: '#9AA5B1' }} axisLine={false} tickLine={false} width={36} />
@@ -222,20 +327,41 @@ export function ForecastPage() {
                 <Line
                   type="monotone"
                   dataKey="without"
-                  name="Без кредита"
+                  name={useApi ? 'Остаток' : 'Без кредита'}
                   stroke="#EF3124"
                   strokeWidth={2}
-                  strokeDasharray="5 5"
+                  strokeDasharray={useApi ? undefined : '5 5'}
                   dot={{ r: 3 }}
                 />
-                <Line
-                  type="monotone"
-                  dataKey="withLoan"
-                  name={`Кредит ${(loanAmount / 1_000_000).toFixed(0)} млн ₽ · ${String(loanRate).replace('.', ',')}%`}
-                  stroke="#1B8A5A"
-                  strokeWidth={2.5}
-                  dot={{ r: 3 }}
-                />
+                {useApi ? (
+                  <>
+                    <Line
+                      type="monotone"
+                      dataKey="inflow"
+                      name="Поступления"
+                      stroke="#1B8A5A"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="outflow"
+                      name="Списания"
+                      stroke="#C45A12"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                  </>
+                ) : (
+                  <Line
+                    type="monotone"
+                    dataKey="withLoan"
+                    name={`Кредит ${(loanAmount / 1_000_000).toFixed(0)} млн ₽ · ${String(loanRate).replace('.', ',')}%`}
+                    stroke="#1B8A5A"
+                    strokeWidth={2.5}
+                    dot={{ r: 3 }}
+                  />
+                )}
               </LineChart>
             </ResponsiveContainer>
           </Box>
@@ -331,7 +457,7 @@ export function ForecastPage() {
               <Box component="th" sx={thSx}>
                 Статья
               </Box>
-              {MONTHS.map((m) => (
+              {(useApi ? apiMonths.map((m) => m.label) : [...MONTHS]).map((m) => (
                 <Box component="th" key={m} sx={{ ...thSx, textAlign: 'right' }}>
                   {m}
                 </Box>
@@ -339,21 +465,36 @@ export function ForecastPage() {
             </Box>
           </Box>
           <Box component="tbody">
-            <TableRow label="Поступления" values={rows.map((r) => r.inflow)} />
-            <TableRow label="Операционные расходы" values={rows.map((r) => r.opex)} />
-            <TableRow label="Расходы цели" values={rows.map((r) => r.goal)} />
-            <TableRow
-              label="Остаток без финансирования"
-              values={rows.map((r) => r.balNo)}
-              emphasize
-            />
-            <TableRow label="Платёж по кредиту" values={rows.map((r) => r.pay)} />
-            <TableRow
-              label="Остаток с кредитом"
-              values={rows.map((r) => r.balYes)}
-              emphasize
-              bold
-            />
+            {useApi ? (
+              <>
+                <TableRow label="Поступления" values={apiMonths.map((m) => mln(m.inflow))} />
+                <TableRow label="Списания" values={apiMonths.map((m) => mln(m.outflow))} />
+                <TableRow
+                  label="Остаток"
+                  values={apiMonths.map((m) => mln(m.close))}
+                  emphasize
+                  bold
+                />
+              </>
+            ) : (
+              <>
+                <TableRow label="Поступления" values={rows.map((r) => r.inflow)} />
+                <TableRow label="Операционные расходы" values={rows.map((r) => r.opex)} />
+                <TableRow label="Расходы цели" values={rows.map((r) => r.goal)} />
+                <TableRow
+                  label="Остаток без финансирования"
+                  values={rows.map((r) => r.balNo)}
+                  emphasize
+                />
+                <TableRow label="Платёж по кредиту" values={rows.map((r) => r.pay)} />
+                <TableRow
+                  label="Остаток с кредитом"
+                  values={rows.map((r) => r.balYes)}
+                  emphasize
+                  bold
+                />
+              </>
+            )}
           </Box>
         </Box>
       </Box>

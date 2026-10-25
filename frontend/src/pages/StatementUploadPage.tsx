@@ -9,10 +9,10 @@ import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded'
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined'
-import { useCallback, useRef, useState, type DragEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
-import { importStatement } from '@/api/statements'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { importStatement, listStatements } from '@/api/statements'
 import { useAppStore } from '@/hooks/useAppStore'
 import { formatFileSize } from '@/utils/format'
 
@@ -49,34 +49,6 @@ type UploadItem = {
   meta?: string
   error?: string
 }
-
-const DEMO_SEED: Omit<UploadItem, 'file'>[] = [
-  {
-    id: 'demo1',
-    name: 'Выписка_р-с_4821_11.2025-09.2026.xlsx',
-    size: 2.4 * 1024 * 1024,
-    status: 'done',
-    progress: 100,
-    meta: '11 мес.',
-  },
-  {
-    id: 'demo2',
-    name: '1С_экспорт_октябрь_2026.txt',
-    size: 184 * 1024,
-    status: 'processing',
-    progress: 64,
-  },
-  {
-    id: 'demo3',
-    name: 'scan_vypiska.pdf',
-    size: 8.1 * 1024 * 1024,
-    status: 'error',
-    progress: 100,
-    meta: 'не удалось распознать таблицу',
-    error:
-      'Файл похож на скан без текстового слоя. Скачайте выписку из интернет-банка в Excel или формате 1С (.txt).',
-  },
-]
 
 function StatusPill({ status, progress }: { status: FileStatus; progress: number }) {
   if (status === 'done') {
@@ -147,13 +119,45 @@ export function StatementUploadPage() {
   const { companyId } = useAppStore()
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
-  const [items, setItems] = useState<UploadItem[]>(() =>
-    DEMO_SEED.map((d) => ({
-      ...d,
-      file: new File([], d.name),
-    })),
-  )
+  const [items, setItems] = useState<UploadItem[]>([])
   const [analyzing, setAnalyzing] = useState(false)
+  const seeded = useRef(false)
+
+  const stmtsQ = useQuery({
+    queryKey: ['statements', companyId],
+    queryFn: () => listStatements(companyId!),
+    enabled: Boolean(companyId),
+  })
+
+  useEffect(() => {
+    if (seeded.current || !stmtsQ.data) return
+    seeded.current = true
+    setItems(
+      stmtsQ.data.map((s) => {
+        const status: FileStatus =
+          s.status === 'ERROR' || s.processingStatus === 'ERROR'
+            ? 'error'
+            : s.status === 'CONFIRMED' || s.status === 'PROCESSED' || s.status === 'READY'
+              ? 'done'
+              : 'processing'
+        return {
+          id: s.id,
+          file: new File([], s.fileName || s.id),
+          name: s.fileName || s.sourceLabel || s.id,
+          size: 0,
+          status,
+          progress: status === 'done' ? 100 : status === 'processing' ? 50 : 100,
+          meta:
+            s.periodFrom && s.periodTo
+              ? `${s.periodFrom} — ${s.periodTo}`
+              : s.txCount
+                ? `${s.txCount} операций`
+                : undefined,
+          error: s.errorMessage,
+        }
+      }),
+    )
+  }, [stmtsQ.data])
 
   const updateItem = useCallback((id: string, patch: Partial<UploadItem>) => {
     setItems((list) => list.map((x) => (x.id === id ? { ...x, ...patch } : x)))
@@ -217,6 +221,8 @@ export function StatementUploadPage() {
       updateItem(id, { status: 'done', progress: 100, meta: 'импортировано' })
       await qc.invalidateQueries({ queryKey: ['transactions', companyId] })
       await qc.invalidateQueries({ queryKey: ['financials', companyId] })
+      await qc.invalidateQueries({ queryKey: ['statements', companyId] })
+      await qc.invalidateQueries({ queryKey: ['finance'] })
     } catch (e) {
       window.clearInterval(timer)
       updateItem(id, {

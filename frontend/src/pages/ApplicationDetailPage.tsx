@@ -106,6 +106,8 @@ const APP_STATUS_CHIP: Record<ApplicationStatus, { bg: string; color: string }> 
   docs_requested: { bg: '#FDE8E6', color: '#C41E14' },
   approved: { bg: '#E6F5EE', color: '#1B8A5A' },
   counteroffered: { bg: '#FFF0E0', color: '#C45A12' },
+  offer_accepted: { bg: '#E6F5EE', color: '#1B8A5A' },
+  agreement_preparation: { bg: '#E6F5EE', color: '#1B8A5A' },
   rejected: { bg: '#FDE8E6', color: '#C41E14' },
   issued: { bg: '#E6F5EE', color: '#1B8A5A' },
 }
@@ -123,6 +125,8 @@ function pipelineStep(status: ApplicationStatus): number {
     case 'approved':
     case 'counteroffered':
       return 3
+    case 'offer_accepted':
+    case 'agreement_preparation':
     case 'rejected':
     case 'issued':
       return 4
@@ -1247,8 +1251,26 @@ function Pipeline({ current, status }: { current: number; status: ApplicationSta
   return (
     <Stack direction="row" alignItems="flex-start" spacing={0.5}>
       {labels.map((label, i) => {
-        const done = i < current || (i === current && ['approved', 'issued'].includes(status))
-        const active = i === current && !['approved', 'issued', 'rejected'].includes(status)
+        const done =
+          i < current ||
+          (i === current &&
+            [
+              'approved',
+              'counteroffered',
+              'offer_accepted',
+              'agreement_preparation',
+              'issued',
+            ].includes(status))
+        const active =
+          i === current &&
+          ![
+            'approved',
+            'counteroffered',
+            'offer_accepted',
+            'agreement_preparation',
+            'issued',
+            'rejected',
+          ].includes(status)
         const failed = status === 'rejected' && i === current
         return (
           <Box key={label} sx={{ flex: 1, minWidth: 0 }}>

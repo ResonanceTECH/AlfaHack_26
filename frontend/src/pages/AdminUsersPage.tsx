@@ -5,6 +5,7 @@ import {
   Button,
   Checkbox,
   Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -33,7 +34,16 @@ import CancelRoundedIcon from '@mui/icons-material/CancelRounded'
 import BlockRoundedIcon from '@mui/icons-material/BlockRounded'
 import LockOpenRoundedIcon from '@mui/icons-material/LockOpenRounded'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
-import { useMemo, useState } from 'react'
+import axios from 'axios'
+import { useEffect, useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  createAdminUser,
+  disableAdminUser,
+  listAdminUsers,
+  patchAdminUser,
+  type AdminUser,
+} from '@/api/admin'
 import { PageHeader } from '@/components/common/PageHeader'
 import { color, font, radius, shadow } from '@/theme/tokens'
 
@@ -50,9 +60,10 @@ type DemoUser = {
   mfa: boolean
   lastLogin: string
   status: UserStatus
-  /** статус до блокировки — для разблокировки */
   statusBeforeBlock?: UserStatus
 }
+
+const INITIAL_USERS: DemoUser[] = []
 
 const tileSx = {
   bgcolor: color.background.paper,
@@ -109,79 +120,6 @@ const statusMeta: Record<UserStatus, { label: string; bgcolor: string; color: st
   },
 }
 
-const INITIAL_USERS: DemoUser[] = [
-  {
-    id: '1',
-    name: 'Елена Орлова',
-    email: 'admin@demo.alfa',
-    role: 'admin',
-    department: 'Платформа',
-    mfa: true,
-    lastLogin: 'Сегодня, 10:11',
-    status: 'active',
-  },
-  {
-    id: '2',
-    name: 'Петров И.В.',
-    email: 'analyst@demo.alfa',
-    role: 'analyst',
-    department: 'Кредитный конвейер',
-    mfa: true,
-    lastLogin: 'Вчера, 18:22',
-    status: 'active',
-  },
-  {
-    id: '3',
-    name: 'Соколова М.К.',
-    email: 'sokolova@demo.alfa',
-    role: 'analyst',
-    department: 'Кредитный конвейер',
-    mfa: false,
-    lastLogin: '21 окт, 14:05',
-    status: 'mfa_required',
-  },
-  {
-    id: '4',
-    name: 'Кузнецов Д.А.',
-    email: 'kuznetsov@demo.alfa',
-    role: 'analyst',
-    department: 'Риски',
-    mfa: true,
-    lastLogin: '20 окт, 11:30',
-    status: 'active',
-  },
-  {
-    id: '5',
-    name: 'Новикова Е.П.',
-    email: 'novikova@demo.alfa',
-    role: 'analyst',
-    department: 'Онбординг',
-    mfa: false,
-    lastLogin: '—',
-    status: 'invited',
-  },
-  {
-    id: '6',
-    name: 'IP Демо',
-    email: 'ip@demo.alfa',
-    role: 'entrepreneur',
-    department: 'Клиент',
-    mfa: true,
-    lastLogin: 'Сегодня, 08:15',
-    status: 'active',
-  },
-  {
-    id: '7',
-    name: 'ООО Демо',
-    email: 'ooo@demo.alfa',
-    role: 'entrepreneur',
-    department: 'Клиент',
-    mfa: true,
-    lastLogin: 'Вчера, 16:48',
-    status: 'active',
-  },
-]
-
 const PERMISSIONS: { label: string; cells: boolean[] }[] = [
   { label: 'Просмотр заявок компании', cells: [true, true, true] },
   { label: 'Решение по заявке (лимит 5 млн ₽)', cells: [false, true, true] },
@@ -192,19 +130,95 @@ const PERMISSIONS: { label: string; cells: boolean[] }[] = [
 
 const ROLE_COLS = ['Предприниматель', 'Аналитик', 'Администратор'] as const
 
+function apiError(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err)) {
+    const detail = err.response?.data?.detail
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail)) {
+      return detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join('; ')
+    }
+    const body = err.response?.data as { message?: string } | undefined
+    if (body?.message) return body.message
+  }
+  if (err instanceof Error) return err.message
+  return fallback
+}
+
+function normalizeRole(role: string): StaffRole {
+  const r = role.toLowerCase()
+  if (r === 'analyst') return 'analyst'
+  if (r === 'admin') return 'admin'
+  return 'entrepreneur'
+}
+
+function normalizeStatus(status: string): UserStatus {
+  const s = status.toUpperCase()
+  if (s === 'ACTIVE') return 'active'
+  if (s === 'DISABLED') return 'disabled'
+  if (s === 'INVITED' || s === 'PENDING') return 'invited'
+  return 'invited'
+}
+
+function departmentFromRole(role: StaffRole): string {
+  if (role === 'entrepreneur') return 'Клиент'
+  if (role === 'analyst') return 'Кредитный конвейер'
+  return 'Платформа'
+}
+
+function formatLastLogin(iso?: string): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  const now = new Date()
+  const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+  if (d.toDateString() === now.toDateString()) return `Сегодня, ${time}`
+  const yest = new Date(now)
+  yest.setDate(now.getDate() - 1)
+  if (d.toDateString() === yest.toDateString()) return `Вчера, ${time}`
+  return d.toLocaleString('ru-RU', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function mapUser(u: AdminUser): DemoUser {
+  const role = normalizeRole(String(u.role))
+  return {
+    id: u.id,
+    name: u.fullName,
+    email: u.email || u.login || '—',
+    role,
+    department: departmentFromRole(role),
+    mfa: false,
+    lastLogin: formatLastLogin(u.lastLoginAt),
+    status: normalizeStatus(String(u.status)),
+  }
+}
+
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/)
   return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || '·'
 }
 
+function apiStatus(ui: string): string | undefined {
+  if (ui === 'active') return 'ACTIVE'
+  if (ui === 'disabled') return 'DISABLED'
+  if (ui === 'invited') return 'PENDING'
+  return undefined
+}
+
 export function AdminUsersPage() {
-  const [users, setUsers] = useState(INITIAL_USERS)
+  const qc = useQueryClient()
   const [q, setQ] = useState('')
+  const [qDebounced, setQDebounced] = useState('')
   const [role, setRole] = useState('all')
   const [status, setStatus] = useState('all')
   const [mfa, setMfa] = useState('any')
   const [selected, setSelected] = useState<string[]>([])
   const [toast, setToast] = useState<string | null>(null)
+  const [toastError, setToastError] = useState<string | null>(null)
 
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null)
   const [menuUserId, setMenuUserId] = useState<string | null>(null)
@@ -217,31 +231,130 @@ export function AdminUsersPage() {
   const [blockTargetIds, setBlockTargetIds] = useState<string[]>([])
   const [blockMode, setBlockMode] = useState<'block' | 'unblock'>('block')
 
-  const menuUser = users.find((u) => u.id === menuUserId) ?? null
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [invite, setInvite] = useState({
+    fullName: '',
+    login: '',
+    password: '',
+    email: '',
+    role: 'analyst' as StaffRole,
+  })
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setQDebounced(q.trim()), 300)
+    return () => window.clearTimeout(t)
+  }, [q])
+
+  const roleParam = role === 'all' ? undefined : role.toUpperCase()
+  const statusParam = apiStatus(status)
+  const filters = { role: roleParam, status: statusParam, q: qDebounced || undefined }
+
+  const usersQ = useQuery({
+    queryKey: ['admin', 'users', filters],
+    queryFn: () => listAdminUsers({ ...filters, limit: 100 }),
+  })
+
+  const users = useMemo(
+    () => (usersQ.data?.items ?? []).map(mapUser),
+    [usersQ.data],
+  )
+  const displayUsers = users.length ? users : INITIAL_USERS
+
+  const menuUser = displayUsers.find((u) => u.id === menuUserId) ?? null
 
   const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase()
-    return users.filter((u) => {
-      if (role !== 'all' && u.role !== role) return false
-      if (status !== 'all' && u.status !== status) return false
+    return displayUsers.filter((u) => {
       if (mfa === 'on' && !u.mfa) return false
       if (mfa === 'off' && u.mfa) return false
-      if (!needle) return true
-      return (
-        u.name.toLowerCase().includes(needle) || u.email.toLowerCase().includes(needle)
-      )
+      return true
     })
-  }, [users, q, role, status, mfa])
+  }, [displayUsers, mfa])
 
   const allChecked = filtered.length > 0 && filtered.every((u) => selected.includes(u.id))
   const someChecked = filtered.some((u) => selected.includes(u.id)) && !allChecked
 
   const summary = useMemo(() => {
-    const activeLike = users.filter((u) => u.status !== 'disabled').length
-    const mfaOn = users.filter((u) => u.mfa && u.status !== 'disabled').length
+    const activeLike = displayUsers.filter((u) => u.status !== 'disabled').length
+    const mfaOn = displayUsers.filter((u) => u.mfa && u.status !== 'disabled').length
     const pct = activeLike ? Math.round((mfaOn / activeLike) * 100) : 0
-    return { total: users.length, roles: 3, mfaPct: pct }
-  }, [users])
+    return { total: usersQ.data?.total ?? displayUsers.length, roles: 3, mfaPct: pct }
+  }, [displayUsers, usersQ.data?.total])
+
+  function invalidateUsers() {
+    return qc.invalidateQueries({ queryKey: ['admin', 'users'] })
+  }
+
+  const roleM = useMutation({
+    mutationFn: async () => {
+      await Promise.all(
+        roleTargetIds.map((id) => patchAdminUser(id, { role: roleDraft.toUpperCase() })),
+      )
+    },
+    onSuccess: async () => {
+      await invalidateUsers()
+      const n = roleTargetIds.length
+      const label = roleMeta[roleDraft].label
+      setToast(
+        n === 1 ? `Роль изменена → ${label}` : `Роль изменена у ${n} пользователей → ${label}`,
+      )
+      setToastError(null)
+      setRoleDialogOpen(false)
+      setSelected([])
+    },
+    onError: (err) => setToastError(apiError(err, 'Не удалось сменить роль')),
+  })
+
+  const blockM = useMutation({
+    mutationFn: async () => {
+      await Promise.all(
+        blockTargetIds.map((id) =>
+          blockMode === 'block'
+            ? disableAdminUser(id)
+            : patchAdminUser(id, { status: 'ACTIVE', isActive: true }),
+        ),
+      )
+    },
+    onSuccess: async () => {
+      await invalidateUsers()
+      const n = blockTargetIds.length
+      setToast(
+        blockMode === 'block'
+          ? n === 1
+            ? 'Пользователь заблокирован'
+            : `Заблокировано: ${n}`
+          : n === 1
+            ? 'Пользователь разблокирован'
+            : `Разблокировано: ${n}`,
+      )
+      setToastError(null)
+      setBlockDialogOpen(false)
+      setSelected([])
+    },
+    onError: (err) =>
+      setToastError(
+        apiError(err, blockMode === 'block' ? 'Не удалось заблокировать' : 'Не удалось разблокировать'),
+      ),
+  })
+
+  const inviteM = useMutation({
+    mutationFn: () =>
+      createAdminUser({
+        login: invite.login.trim(),
+        password: invite.password,
+        fullName: invite.fullName.trim(),
+        email: invite.email.trim() || invite.login.trim(),
+        role: invite.role.toUpperCase(),
+        status: 'PENDING',
+      }),
+    onSuccess: async () => {
+      await invalidateUsers()
+      setToast('Пользователь создан')
+      setToastError(null)
+      setInviteOpen(false)
+      setInvite({ fullName: '', login: '', password: '', email: '', role: 'analyst' })
+    },
+    onError: (err) => setToastError(apiError(err, 'Не удалось создать пользователя')),
+  })
 
   function toggleAll() {
     if (allChecked) {
@@ -266,26 +379,11 @@ export function AdminUsersPage() {
   }
 
   function openRoleDialog(ids: string[]) {
-    const first = users.find((u) => u.id === ids[0])
+    const first = displayUsers.find((u) => u.id === ids[0])
     setRoleTargetIds(ids)
     setRoleDraft(first?.role ?? 'analyst')
     setRoleDialogOpen(true)
     closeMenu()
-  }
-
-  function applyRoleChange() {
-    setUsers((prev) =>
-      prev.map((u) => (roleTargetIds.includes(u.id) ? { ...u, role: roleDraft } : u)),
-    )
-    const n = roleTargetIds.length
-    const label = roleMeta[roleDraft].label
-    setToast(
-      n === 1
-        ? `Роль изменена → ${label}`
-        : `Роль изменена у ${n} пользователей → ${label}`,
-    )
-    setRoleDialogOpen(false)
-    setSelected([])
   }
 
   function openBlockDialog(ids: string[], mode: 'block' | 'unblock') {
@@ -295,40 +393,7 @@ export function AdminUsersPage() {
     closeMenu()
   }
 
-  function applyBlockChange() {
-    setUsers((prev) =>
-      prev.map((u) => {
-        if (!blockTargetIds.includes(u.id)) return u
-        if (blockMode === 'block') {
-          if (u.status === 'disabled') return u
-          return {
-            ...u,
-            statusBeforeBlock: u.status,
-            status: 'disabled',
-          }
-        }
-        return {
-          ...u,
-          status: u.statusBeforeBlock && u.statusBeforeBlock !== 'disabled' ? u.statusBeforeBlock : 'active',
-          statusBeforeBlock: undefined,
-        }
-      }),
-    )
-    const n = blockTargetIds.length
-    setToast(
-      blockMode === 'block'
-        ? n === 1
-          ? 'Пользователь заблокирован'
-          : `Заблокировано: ${n}`
-        : n === 1
-          ? 'Пользователь разблокирован'
-          : `Разблокировано: ${n}`,
-    )
-    setBlockDialogOpen(false)
-    setSelected([])
-  }
-
-  const selectedUsers = users.filter((u) => selected.includes(u.id))
+  const selectedUsers = displayUsers.filter((u) => selected.includes(u.id))
   const canBulkBlock = selectedUsers.some((u) => u.status !== 'disabled')
   const canBulkUnblock = selectedUsers.some((u) => u.status === 'disabled')
 
@@ -355,6 +420,7 @@ export function AdminUsersPage() {
             <Button
               variant="contained"
               startIcon={<AddRoundedIcon />}
+              onClick={() => setInviteOpen(true)}
               sx={{ borderRadius: `${radius.button}px`, fontWeight: 600 }}
             >
               Пригласить
@@ -363,6 +429,24 @@ export function AdminUsersPage() {
         }
       />
 
+      {usersQ.isError && (
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          action={
+            <Button color="inherit" size="small" onClick={() => usersQ.refetch()}>
+              Повторить
+            </Button>
+          }
+        >
+          {apiError(usersQ.error, 'Не удалось загрузить пользователей')}
+        </Alert>
+      )}
+      {toastError && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setToastError(null)}>
+          {toastError}
+        </Alert>
+      )}
       {toast && (
         <Alert severity="success" sx={{ mb: 2 }} onClose={() => setToast(null)}>
           {toast}
@@ -498,136 +582,142 @@ export function AdminUsersPage() {
       )}
 
       <Box sx={{ ...tileSx, mb: 2, overflow: 'auto' }}>
-        <Table size="small" sx={{ minWidth: 880 }}>
-          <TableHead>
-            <TableRow>
-              <TableCell padding="checkbox">
-                <Checkbox
-                  size="small"
-                  checked={allChecked}
-                  indeterminate={someChecked}
-                  onChange={toggleAll}
-                />
-              </TableCell>
-              <TableCell sx={{ fontWeight: 700, color: color.text.secondary }}>Пользователь</TableCell>
-              <TableCell sx={{ fontWeight: 700, color: color.text.secondary }}>Роль</TableCell>
-              <TableCell sx={{ fontWeight: 700, color: color.text.secondary }}>Подразделение</TableCell>
-              <TableCell sx={{ fontWeight: 700, color: color.text.secondary }} align="center">
-                MFA
-              </TableCell>
-              <TableCell sx={{ fontWeight: 700, color: color.text.secondary }}>Последний вход</TableCell>
-              <TableCell sx={{ fontWeight: 700, color: color.text.secondary }}>Статус</TableCell>
-              <TableCell width={48} />
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {filtered.map((u) => {
-              const rm = roleMeta[u.role]
-              const sm = statusMeta[u.status]
-              const blocked = u.status === 'disabled'
-              return (
-                <TableRow
-                  key={u.id}
-                  hover
-                  selected={selected.includes(u.id)}
-                  sx={blocked ? { opacity: 0.72 } : undefined}
-                >
-                  <TableCell padding="checkbox">
-                    <Checkbox
-                      size="small"
-                      checked={selected.includes(u.id)}
-                      onChange={() => toggleOne(u.id)}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Stack direction="row" spacing={1.25} alignItems="center">
-                      <Avatar
+        {usersQ.isLoading ? (
+          <Box sx={{ display: 'grid', placeItems: 'center', py: 6 }}>
+            <CircularProgress size={28} sx={{ color: color.primary.main }} />
+          </Box>
+        ) : (
+          <Table size="small" sx={{ minWidth: 880 }}>
+            <TableHead>
+              <TableRow>
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    size="small"
+                    checked={allChecked}
+                    indeterminate={someChecked}
+                    onChange={toggleAll}
+                  />
+                </TableCell>
+                <TableCell sx={{ fontWeight: 700, color: color.text.secondary }}>Пользователь</TableCell>
+                <TableCell sx={{ fontWeight: 700, color: color.text.secondary }}>Роль</TableCell>
+                <TableCell sx={{ fontWeight: 700, color: color.text.secondary }}>Подразделение</TableCell>
+                <TableCell sx={{ fontWeight: 700, color: color.text.secondary }} align="center">
+                  MFA
+                </TableCell>
+                <TableCell sx={{ fontWeight: 700, color: color.text.secondary }}>Последний вход</TableCell>
+                <TableCell sx={{ fontWeight: 700, color: color.text.secondary }}>Статус</TableCell>
+                <TableCell width={48} />
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {filtered.map((u) => {
+                const rm = roleMeta[u.role]
+                const sm = statusMeta[u.status]
+                const blocked = u.status === 'disabled'
+                return (
+                  <TableRow
+                    key={u.id}
+                    hover
+                    selected={selected.includes(u.id)}
+                    sx={blocked ? { opacity: 0.72 } : undefined}
+                  >
+                    <TableCell padding="checkbox">
+                      <Checkbox
+                        size="small"
+                        checked={selected.includes(u.id)}
+                        onChange={() => toggleOne(u.id)}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Stack direction="row" spacing={1.25} alignItems="center">
+                        <Avatar
+                          sx={{
+                            width: 34,
+                            height: 34,
+                            bgcolor: blocked
+                              ? color.text.inactive
+                              : u.role === 'admin'
+                                ? color.primary.main
+                                : color.secondary.main,
+                            fontSize: 12,
+                            fontWeight: 700,
+                          }}
+                        >
+                          {initials(u.name)}
+                        </Avatar>
+                        <Box>
+                          <Typography sx={{ fontSize: 13.5, fontWeight: 650, color: color.text.primary }}>
+                            {u.name}
+                          </Typography>
+                          <Typography sx={{ fontSize: 12, color: color.text.muted }}>{u.email}</Typography>
+                        </Box>
+                      </Stack>
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        size="small"
+                        label={rm.label}
                         sx={{
-                          width: 34,
-                          height: 34,
-                          bgcolor: blocked
-                            ? color.text.inactive
-                            : u.role === 'admin'
-                              ? color.primary.main
-                              : color.secondary.main,
-                          fontSize: 12,
+                          bgcolor: rm.bgcolor,
+                          color: rm.color,
                           fontWeight: 700,
+                          fontSize: 11.5,
+                          height: 24,
+                          borderRadius: `${radius.chip}px`,
                         }}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Typography sx={{ fontSize: 13, color: color.text.primary }}>{u.department}</Typography>
+                    </TableCell>
+                    <TableCell align="center">
+                      {u.mfa ? (
+                        <CheckCircleRoundedIcon sx={{ fontSize: 20, color: color.semantic.success }} />
+                      ) : (
+                        <CancelRoundedIcon sx={{ fontSize: 20, color: color.semantic.error }} />
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Typography sx={{ fontSize: 13, color: color.text.secondary }}>{u.lastLogin}</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        size="small"
+                        label={sm.label}
+                        sx={{
+                          bgcolor: sm.bgcolor,
+                          color: sm.color,
+                          fontWeight: 700,
+                          fontSize: 11.5,
+                          height: 24,
+                          borderRadius: `${radius.chip}px`,
+                        }}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <IconButton
+                        size="small"
+                        aria-label="Действия"
+                        onClick={(e) => openMenu(e, u.id)}
                       >
-                        {initials(u.name)}
-                      </Avatar>
-                      <Box>
-                        <Typography sx={{ fontSize: 13.5, fontWeight: 650, color: color.text.primary }}>
-                          {u.name}
-                        </Typography>
-                        <Typography sx={{ fontSize: 12, color: color.text.muted }}>{u.email}</Typography>
-                      </Box>
-                    </Stack>
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      size="small"
-                      label={rm.label}
-                      sx={{
-                        bgcolor: rm.bgcolor,
-                        color: rm.color,
-                        fontWeight: 700,
-                        fontSize: 11.5,
-                        height: 24,
-                        borderRadius: `${radius.chip}px`,
-                      }}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Typography sx={{ fontSize: 13, color: color.text.primary }}>{u.department}</Typography>
-                  </TableCell>
-                  <TableCell align="center">
-                    {u.mfa ? (
-                      <CheckCircleRoundedIcon sx={{ fontSize: 20, color: color.semantic.success }} />
-                    ) : (
-                      <CancelRoundedIcon sx={{ fontSize: 20, color: color.semantic.error }} />
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Typography sx={{ fontSize: 13, color: color.text.secondary }}>{u.lastLogin}</Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      size="small"
-                      label={sm.label}
-                      sx={{
-                        bgcolor: sm.bgcolor,
-                        color: sm.color,
-                        fontWeight: 700,
-                        fontSize: 11.5,
-                        height: 24,
-                        borderRadius: `${radius.chip}px`,
-                      }}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <IconButton
-                      size="small"
-                      aria-label="Действия"
-                      onClick={(e) => openMenu(e, u.id)}
-                    >
-                      <MoreVertRoundedIcon sx={{ fontSize: 18 }} />
-                    </IconButton>
+                        <MoreVertRoundedIcon sx={{ fontSize: 18 }} />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+              {filtered.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={8}>
+                    <Typography sx={{ py: 3, textAlign: 'center', color: color.text.muted }}>
+                      Никого не найдено по фильтрам
+                    </Typography>
                   </TableCell>
                 </TableRow>
-              )
-            })}
-            {filtered.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={8}>
-                  <Typography sx={{ py: 3, textAlign: 'center', color: color.text.muted }}>
-                    Никого не найдено по фильтрам
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+              )}
+            </TableBody>
+          </Table>
+        )}
       </Box>
 
       <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={closeMenu}>
@@ -650,7 +740,7 @@ export function AdminUsersPage() {
         ) : (
           <MenuItem
             onClick={() => menuUser && openBlockDialog([menuUser.id], 'block')}
-            disabled={menuUser?.email === 'admin@demo.alfa'}
+            disabled={!menuUser}
           >
             <ListItemIcon>
               <BlockRoundedIcon fontSize="small" color="error" />
@@ -665,7 +755,7 @@ export function AdminUsersPage() {
         <DialogContent>
           <Typography sx={{ fontSize: 13.5, color: color.text.secondary, mb: 2 }}>
             {roleTargetIds.length === 1
-              ? users.find((u) => u.id === roleTargetIds[0])?.email
+              ? displayUsers.find((u) => u.id === roleTargetIds[0])?.email
               : `Пользователей: ${roleTargetIds.length}`}
           </Typography>
           <TextField
@@ -685,8 +775,8 @@ export function AdminUsersPage() {
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setRoleDialogOpen(false)}>Отмена</Button>
-          <Button variant="contained" onClick={applyRoleChange}>
-            Сохранить
+          <Button variant="contained" onClick={() => roleM.mutate()} disabled={roleM.isPending}>
+            {roleM.isPending ? 'Сохранение…' : 'Сохранить'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -699,10 +789,10 @@ export function AdminUsersPage() {
           <Typography sx={{ fontSize: 14, color: color.text.secondary }}>
             {blockMode === 'block'
               ? blockTargetIds.length === 1
-                ? `Доступ для ${users.find((u) => u.id === blockTargetIds[0])?.email} будет отозван. Вход и API станут недоступны.`
+                ? `Доступ для ${displayUsers.find((u) => u.id === blockTargetIds[0])?.email} будет отозван. Вход и API станут недоступны.`
                 : `Будет заблокировано пользователей: ${blockTargetIds.length}.`
               : blockTargetIds.length === 1
-                ? `Восстановить доступ для ${users.find((u) => u.id === blockTargetIds[0])?.email}?`
+                ? `Восстановить доступ для ${displayUsers.find((u) => u.id === blockTargetIds[0])?.email}?`
                 : `Будет разблокировано: ${blockTargetIds.length}.`}
           </Typography>
         </DialogContent>
@@ -711,9 +801,78 @@ export function AdminUsersPage() {
           <Button
             variant="contained"
             color={blockMode === 'block' ? 'error' : 'primary'}
-            onClick={applyBlockChange}
+            onClick={() => blockM.mutate()}
+            disabled={blockM.isPending}
           >
             {blockMode === 'block' ? 'Заблокировать' : 'Разблокировать'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={inviteOpen} onClose={() => setInviteOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Пригласить пользователя</DialogTitle>
+        <DialogContent>
+          <Stack spacing={1.5} sx={{ mt: 0.5 }}>
+            <TextField
+              size="small"
+              label="ФИО"
+              value={invite.fullName}
+              onChange={(e) => setInvite((s) => ({ ...s, fullName: e.target.value }))}
+              fullWidth
+            />
+            <TextField
+              size="small"
+              label="Логин"
+              value={invite.login}
+              onChange={(e) => setInvite((s) => ({ ...s, login: e.target.value }))}
+              fullWidth
+            />
+            <TextField
+              size="small"
+              label="Email"
+              value={invite.email}
+              onChange={(e) => setInvite((s) => ({ ...s, email: e.target.value }))}
+              placeholder="по умолчанию = логин"
+              fullWidth
+            />
+            <TextField
+              size="small"
+              type="password"
+              label="Пароль"
+              value={invite.password}
+              onChange={(e) => setInvite((s) => ({ ...s, password: e.target.value }))}
+              helperText="минимум 6 символов"
+              fullWidth
+            />
+            <TextField
+              select
+              size="small"
+              label="Роль"
+              value={invite.role}
+              onChange={(e) => setInvite((s) => ({ ...s, role: e.target.value as StaffRole }))}
+              fullWidth
+            >
+              {ROLE_OPTIONS.map((o) => (
+                <MenuItem key={o.value} value={o.value}>
+                  {o.label}
+                </MenuItem>
+              ))}
+            </TextField>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setInviteOpen(false)}>Отмена</Button>
+          <Button
+            variant="contained"
+            disabled={
+              inviteM.isPending ||
+              !invite.fullName.trim() ||
+              !invite.login.trim() ||
+              invite.password.length < 6
+            }
+            onClick={() => inviteM.mutate()}
+          >
+            {inviteM.isPending ? 'Создание…' : 'Создать'}
           </Button>
         </DialogActions>
       </Dialog>

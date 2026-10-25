@@ -1,8 +1,10 @@
 import Grid from '@mui/material/Grid2'
 import {
+  Alert,
   Box,
   Button,
   Chip,
+  CircularProgress,
   List,
   ListItemButton,
   ListItemText,
@@ -18,7 +20,21 @@ import {
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import RadioButtonUncheckedRoundedIcon from '@mui/icons-material/RadioButtonUncheckedRounded'
+import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded'
+import axios from 'axios'
 import { useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  diffAdminPolicy,
+  getAdminPolicy,
+  listAdminPolicies,
+  listAdminPolicyVersions,
+  patchAdminPolicy,
+  publishAdminPolicy,
+  validateAdminPolicy,
+  type AdminPolicy,
+  type AdminPolicyVersion,
+} from '@/api/admin'
 import { PageHeader } from '@/components/common/PageHeader'
 import { color, font, radius, shadow } from '@/theme/tokens'
 
@@ -30,138 +46,15 @@ const tileSx = {
   p: { xs: 1.5, md: 2 },
 } as const
 
-type SectionId =
-  | 'admission'
-  | 'scoring'
-  | 'limits'
-  | 'rates'
-  | 'antifraud'
-  | 'counteroffer'
-  | 'documents'
-
-type RuleStatus = 'active' | 'changed' | 'new' | 'disabled'
-
-type Rule = {
+type RuleRow = {
   id: string
-  section: SectionId
   condition: string
   action: string
   priority: number
-  status: RuleStatus
-  dsl: string
+  status: 'active' | 'changed' | 'new' | 'disabled'
 }
 
-const SECTIONS: { id: SectionId; label: string; count: number }[] = [
-  { id: 'admission', label: 'Допуск заёмщика', count: 14 },
-  { id: 'scoring', label: 'Скоринг', count: 22 },
-  { id: 'limits', label: 'Лимиты и DSCR', count: 9 },
-  { id: 'rates', label: 'Ставки', count: 12 },
-  { id: 'antifraud', label: 'Антифрод', count: 17 },
-  { id: 'counteroffer', label: 'Counteroffer', count: 6 },
-  { id: 'documents', label: 'Документы', count: 11 },
-]
-
-const VERSIONS = [
-  { id: 'v13', label: 'v13 · черновик', badge: 'Сейчас', tone: 'now' as const },
-  { id: 'v12', label: 'v12 · 14.10', badge: 'Прод', tone: 'prod' as const },
-  { id: 'v11', label: 'v11 · 02.10', badge: null, tone: 'old' as const },
-  { id: 'v10', label: 'v10 · 18.09', badge: null, tone: 'old' as const },
-]
-
-const RULES: Rule[] = [
-  {
-    id: 'R-101',
-    section: 'admission',
-    condition: 'business_age_months >= 12',
-    action: 'Допуск',
-    priority: 10,
-    status: 'active',
-    dsl: `rule R-101 {
-  when business_age_months >= 12
-  then admit
-  reason "Минимальный возраст бизнеса"
-}`,
-  },
-  {
-    id: 'R-130',
-    section: 'admission',
-    condition: 'tax_debt = false',
-    action: 'Допуск',
-    priority: 50,
-    status: 'active',
-    dsl: `rule R-130 {
-  when tax_debt = false
-  then admit
-  reason "Нет налоговой задолженности"
-}`,
-  },
-  {
-    id: 'R-212',
-    section: 'admission',
-    condition: 'dscr(requested) < 1.3',
-    action: 'Counteroffer',
-    priority: 60,
-    status: 'changed',
-    dsl: `rule R-212 {
-  when dscr(requested_amount, term, rate) < 1.3
-  and dscr(offer_amount) >= 1.3
-  then counteroffer (max_amount: offer_amount)
-  reason "Платёж превышает допустимую нагрузку"
-}`,
-  },
-  {
-    id: 'R-215',
-    section: 'admission',
-    condition: 'avg_balance < 0.1 * payment',
-    action: 'Отказ',
-    priority: 70,
-    status: 'new',
-    dsl: `rule R-215 {
-  when avg_balance < 0.1 * payment
-  then reject
-  reason "Недостаточный средний остаток"
-}`,
-  },
-  {
-    id: 'R-231',
-    section: 'admission',
-    condition: 'sector_risk = high',
-    action: 'Риск-аналитик',
-    priority: 90,
-    status: 'disabled',
-    dsl: `rule R-231 {
-  when sector_risk = high
-  then escalate(risk_analyst)
-  reason "Высокий отраслевой риск"
-}`,
-  },
-  {
-    id: 'R-340',
-    section: 'scoring',
-    condition: 'score_band in [A, B+]',
-    action: 'Допуск',
-    priority: 20,
-    status: 'active',
-    dsl: `rule R-340 {
-  when score_band in [A, B+]
-  then admit
-}`,
-  },
-  {
-    id: 'R-410',
-    section: 'limits',
-    condition: 'requested_amount > limit_cap',
-    action: 'Counteroffer',
-    priority: 40,
-    status: 'changed',
-    dsl: `rule R-410 {
-  when requested_amount > limit_cap
-  then counteroffer(max_amount: limit_cap)
-}`,
-  },
-]
-
-const statusMeta: Record<RuleStatus, { label: string; bgcolor: string; color: string }> = {
+const statusMeta: Record<RuleRow['status'], { label: string; bgcolor: string; color: string }> = {
   active: {
     label: 'Активно',
     bgcolor: 'rgba(27,138,90,0.1)',
@@ -184,50 +77,263 @@ const statusMeta: Record<RuleStatus, { label: string; bgcolor: string; color: st
   },
 }
 
-const DIFF = [
-  { kind: 'del' as const, text: 'R-212: dscr < 1.2' },
-  { kind: 'add' as const, text: 'R-212: dscr < 1.3' },
-  { kind: 'add' as const, text: 'R-215: avg_balance < 0.1 * payment' },
-  { kind: 'del' as const, text: 'R-198: sector_block (удалено)' },
-]
+function apiError(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err)) {
+    const detail = err.response?.data?.detail
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail)) {
+      return detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join('; ')
+    }
+    const body = err.response?.data as { message?: string } | undefined
+    if (body?.message) return body.message
+  }
+  if (err instanceof Error) return err.message
+  return fallback
+}
+
+function rulesJson(rules: Record<string, unknown> | undefined): string {
+  return JSON.stringify(rules ?? {}, null, 2)
+}
+
+function parseRules(dsl: string): Record<string, unknown> {
+  const parsed = JSON.parse(dsl) as unknown
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('rules must be a JSON object')
+  }
+  return parsed as Record<string, unknown>
+}
+
+function pickPolicy(items: AdminPolicy[]): AdminPolicy | null {
+  return items.find((p) => p.status.toUpperCase() === 'PUBLISHED') ?? items[0] ?? null
+}
+
+const EMPTY_RULES: Record<string, unknown> = {}
+
+function flattenRules(rules: Record<string, unknown>): RuleRow[] {
+  return Object.entries(rules).map(([key, value], i) => ({
+    id: key,
+    condition: typeof value === 'object' ? JSON.stringify(value) : String(value),
+    action: typeof value === 'object' ? 'object' : typeof value,
+    priority: i + 1,
+    status: 'active' as const,
+  }))
+}
+
+function versionLabel(v: AdminPolicyVersion): string {
+  const date = v.createdAt
+    ? new Date(v.createdAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
+    : ''
+  return `v${v.version}${date ? ` · ${date}` : ''}`
+}
 
 export function AdminPolicyPage() {
-  const [section, setSection] = useState<SectionId>('admission')
-  const [version, setVersion] = useState('v13')
-  const [selectedId, setSelectedId] = useState('R-212')
+  const qc = useQueryClient()
+  const [policyId, setPolicyId] = useState<string | null>(null)
+  const [versionId, setVersionId] = useState<string | null>(null)
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  const [dsl, setDsl] = useState('{}')
+  const [toast, setToast] = useState<string | null>(null)
+  const [toastError, setToastError] = useState<string | null>(null)
+  const [validation, setValidation] = useState<{
+    valid: boolean
+    errors: { field?: string; message?: string }[]
+    warnings: { field?: string; message?: string }[]
+  } | null>(null)
+  const [diff, setDiff] = useState<{
+    from: number
+    to: number
+    added: Record<string, unknown>
+    removed: Record<string, unknown>
+    changed: Record<string, unknown>
+  } | null>(null)
+  const [editorKey, setEditorKey] = useState('')
 
-  const rules = useMemo(() => RULES.filter((r) => r.section === section), [section])
-  const selected = useMemo(
-    () => rules.find((r) => r.id === selectedId) ?? rules[0] ?? RULES[2]!,
-    [rules, selectedId],
-  )
-  const [dsl, setDsl] = useState(selected.dsl)
+  const listQ = useQuery({
+    queryKey: ['admin', 'policies'],
+    queryFn: () => listAdminPolicies({ limit: 100 }),
+  })
 
-  function pickRule(id: string) {
-    const r = RULES.find((x) => x.id === id)
-    if (!r) return
-    setSelectedId(id)
-    setDsl(r.dsl)
+  const policies = listQ.data?.items ?? []
+  const fallback = pickPolicy(policies)
+  const effectiveId = policyId ?? fallback?.id ?? null
+
+  const policyQ = useQuery({
+    queryKey: ['admin', 'policies', effectiveId],
+    queryFn: () => getAdminPolicy(effectiveId!),
+    enabled: Boolean(effectiveId),
+  })
+
+  const versionsQ = useQuery({
+    queryKey: ['admin', 'policies', effectiveId, 'versions'],
+    queryFn: () => listAdminPolicyVersions(effectiveId!),
+    enabled: Boolean(effectiveId),
+  })
+
+  const policy = policyQ.data ?? policies.find((p) => p.id === effectiveId) ?? fallback
+  const versions = useMemo(() => {
+    const raw = versionsQ.data ?? []
+    return [...raw].sort((a, b) => b.version - a.version)
+  }, [versionsQ.data])
+
+  const selectedVersion =
+    versions.find((v) => v.id === versionId) ?? versions[0] ?? null
+  const rules = selectedVersion?.rules ?? policy?.rules ?? EMPTY_RULES
+  const ruleRows = useMemo(() => flattenRules(rules), [rules])
+  const selectedRow = ruleRows.find((r) => r.id === selectedKey) ?? ruleRows[0] ?? null
+
+  const editorSourceKey = `${effectiveId ?? ''}:${selectedVersion?.id ?? ''}:${selectedVersion?.version ?? policy?.version ?? ''}`
+  if (editorSourceKey !== editorKey) {
+    setEditorKey(editorSourceKey)
+    setDsl(rulesJson(rules))
+    setSelectedKey(Object.keys(rules)[0] ?? null)
+    setValidation(null)
   }
 
-  function pickSection(id: SectionId) {
-    setSection(id)
-    const first = RULES.find((r) => r.section === id)
-    if (first) {
-      setSelectedId(first.id)
-      setDsl(first.dsl)
+  function invalidate() {
+    return Promise.all([
+      qc.invalidateQueries({ queryKey: ['admin', 'policies'] }),
+      effectiveId
+        ? qc.invalidateQueries({ queryKey: ['admin', 'policies', effectiveId] })
+        : Promise.resolve(),
+    ])
+  }
+
+  async function persistIfDirty(): Promise<string | null> {
+    if (!effectiveId) return 'Нет политики'
+    let parsed: Record<string, unknown>
+    try {
+      parsed = parseRules(dsl)
+    } catch (err) {
+      return err instanceof Error ? err.message : 'Невалидный JSON'
     }
+    const current = rulesJson(rules)
+    if (dsl.trim() !== current.trim()) {
+      await patchAdminPolicy(effectiveId, { rules: parsed })
+    }
+    return null
+  }
+
+  const validateM = useMutation({
+    mutationFn: async () => {
+      const err = await persistIfDirty()
+      if (err) throw new Error(err)
+      return validateAdminPolicy(effectiveId!)
+    },
+    onSuccess: async (res) => {
+      setValidation(res)
+      await invalidate()
+      setToast(res.valid ? 'Политика валидна' : 'Есть ошибки валидации')
+      setToastError(null)
+    },
+    onError: (err) => setToastError(apiError(err, 'Не удалось проверить политику')),
+  })
+
+  const publishM = useMutation({
+    mutationFn: async () => {
+      const err = await persistIfDirty()
+      if (err) throw new Error(err)
+      return publishAdminPolicy(effectiveId!, 'publish from admin ui')
+    },
+    onSuccess: async () => {
+      await invalidate()
+      setToast('Политика опубликована')
+      setToastError(null)
+    },
+    onError: (err) => setToastError(apiError(err, 'Не удалось опубликовать политику')),
+  })
+
+  const diffM = useMutation({
+    mutationFn: async () => {
+      if (!effectiveId) throw new Error('Нет политики')
+      const to = versions[0]?.version
+      const from = versions[1]?.version
+      return diffAdminPolicy(effectiveId, from, to)
+    },
+    onSuccess: (raw) => {
+      setDiff({
+        from: Number(raw.fromVersion ?? raw.from_version ?? 0),
+        to: Number(raw.toVersion ?? raw.to_version ?? 0),
+        added: (raw.added ?? {}) as Record<string, unknown>,
+        removed: (raw.removed ?? {}) as Record<string, unknown>,
+        changed: (raw.changed ?? {}) as Record<string, unknown>,
+      })
+      setToastError(null)
+    },
+    onError: (err) => setToastError(apiError(err, 'Не удалось сравнить версии')),
+  })
+
+  const subtitle = policy
+    ? `${policy.name} · v${policy.version} · ${policy.status}`
+    : 'Нет политик'
+
+  const diffLines = useMemo(() => {
+    if (!diff) return []
+    const lines: { kind: 'add' | 'del' | 'chg'; text: string }[] = []
+    for (const [k, v] of Object.entries(diff.added)) {
+      lines.push({ kind: 'add', text: `${k}: ${JSON.stringify(v)}` })
+    }
+    for (const [k, v] of Object.entries(diff.removed)) {
+      lines.push({ kind: 'del', text: `${k}: ${JSON.stringify(v)}` })
+    }
+    for (const [k, v] of Object.entries(diff.changed)) {
+      lines.push({ kind: 'chg', text: `${k}: ${JSON.stringify(v)}` })
+    }
+    return lines
+  }, [diff])
+
+  if (listQ.isLoading) {
+    return (
+      <Box>
+        <PageHeader title="Кредитная политика" subtitle="Загрузка…" />
+        <Box sx={{ display: 'grid', placeItems: 'center', py: 8 }}>
+          <CircularProgress size={28} sx={{ color: color.primary.main }} />
+        </Box>
+      </Box>
+    )
+  }
+
+  if (listQ.isError) {
+    return (
+      <Box>
+        <PageHeader title="Кредитная политика" subtitle="Ошибка загрузки" />
+        <Alert
+          severity="error"
+          action={
+            <Button color="inherit" size="small" onClick={() => listQ.refetch()}>
+              Повторить
+            </Button>
+          }
+        >
+          {apiError(listQ.error, 'Не удалось загрузить политики')}
+        </Alert>
+      </Box>
+    )
+  }
+
+  if (!policy) {
+    return (
+      <Box>
+        <PageHeader title="Кредитная политика" subtitle="Политики не созданы" />
+        <Box sx={{ ...tileSx, py: 6, textAlign: 'center' }}>
+          <Typography sx={{ color: color.text.muted }}>
+            Нет кредитных политик. Создайте политику через API, чтобы редактировать правила.
+          </Typography>
+        </Box>
+      </Box>
+    )
   }
 
   return (
     <Box>
       <PageHeader
         title="Кредитная политика"
-        subtitle="Версия v13 (черновик) · основана на v12 · автор Орлова Е.В."
+        subtitle={subtitle}
         actions={
           <>
             <Button
               variant="outlined"
+              disabled={diffM.isPending || versions.length < 2}
+              onClick={() => diffM.mutate()}
               sx={{
                 borderColor: color.secondary.soft08,
                 color: color.text.primary,
@@ -240,6 +346,8 @@ export function AdminPolicyPage() {
             </Button>
             <Button
               variant="outlined"
+              disabled={validateM.isPending}
+              onClick={() => validateM.mutate()}
               sx={{
                 borderColor: color.secondary.soft08,
                 color: color.text.primary,
@@ -248,17 +356,34 @@ export function AdminPolicyPage() {
                 fontWeight: 600,
               }}
             >
-              Проверить
+              {validateM.isPending ? 'Проверка…' : 'Проверить'}
             </Button>
             <Button
               variant="contained"
+              disabled={publishM.isPending}
+              onClick={() => publishM.mutate()}
               sx={{ borderRadius: `${radius.button}px`, fontWeight: 600 }}
             >
-              Отправить на публикацию
+              {publishM.isPending ? 'Публикация…' : 'Отправить на публикацию'}
             </Button>
           </>
         }
       />
+
+      {toastError && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setToastError(null)}>
+          {toastError}
+        </Alert>
+      )}
+      {toast && (
+        <Alert
+          severity={validation && !validation.valid ? 'warning' : 'success'}
+          sx={{ mb: 2 }}
+          onClose={() => setToast(null)}
+        >
+          {toast}
+        </Alert>
+      )}
 
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, md: 3, lg: 2.5 }}>
@@ -274,14 +399,18 @@ export function AdminPolicyPage() {
                 px: 0.5,
               }}
             >
-              Разделы
+              Политики
             </Typography>
             <List disablePadding>
-              {SECTIONS.map((s) => (
+              {policies.map((p) => (
                 <ListItemButton
-                  key={s.id}
-                  selected={section === s.id}
-                  onClick={() => pickSection(s.id)}
+                  key={p.id}
+                  selected={p.id === effectiveId}
+                  onClick={() => {
+                    setPolicyId(p.id)
+                    setVersionId(null)
+                    setDiff(null)
+                  }}
                   sx={{
                     borderRadius: 2,
                     py: 0.75,
@@ -295,11 +424,11 @@ export function AdminPolicyPage() {
                   }}
                 >
                   <ListItemText
-                    primary={s.label}
+                    primary={p.name}
                     primaryTypographyProps={{ fontSize: 13, fontWeight: 650 }}
                   />
                   <Typography sx={{ fontSize: 12, fontWeight: 700, color: color.text.muted }}>
-                    {s.count}
+                    {Object.keys(p.rules ?? {}).length}
                   </Typography>
                 </ListItemButton>
               ))}
@@ -321,41 +450,49 @@ export function AdminPolicyPage() {
               Версии
             </Typography>
             <List disablePadding>
-              {VERSIONS.map((v) => (
-                <ListItemButton
-                  key={v.id}
-                  selected={version === v.id}
-                  onClick={() => setVersion(v.id)}
-                  sx={{
-                    borderRadius: 2,
-                    py: 0.75,
-                    px: 1.25,
-                    mb: 0.25,
-                    '&.Mui-selected': {
-                      bgcolor: color.secondary.soft03,
-                    },
-                  }}
-                >
-                  <ListItemText
-                    primary={v.label}
-                    primaryTypographyProps={{ fontSize: 13, fontWeight: 600 }}
-                  />
-                  {v.badge && (
-                    <Chip
-                      size="small"
-                      label={v.badge}
-                      sx={{
-                        height: 22,
-                        fontSize: 10.5,
-                        fontWeight: 700,
-                        bgcolor:
-                          v.tone === 'prod' ? color.secondary.main : color.primary.soft08,
-                        color: v.tone === 'prod' ? color.text.onDark : color.primary.main,
-                      }}
+              {versions.map((v) => {
+                const isCurrent = v.version === policy.version
+                const isProd = policy.status.toUpperCase() === 'PUBLISHED' && isCurrent
+                return (
+                  <ListItemButton
+                    key={v.id}
+                    selected={(selectedVersion?.id ?? '') === v.id}
+                    onClick={() => setVersionId(v.id)}
+                    sx={{
+                      borderRadius: 2,
+                      py: 0.75,
+                      px: 1.25,
+                      mb: 0.25,
+                      '&.Mui-selected': {
+                        bgcolor: color.secondary.soft03,
+                      },
+                    }}
+                  >
+                    <ListItemText
+                      primary={versionLabel(v)}
+                      primaryTypographyProps={{ fontSize: 13, fontWeight: 600 }}
                     />
-                  )}
-                </ListItemButton>
-              ))}
+                    {(isCurrent || isProd) && (
+                      <Chip
+                        size="small"
+                        label={isProd ? 'Прод' : 'Сейчас'}
+                        sx={{
+                          height: 22,
+                          fontSize: 10.5,
+                          fontWeight: 700,
+                          bgcolor: isProd ? color.secondary.main : color.primary.soft08,
+                          color: isProd ? color.text.onDark : color.primary.main,
+                        }}
+                      />
+                    )}
+                  </ListItemButton>
+                )
+              })}
+              {versions.length === 0 && (
+                <Typography sx={{ px: 1, py: 1, fontSize: 13, color: color.text.muted }}>
+                  Версий нет
+                </Typography>
+              )}
             </List>
           </Box>
         </Grid>
@@ -371,29 +508,29 @@ export function AdminPolicyPage() {
                 color: color.text.primary,
               }}
             >
-              {SECTIONS.find((s) => s.id === section)?.label}
+              Параметры · {policy.code}
             </Typography>
             <Table size="small" sx={{ minWidth: 520 }}>
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 700, color: color.text.secondary }}>ID</TableCell>
-                  <TableCell sx={{ fontWeight: 700, color: color.text.secondary }}>Условие</TableCell>
-                  <TableCell sx={{ fontWeight: 700, color: color.text.secondary }}>Действие</TableCell>
+                  <TableCell sx={{ fontWeight: 700, color: color.text.secondary }}>Ключ</TableCell>
+                  <TableCell sx={{ fontWeight: 700, color: color.text.secondary }}>Значение</TableCell>
+                  <TableCell sx={{ fontWeight: 700, color: color.text.secondary }}>Тип</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 700, color: color.text.secondary }}>
-                    Приор.
+                    #
                   </TableCell>
                   <TableCell sx={{ fontWeight: 700, color: color.text.secondary }}>Статус</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {rules.map((r) => {
+                {ruleRows.map((r) => {
                   const sm = statusMeta[r.status]
                   return (
                     <TableRow
                       key={r.id}
                       hover
-                      selected={r.id === selected.id}
-                      onClick={() => pickRule(r.id)}
+                      selected={r.id === selectedRow?.id}
+                      onClick={() => setSelectedKey(r.id)}
                       sx={{ cursor: 'pointer' }}
                     >
                       <TableCell>
@@ -446,11 +583,11 @@ export function AdminPolicyPage() {
                     </TableRow>
                   )
                 })}
-                {rules.length === 0 && (
+                {ruleRows.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={5}>
                       <Typography sx={{ py: 2, textAlign: 'center', color: color.text.muted }}>
-                        В разделе пока нет правил в демо
+                        В политике нет правил
                       </Typography>
                     </TableCell>
                   </TableRow>
@@ -469,11 +606,11 @@ export function AdminPolicyPage() {
                   color: color.text.primary,
                 }}
               >
-                Редактор правила {selected.id}
+                Редактор правил
               </Typography>
               <Chip
                 size="small"
-                label="DSL v2"
+                label="JSON"
                 sx={{
                   height: 22,
                   fontSize: 10.5,
@@ -513,14 +650,14 @@ export function AdminPolicyPage() {
                 color: color.text.primary,
               }}
             >
-              Изменения v12 → v13
+              {diff ? `Изменения v${diff.from} → v${diff.to}` : 'Изменения версий'}
             </Typography>
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 1.5 }}>
               {[
-                { label: 'Добавлено', value: 2, c: color.semantic.success },
-                { label: 'Изменено', value: 3, c: color.semantic.warning },
-                { label: 'Удалено', value: 1, c: color.semantic.error },
-                { label: 'Продуктов', value: 2, c: color.text.secondary },
+                { label: 'Добавлено', value: diff ? Object.keys(diff.added).length : '—', c: color.semantic.success },
+                { label: 'Изменено', value: diff ? Object.keys(diff.changed).length : '—', c: color.semantic.warning },
+                { label: 'Удалено', value: diff ? Object.keys(diff.removed).length : '—', c: color.semantic.error },
+                { label: 'Версий', value: versions.length, c: color.text.secondary },
               ].map((s) => (
                 <Box
                   key={s.label}
@@ -549,19 +686,25 @@ export function AdminPolicyPage() {
                 borderRadius: 2,
                 bgcolor: '#0B1F35',
                 fontFamily: font.mono,
+                minHeight: 72,
               }}
             >
-              {DIFF.map((d) => (
+              {diffLines.length === 0 && (
+                <Typography sx={{ fontSize: 12, fontFamily: font.mono, color: '#9AA5B1' }}>
+                  Нажмите «Сравнить версии»
+                </Typography>
+              )}
+              {diffLines.map((d) => (
                 <Typography
-                  key={d.text}
+                  key={`${d.kind}-${d.text}`}
                   sx={{
                     fontSize: 12,
                     fontFamily: font.mono,
-                    color: d.kind === 'add' ? '#6EE7B7' : '#FCA5A5',
+                    color: d.kind === 'add' ? '#6EE7B7' : d.kind === 'del' ? '#FCA5A5' : '#FCD34D',
                     lineHeight: 1.45,
                   }}
                 >
-                  {d.kind === 'add' ? '+ ' : '− '}
+                  {d.kind === 'add' ? '+ ' : d.kind === 'del' ? '− ' : '~ '}
                   {d.text}
                 </Typography>
               ))}
@@ -581,37 +724,50 @@ export function AdminPolicyPage() {
               Проверки и согласование
             </Typography>
             <Stack spacing={1.25}>
-              <Stack direction="row" spacing={1} alignItems="flex-start">
-                <CheckCircleRoundedIcon sx={{ fontSize: 20, color: color.semantic.success, mt: 0.1 }} />
-                <Typography sx={{ fontSize: 13.5, color: color.text.primary }}>
-                  Синтаксис корректен
-                </Typography>
-              </Stack>
-              <Stack direction="row" spacing={1} alignItems="flex-start">
-                <CheckCircleRoundedIcon sx={{ fontSize: 20, color: color.semantic.success, mt: 0.1 }} />
-                <Typography sx={{ fontSize: 13.5, color: color.text.primary }}>
-                  Нет конфликтов приоритетов
-                </Typography>
-              </Stack>
-              <Stack direction="row" spacing={1} alignItems="flex-start">
-                <WarningAmberRoundedIcon sx={{ fontSize: 20, color: color.semantic.warning, mt: 0.1 }} />
-                <Typography sx={{ fontSize: 13.5, color: color.text.primary }}>
-                  Тесты: 3 кейса изменили результат
-                </Typography>
-              </Stack>
-              <Stack direction="row" spacing={1} alignItems="flex-start">
-                <RadioButtonUncheckedRoundedIcon
-                  sx={{ fontSize: 20, color: color.text.inactive, mt: 0.1 }}
-                />
-                <Typography sx={{ fontSize: 13.5, color: color.text.primary }}>
-                  Согласование: 0 из 2
-                </Typography>
-              </Stack>
+              {!validation && (
+                <Stack direction="row" spacing={1} alignItems="flex-start">
+                  <RadioButtonUncheckedRoundedIcon
+                    sx={{ fontSize: 20, color: color.text.inactive, mt: 0.1 }}
+                  />
+                  <Typography sx={{ fontSize: 13.5, color: color.text.primary }}>
+                    Нажмите «Проверить», чтобы прогнать валидацию
+                  </Typography>
+                </Stack>
+              )}
+              {validation && (
+                <Stack direction="row" spacing={1} alignItems="flex-start">
+                  {validation.valid ? (
+                    <CheckCircleRoundedIcon sx={{ fontSize: 20, color: color.semantic.success, mt: 0.1 }} />
+                  ) : (
+                    <ErrorOutlineRoundedIcon sx={{ fontSize: 20, color: color.semantic.error, mt: 0.1 }} />
+                  )}
+                  <Typography sx={{ fontSize: 13.5, color: color.text.primary }}>
+                    {validation.valid ? 'Политика валидна' : 'Есть ошибки валидации'}
+                  </Typography>
+                </Stack>
+              )}
+              {(validation?.errors ?? []).map((e, i) => (
+                <Stack key={`e-${i}`} direction="row" spacing={1} alignItems="flex-start">
+                  <ErrorOutlineRoundedIcon sx={{ fontSize: 20, color: color.semantic.error, mt: 0.1 }} />
+                  <Typography sx={{ fontSize: 13.5, color: color.text.primary }}>
+                    {e.field ? `${e.field}: ` : ''}
+                    {e.message ?? 'ошибка'}
+                  </Typography>
+                </Stack>
+              ))}
+              {(validation?.warnings ?? []).map((w, i) => (
+                <Stack key={`w-${i}`} direction="row" spacing={1} alignItems="flex-start">
+                  <WarningAmberRoundedIcon sx={{ fontSize: 20, color: color.semantic.warning, mt: 0.1 }} />
+                  <Typography sx={{ fontSize: 13.5, color: color.text.primary }}>
+                    {w.field ? `${w.field}: ` : ''}
+                    {w.message ?? 'предупреждение'}
+                  </Typography>
+                </Stack>
+              ))}
             </Stack>
           </Box>
         </Grid>
       </Grid>
-
     </Box>
   )
 }

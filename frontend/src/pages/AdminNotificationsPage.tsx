@@ -15,6 +15,14 @@ import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded
 import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  formatNotificationTime,
+  listNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+  type AppNotification,
+} from '@/api/notifications'
 import { PageHeader } from '@/components/common/PageHeader'
 import { color, font, radius, shadow } from '@/theme/tokens'
 
@@ -40,108 +48,47 @@ type Notification = {
   href?: string
 }
 
-const INITIAL: Notification[] = [
-  {
-    id: 'a1',
-    kind: 'critical',
-    category: 'incidents',
-    title: 'INC-2026-0412 · загрузка документов недоступна',
-    body: 'Критичный инцидент · затронуто ~12% заявок на этапе документов',
-    time: '23.10 · 10:11',
-    unread: true,
-    href: '/app/admin',
-  },
-  {
-    id: 'a2',
-    kind: 'warning',
-    category: 'models',
-    title: 'Дрифт скоринга: PSI 0.11',
-    body: 'Модель score_v4.2 · порог внимания 0.10 · требуется ревью качества',
-    time: '23.10 · 09:40',
-    unread: true,
-    href: '/app/admin/analytics',
-  },
-  {
-    id: 'a3',
-    kind: 'policy',
-    category: 'policy',
-    title: 'Политика v13 ожидает согласования',
-    body: 'Черновик на базе v12 · изменено 3 правила · 0 из 2 апрувов',
-    time: '23.10 · 09:15',
-    unread: true,
-    href: '/app/admin/policy',
-  },
-  {
-    id: 'a4',
-    kind: 'user',
-    category: 'users',
-    title: '3 неудачных входа · user_mgr_04',
-    body: 'IP 185.12.4.90 · аккаунт временно ограничен · проверить аудит',
-    time: '23.10 · 08:40',
-    unread: true,
-    href: '/app/admin/audit',
-  },
-  {
-    id: 'a5',
-    kind: 'metric',
-    category: 'system',
-    title: 'Take-up rate упал до 48%',
-    body: 'За 7 дней · цель ≥ 50% · сильнее всего по инвестиционным продуктам',
-    time: '22.10 · 19:00',
-    unread: true,
-    href: '/app/admin/analytics',
-  },
-  {
-    id: 'a6',
-    kind: 'success',
-    category: 'policy',
-    title: 'Правило R-208 опубликовано',
-    body: 'Стоп-фактор по просрочке · каталог затронут: 2 продукта',
-    time: '21.10 · 11:08',
-    unread: false,
-    href: '/app/admin/policy',
-  },
-  {
-    id: 'a7',
-    kind: 'user',
-    category: 'users',
-    title: 'Роль изменена: entrepreneur → analyst',
-    body: 'user_sokolova · инициатор user_admin_01',
-    time: '22.10 · 19:05',
-    unread: false,
-    href: '/app/admin/users',
-  },
-  {
-    id: 'a8',
-    kind: 'success',
-    category: 'system',
-    title: 'Хэш-цепочка аудита проверена',
-    body: '1 842 записи · разрывов нет · следующее окно 24.10 06:00',
-    time: '23.10 · 06:00',
-    unread: false,
-    href: '/app/admin/audit',
-  },
-  {
-    id: 'a9',
-    kind: 'warning',
-    category: 'incidents',
-    title: 'SLA сегмента C > 40 ч',
-    body: 'Среднее 44 ч · очередь аналитиков растёт · 19% эскалаций',
-    time: '22.10 · 16:20',
-    unread: false,
-    href: '/app/admin/analytics',
-  },
-  {
-    id: 'a10',
-    kind: 'policy',
-    category: 'policy',
-    title: 'Каталог: черновик P-106 «Экспресс 500»',
-    body: 'Новый продукт · не в подборе · ожидает импорта правил допуска',
-    time: '21.10 · 14:05',
-    unread: false,
-    href: '/app/admin/products',
-  },
-]
+function adminNotifKind(n: AppNotification): NotifKind {
+  const t = n.type.toUpperCase()
+  if (t.includes('INCIDENT') || t.includes('CRITICAL') || t.includes('FAIL')) return 'critical'
+  if (t.includes('POLICY') || t.includes('RULE')) return 'policy'
+  if (t.includes('USER') || t.includes('ROLE') || t.includes('ACCESS')) return 'user'
+  if (t.includes('MODEL') || t.includes('METRIC') || t.includes('DRIFT')) return 'metric'
+  if (t.includes('WARN') || t.includes('SLA')) return 'warning'
+  return 'success'
+}
+
+function adminNotifCategory(n: AppNotification): NotifCategory {
+  const t = n.type.toUpperCase()
+  if (t.includes('INCIDENT') || t.includes('SLA')) return 'incidents'
+  if (t.includes('POLICY') || t.includes('RULE') || t.includes('CATALOG')) return 'policy'
+  if (t.includes('USER') || t.includes('ROLE') || t.includes('ACCESS')) return 'users'
+  if (t.includes('MODEL') || t.includes('DRIFT')) return 'models'
+  return 'system'
+}
+
+function adminNotifHref(n: AppNotification): string | undefined {
+  const t = n.type.toUpperCase()
+  if (t.includes('POLICY') || t.includes('RULE')) return '/app/admin/policy'
+  if (t.includes('USER') || t.includes('ROLE')) return '/app/admin/users'
+  if (t.includes('AUDIT')) return '/app/admin/audit'
+  if (t.includes('PRODUCT') || t.includes('CATALOG')) return '/app/admin/products'
+  if (t.includes('MODEL') || t.includes('METRIC')) return '/app/admin/analytics'
+  return '/app/admin'
+}
+
+function mapAdminItem(n: AppNotification): Notification {
+  return {
+    id: n.id,
+    kind: adminNotifKind(n),
+    category: adminNotifCategory(n),
+    title: n.title,
+    body: n.body,
+    time: formatNotificationTime(n.createdAt),
+    unread: !n.isRead,
+    href: adminNotifHref(n),
+  }
+}
 
 const KIND_META: Record<
   NotifKind,
@@ -183,7 +130,7 @@ type TabKey = 'all' | NotifCategory
 
 export function AdminNotificationsPage() {
   const navigate = useNavigate()
-  const [items, setItems] = useState(INITIAL)
+  const qc = useQueryClient()
   const [tab, setTab] = useState<TabKey>('all')
   const [channels, setChannels] = useState({
     push: true,
@@ -198,7 +145,28 @@ export function AdminNotificationsPage() {
     productKpis: true,
   })
 
-  const unreadCount = items.filter((i) => i.unread).length
+  const listQ = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => listNotifications({ limit: 50 }),
+  })
+  const items = useMemo(
+    () => (listQ.data?.items ?? []).map(mapAdminItem),
+    [listQ.data],
+  )
+  const unreadCount = listQ.data?.unreadCount ?? items.filter((i) => i.unread).length
+
+  const markAllMut = useMutation({
+    mutationFn: markAllNotificationsRead,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['notifications'] })
+    },
+  })
+  const markOneMut = useMutation({
+    mutationFn: (id: string) => markNotificationRead(id, true),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['notifications'] })
+    },
+  })
 
   const filtered = useMemo(() => {
     if (tab === 'all') return items
@@ -215,11 +183,11 @@ export function AdminNotificationsPage() {
   ]
 
   function markAllRead() {
-    setItems((list) => list.map((i) => ({ ...i, unread: false })))
+    markAllMut.mutate()
   }
 
   function openItem(n: Notification) {
-    setItems((list) => list.map((i) => (i.id === n.id ? { ...i, unread: false } : i)))
+    if (n.unread) markOneMut.mutate(n.id)
     if (n.href) navigate(n.href)
   }
 
