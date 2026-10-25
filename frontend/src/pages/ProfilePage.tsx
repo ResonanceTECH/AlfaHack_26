@@ -9,12 +9,13 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { listCompanies } from '@/api/companies'
 import { useAuth } from '@/contexts/AuthContext'
 import { LogoutConfirmDialog } from '@/components/common/LogoutConfirmDialog'
+import { isAnalystRole } from '@/features/analyst/roles'
 
 const tileSx = {
   bgcolor: '#fff',
@@ -66,48 +67,108 @@ const DEMO_SESSIONS: Session[] = [
   { id: 's3', device: 'Windows · Edge', place: 'Москва · 19.10 09:44' },
 ]
 
+function defaultsForRole(role?: string) {
+  if (role === 'admin') {
+    return {
+      fullName: 'Елена Васильева',
+      phone: '+7 (495) 755-58-58',
+      email: 'admin@demo.alfa',
+      position: 'Администратор',
+    }
+  }
+  if (isAnalystRole(role)) {
+    return {
+      fullName: 'Анна Соколова',
+      phone: '+7 (495) 788-88-78',
+      email: 'analyst@demo.alfa',
+      position: 'Аналитик',
+    }
+  }
+  return {
+    fullName: 'Миронов Сергей Павлович',
+    phone: '+7 (916) 482-14-20',
+    email: 'sergey.mironov@kofeplus.demo',
+    position: 'Генеральный директор',
+  }
+}
+
 export function ProfilePage() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const isAdmin = user?.role === 'admin'
+  const isBank = isAnalystRole(user?.role)
+  const defaults = defaultsForRole(user?.role)
 
   const companiesQ = useQuery({
     queryKey: ['companies'],
     queryFn: listCompanies,
-    enabled: Boolean(user),
+    enabled: Boolean(user) && !isAdmin && !isBank,
   })
 
   const company =
     companiesQ.data?.find((c) => c.id === user?.companyId) ?? companiesQ.data?.[0] ?? null
 
-  const roleLabel =
+  const membershipLabel =
     company?.membershipRole === 'OWNER'
       ? 'владелец'
       : company?.membershipRole === 'VIEWER'
         ? 'наблюдатель'
         : 'участник'
 
-  const [fullName, setFullName] = useState(
-    () => user?.fullName || 'Миронов Сергей Павлович',
-  )
-  const [phone, setPhone] = useState(() => user?.phone || '+7 (916) 482-14-20')
-  const [email, setEmail] = useState(
-    () => user?.email || 'sergey.mironov@kofeplus.demo',
-  )
+  const [fullName, setFullName] = useState(() => user?.fullName || defaults.fullName)
+  const [phone, setPhone] = useState(() => user?.phone || defaults.phone)
+  const [email, setEmail] = useState(() => user?.email || defaults.email)
   const [language, setLanguage] = useState('ru')
-  const [position, setPosition] = useState('Генеральный директор')
+  const [position, setPosition] = useState(defaults.position)
+  const [department, setDepartment] = useState(
+    isAdmin ? 'Администрирование платформы' : isBank ? 'Малый и средний бизнес · кредиты' : '',
+  )
+  const [desk, setDesk] = useState('МСБ · оборотные / инвестиционные')
+  const [limit, setLimit] = useState('до 20 млн ₽')
   const [savedFlash, setSavedFlash] = useState(false)
 
   const [twoFa, setTwoFa] = useState(true)
   const [biometry, setBiometry] = useState(false)
   const [notifyDevice, setNotifyDevice] = useState(true)
-  const [sessions, setSessions] = useState(DEMO_SESSIONS)
+  const [sessions, setSessions] = useState(() =>
+    isBank
+      ? [
+          { id: 's1', device: 'MacBook · Chrome · кабинет аналитика', place: 'Москва · сейчас', current: true },
+          { id: 's2', device: 'iPhone · web', place: 'Москва · 25.10 12:10' },
+        ]
+      : isAdmin
+        ? [
+            { id: 's1', device: 'MacBook · Chrome · админ-консоль', place: 'Москва · сейчас', current: true },
+            { id: 's2', device: 'Windows · Edge', place: 'Москва · 24.10 19:02' },
+          ]
+        : DEMO_SESSIONS,
+  )
   const [logoutOpen, setLogoutOpen] = useState(false)
+
+  // Если роль банк/админ — не оставляем предпринимательские дефолты («Генеральный директор» и т.п.)
+  useEffect(() => {
+    if (!user) return
+    const d = defaultsForRole(user.role)
+    if (user.fullName) setFullName(user.fullName)
+    if (user.email) setEmail(user.email)
+    if (user.phone) setPhone(user.phone)
+    if (isAnalystRole(user.role) || user.role === 'admin') {
+      setPosition(d.position)
+      setDepartment(
+        user.role === 'admin' ? 'Администрирование платформы' : 'Малый и средний бизнес · кредиты',
+      )
+    }
+  }, [user?.id, user?.role, user?.fullName, user?.email, user?.phone])
 
   const subtitle = useMemo(() => {
     const name = fullName.trim() || 'Пользователь'
-    const companyPart = company?.name ? `${roleLabel} ${company.name}` : null
+    if (isAdmin) return `${name} · Администратор системы · RBAC ADMIN`
+    if (isBank) return `${name} · Аналитик · единый кабинет · ANALYST`
+    const companyPart = company?.name ? `${membershipLabel} ${company.name}` : null
     return companyPart ? `${name} · ${companyPart}` : name
-  }, [fullName, company?.name, roleLabel])
+  }, [fullName, company?.name, membershipLabel, isAdmin, isBank])
+
+  const stayPath = isAdmin ? '/app/admin' : isBank ? '/app/analyst' : '/app'
 
   function doLogout() {
     setLogoutOpen(false)
@@ -264,7 +325,41 @@ export function ProfilePage() {
                     value={position}
                     onChange={(e) => setPosition(e.target.value)}
                     sx={fieldSx}
+                    helperText={
+                      isAdmin
+                        ? 'Роль системы: ADMIN'
+                        : isBank
+                          ? 'Роль системы: ANALYST · write decision'
+                          : undefined
+                    }
                   />
+                  {(isAdmin || isBank) && (
+                    <TextField
+                      label="Подразделение"
+                      fullWidth
+                      value={department}
+                      onChange={(e) => setDepartment(e.target.value)}
+                      sx={fieldSx}
+                    />
+                  )}
+                  {isBank && (
+                    <>
+                      <TextField
+                        label="Рабочий стол"
+                        fullWidth
+                        value={desk}
+                        onChange={(e) => setDesk(e.target.value)}
+                        sx={fieldSx}
+                      />
+                      <TextField
+                        label="Лимит согласования"
+                        fullWidth
+                        value={limit}
+                        onChange={(e) => setLimit(e.target.value)}
+                        sx={fieldSx}
+                      />
+                    </>
+                  )}
                 </Box>
 
                 <Stack direction="row" justifyContent="flex-end" alignItems="center" spacing={1.5} sx={{ mt: 2 }}>
@@ -362,6 +457,39 @@ export function ProfilePage() {
 
         {/* ——— Right ——— */}
         <Stack spacing={2}>
+          {isBank && (
+            <Box sx={tileSx}>
+              <Typography
+                sx={{
+                  fontFamily: 'Manrope, sans-serif',
+                  fontWeight: 800,
+                  fontSize: 16,
+                  color: '#0B1F35',
+                  mb: 1.25,
+                }}
+              >
+                Доступ аналитика
+              </Typography>
+              <Stack spacing={1.1}>
+                {[
+                  ['Политика', 'CP-2026.10'],
+                  ['RBAC', 'ANALYST · write decision'],
+                  ['Очередь', 'назначенные + unassigned'],
+                  ['Кабинет', '/app/analyst'],
+                ].map(([k, v]) => (
+                  <Stack key={k} direction="row" justifyContent="space-between" spacing={1.5}>
+                    <Typography sx={{ fontSize: 13, color: '#8A96A3' }}>{k}</Typography>
+                    <Typography
+                      sx={{ fontSize: 13, fontWeight: 650, color: '#0B1F35', textAlign: 'right' }}
+                    >
+                      {v}
+                    </Typography>
+                  </Stack>
+                ))}
+              </Stack>
+            </Box>
+          )}
+
           <Box sx={tileSx}>
             <Typography
               sx={{
@@ -450,8 +578,11 @@ export function ProfilePage() {
               Выход из аккаунта
             </Typography>
             <Typography sx={{ fontSize: 13.5, color: '#7A8795', lineHeight: 1.45, mb: 2 }}>
-              Несохранённые данные заявок сохранятся как черновик. Сессия на этом устройстве
-              будет завершена.
+              {isAdmin
+                ? 'Сессия администратора на этом устройстве будет завершена. Доступ к консоли и аудиту закроется до повторного входа.'
+                : isBank
+                  ? 'Сессия аналитика будет завершена. Открытые карточки заявок сохранят статус на сервере.'
+                  : 'Несохранённые данные заявок сохранятся как черновик. Сессия на этом устройстве будет завершена.'}
             </Typography>
             <Stack direction="row" spacing={1.25} sx={{ mb: 1.5 }}>
               <Button
@@ -469,7 +600,7 @@ export function ProfilePage() {
               >
                 Выйти
               </Button>
-              <Button variant="outlined" sx={outlineBtn} onClick={() => navigate('/app')}>
+              <Button variant="outlined" sx={outlineBtn} onClick={() => navigate(stayPath)}>
                 Остаться
               </Button>
             </Stack>
