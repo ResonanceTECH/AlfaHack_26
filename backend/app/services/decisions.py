@@ -151,6 +151,11 @@ def issue_decision(
     reason_codes: list[str] | None = None,
     explanation: str | None = None,
     counter_amount: Decimal | None = None,
+    offer_amount: Decimal | None = None,
+    offer_term_months: int | None = None,
+    offer_rate: Decimal | None = None,
+    product_id: str | None = None,
+    offer_label: str | None = None,
 ) -> CreditDecision:
     _supersede_active_offers(app)
 
@@ -188,62 +193,67 @@ def issue_decision(
     db.flush()
 
     expires = utcnow() + timedelta(days=14)
-    rate = Decimal(str(app.rate or "18.5"))
-    term = int(app.term_months)
+    rate = Decimal(str(offer_rate if offer_rate is not None else app.rate or "18.5"))
+    term = int(offer_term_months if offer_term_months is not None else app.term_months)
+    pid = product_id or app.product_id
+
+    def _add_offer(
+        *,
+        amount: Decimal,
+        is_alternative: bool,
+        label: str,
+        version: int = 1,
+    ) -> CreditOffer:
+        payment = round2(annuity_payment(amount, rate, term))
+        offer = CreditOffer(
+            application_id=app.id,
+            decision_id=decision.id,
+            product_id=pid,
+            amount=amount,
+            term_months=term,
+            rate=rate,
+            monthly_payment=payment,
+            status=OfferStatus.ACTIVE,
+            expires_at=expires,
+            conditions={
+                "offer_version": version,
+                "is_alternative": is_alternative,
+                "label": label,
+                "schedule_type": "annuity",
+            },
+        )
+        db.add(offer)
+        if app.offers is None:
+            app.offers = [offer]
+        else:
+            app.offers.append(offer)
+        return offer
 
     if decision_type == DecisionType.APPROVED:
-        amount = Decimal(str(app.amount))
-        payment = round2(annuity_payment(amount, rate, term))
-        offer = CreditOffer(
-            application_id=app.id,
-            decision_id=decision.id,
-            product_id=app.product_id,
+        amount = Decimal(str(offer_amount if offer_amount is not None else app.amount))
+        _add_offer(
             amount=amount,
-            term_months=term,
-            rate=rate,
-            monthly_payment=payment,
-            status=OfferStatus.ACTIVE,
-            expires_at=expires,
-            conditions={
-                "offer_version": 1,
-                "is_alternative": False,
-                "label": "Основное предложение",
-                "schedule_type": "annuity",
-            },
+            is_alternative=False,
+            label=offer_label or "Основное предложение",
         )
-        db.add(offer)
-        if app.offers is None:
-            app.offers = [offer]
-        else:
-            app.offers.append(offer)
     elif decision_type == DecisionType.COUNTEROFFERED:
         base = Decimal(str(app.amount))
-        amount = counter_amount or round2(base * Decimal("0.7"))
+        amount = Decimal(
+            str(
+                offer_amount
+                if offer_amount is not None
+                else counter_amount
+                if counter_amount is not None
+                else round2(base * Decimal("0.7"))
+            )
+        )
         if amount < Decimal("100000"):
             amount = min(base, Decimal("100000"))
-        payment = round2(annuity_payment(amount, rate, term))
-        offer = CreditOffer(
-            application_id=app.id,
-            decision_id=decision.id,
-            product_id=app.product_id,
+        _add_offer(
             amount=amount,
-            term_months=term,
-            rate=rate,
-            monthly_payment=payment,
-            status=OfferStatus.ACTIVE,
-            expires_at=expires,
-            conditions={
-                "offer_version": 1,
-                "is_alternative": True,
-                "label": "Альтернативное предложение",
-                "schedule_type": "annuity",
-            },
+            is_alternative=True,
+            label=offer_label or "Альтернативное предложение",
         )
-        db.add(offer)
-        if app.offers is None:
-            app.offers = [offer]
-        else:
-            app.offers.append(offer)
 
     if app.decisions is None:
         app.decisions = [decision]
@@ -284,6 +294,113 @@ def ensure_decision_for_status(
         # уже есть актуальное решение этого типа
         return existing
     return issue_decision(db, app=app, decision_type=dtype, actor=actor)
+
+
+PROPOSE_ALLOWED_FROM: set[ApplicationStatus] = {
+    ApplicationStatus.SUBMITTED,
+    ApplicationStatus.VALIDATING,
+    ApplicationStatus.IN_REVIEW,
+    ApplicationStatus.DOCS_REQUESTED,
+    ApplicationStatus.COUNTEROFFERED,
+    ApplicationStatus.APPROVED,
+}
+
+DECISION_TO_STATUS: dict[DecisionType, ApplicationStatus] = {
+    DecisionType.APPROVED: ApplicationStatus.APPROVED,
+    DecisionType.REJECTED: ApplicationStatus.REJECTED,
+    DecisionType.COUNTEROFFERED: ApplicationStatus.COUNTEROFFERED,
+}
+
+
+def propose_decision(
+    db: Session,
+    *,
+    app: CreditApplication,
+    analyst: User,
+    decision_type: DecisionType,
+    reason_codes: list[str] | None = None,
+    explanation: str | None = None,
+    comment: str | None = None,
+    offer_amount: Decimal | None = None,
+    offer_term_months: int | None = None,
+    offer_rate: Decimal | None = None,
+    product_id: str | None = None,
+    offer_label: str | None = None,
+) -> tuple[CreditDecision, CreditOffer | None, dict[str, Any]]:
+    if decision_type not in (
+        DecisionType.APPROVED,
+        DecisionType.REJECTED,
+        DecisionType.COUNTEROFFERED,
+    ):
+        raise AppError(
+            "UNSUPPORTED_DECISION",
+            f"Тип решения {decision_type.value} не поддерживается в propose",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    if app.status not in PROPOSE_ALLOWED_FROM:
+        raise AppError(
+            "INVALID_TRANSITION",
+            f"Нельзя вынести решение из статуса {app.status.value}",
+            status_code=http_status.HTTP_409_CONFLICT,
+            fields=[{"field": "status", "code": app.status.value}],
+        )
+
+    if decision_type == DecisionType.COUNTEROFFERED and offer_amount is None and app.amount:
+        # явный counter без суммы — ок, issue_decision возьмёт 70%
+        pass
+    if decision_type == DecisionType.COUNTEROFFERED and offer_amount is not None:
+        if Decimal(str(offer_amount)) <= 0:
+            raise AppError(
+                "VALIDATION_ERROR",
+                "offer_amount должен быть > 0",
+                status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                fields=[{"field": "offer_amount", "code": "GT_ZERO"}],
+            )
+
+    target_status = DECISION_TO_STATUS[decision_type]
+    note = comment or explanation or f"Решение аналитика: {decision_type.value}"
+
+    if app.assigned_analyst_id is None:
+        app.assigned_analyst_id = analyst.id
+    if app.assigned_manager_id is None:
+        app.assigned_manager_id = analyst.id
+
+    if app.status != target_status:
+        transition_application(db, app, target_status, actor=analyst, comment=note)
+
+    if decision_type == DecisionType.REJECTED:
+        app.rejection_reason = explanation or note
+
+    decision = issue_decision(
+        db,
+        app=app,
+        decision_type=decision_type,
+        actor=analyst,
+        reason_codes=reason_codes,
+        explanation=explanation or note,
+        offer_amount=offer_amount,
+        offer_term_months=offer_term_months,
+        offer_rate=offer_rate,
+        product_id=product_id,
+        offer_label=offer_label,
+    )
+
+    offer = next(
+        (o for o in (app.offers or []) if o.decision_id == decision.id and o.status == OfferStatus.ACTIVE),
+        None,
+    )
+    payload = {
+        "application_id": app.id,
+        "status": app.status,
+        "current_step": app.current_step,
+        "decision_id": decision.id,
+        "decision_type": decision.decision_type,
+        "offer_id": offer.id if offer else None,
+        "reason_codes": decision.reason_codes or [],
+        "explanation": decision.explanation,
+    }
+    return decision, offer, payload
 
 
 def accept_offer(

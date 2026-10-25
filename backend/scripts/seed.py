@@ -51,6 +51,7 @@ from app.models import (  # noqa: F401
     FundingNeedItem,
     MlModelRegistry,
     ModelActivation,
+    ModelEvaluation,
     Notification,
     RegistrySnapshot,
     RolePermission,
@@ -365,17 +366,62 @@ def _seed_catalog(db, now: datetime) -> None:
         )
     )
 
-    model = MlModelRegistry(
-        id="ml_rank_v1",
-        name="credit_product_ranker",
-        version="demo-v1",
-        task="RANK_PRODUCTS",
-        status="ACTIVE",
-        endpoint=None,
-        metrics={"ndcg": 0.0, "note": "rule-based fallback"},
-        meta={"seed_version": SEED_VERSION},
-    )
-    db.add(model)
+    models = [
+        MlModelRegistry(
+            id="ml_rank_v1",
+            name="credit_product_ranker",
+            version="demo-v1",
+            task="RANK_PRODUCTS",
+            status="ACTIVE",
+            endpoint=None,
+            metrics={"ndcg": 0.72, "latency_p50_ms": 12, "note": "rule-based fallback"},
+            meta={
+                "seed_version": SEED_VERSION,
+                "input_schema": {"funding_need": "object", "products": "array"},
+                "output_schema": {"ranked_product_ids": "array", "scores": "array"},
+                "artifact": "builtin:rules/ranker_v1",
+                "resources": {"ram_mb": 64, "device": "cpu"},
+                "fallback": "RULES_ENGINE",
+            },
+        ),
+        MlModelRegistry(
+            id="ml_assistant_v1",
+            name="credit_assistant_llm",
+            version="v1",
+            task="AI_ASSISTANT",
+            status="REGISTERED",
+            endpoint=None,
+            metrics={"latency_p50_ms": 180, "note": "small open-weight stub"},
+            meta={
+                "seed_version": SEED_VERSION,
+                "input_schema": {"messages": "array", "company_context": "object"},
+                "output_schema": {"reply": "string", "citations": "array"},
+                "artifact": "builtin:llm/assistant_v1",
+                "resources": {"ram_mb": 2048, "device": "cpu"},
+                "params_billion": 0.5,
+                "fallback": "TEMPLATE_REPLIES",
+            },
+        ),
+        MlModelRegistry(
+            id="ml_assistant_v2",
+            name="credit_assistant_llm",
+            version="v2",
+            task="AI_ASSISTANT",
+            status="REGISTERED",
+            endpoint=None,
+            metrics={"latency_p50_ms": 220, "note": "improved stub"},
+            meta={
+                "seed_version": SEED_VERSION,
+                "input_schema": {"messages": "array", "company_context": "object"},
+                "output_schema": {"reply": "string", "citations": "array", "actions": "array"},
+                "artifact": "builtin:llm/assistant_v2",
+                "resources": {"ram_mb": 3072, "device": "cpu"},
+                "params_billion": 1.0,
+                "fallback": "TEMPLATE_REPLIES",
+            },
+        ),
+    ]
+    db.add_all(models)
     db.add(
         ModelActivation(
             id="ml_act_rank_v1",
@@ -384,6 +430,26 @@ def _seed_catalog(db, now: datetime) -> None:
             is_active=True,
             activated_by=USER_ADMIN,
             activated_at=now,
+        )
+    )
+    db.add(
+        ModelEvaluation(
+            id="ml_eval_rank_v1",
+            model_id="ml_rank_v1",
+            dataset="synthetic_smb_v1",
+            metrics={"ndcg": 0.72, "hit_rate": 0.81, "baseline_ndcg": 0.55},
+            notes="Сравнение с random baseline на seed-датасете",
+            created_by=USER_ADMIN,
+        )
+    )
+    db.add(
+        ModelEvaluation(
+            id="ml_eval_asst_v2",
+            model_id="ml_assistant_v2",
+            dataset="assistant_smoke_v1",
+            metrics={"latency_p50_ms": 220, "toxicity": 0.0, "format_ok": 1.0},
+            notes="Smoke на шаблонных вопросах кабинета",
+            created_by=USER_ADMIN,
         )
     )
 
@@ -959,33 +1025,48 @@ def _seed_scenarios_and_notifications(db, now: datetime) -> None:
     )
 
 
+def wipe_all_tables(db) -> None:
+    from sqlalchemy import text
+
+    table_names = [t.name for t in Base.metadata.sorted_tables]
+    if not table_names:
+        return
+    quoted = ", ".join(f'"{name}"' for name in table_names)
+    db.execute(text(f"TRUNCATE {quoted} RESTART IDENTITY CASCADE"))
+    db.flush()
+
+
+def populate(db, *, now: datetime | None = None) -> None:
+    pwd = hash_password(DEMO_PASSWORD)
+    now = now or datetime.now(timezone.utc)
+    _seed_users(db, pwd, now)
+    db.flush()
+    _seed_rbac(db)
+    _seed_catalog(db, now)
+    db.flush()
+    _seed_company_ip(db, now)
+    _seed_company_ooo(db, now)
+    db.flush()
+    _seed_applications(db, now)
+    db.flush()
+    _seed_scenarios_and_notifications(db, now)
+
+
 def seed(*, force: bool = False) -> None:
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
-        pwd = hash_password(DEMO_PASSWORD)
         existing = db.get(User, USER_ENT_01)
         if existing and not force:
             print(f"Seed уже применён (seed_version={SEED_VERSION}) — пропуск")
-            print("  Перезапуск с wipe: alembic upgrade head после 002, либо docker compose down -v")
+            print("  force: python -m scripts.seed --force  или POST /admin/demo/reset")
             return
 
         if existing and force:
-            raise RuntimeError("force-seed не реализован: сделайте wipe БД (002 / volume reset)")
+            print(f"Force reseed: wipe + seed_version={SEED_VERSION}")
+            wipe_all_tables(db)
 
-        now = datetime.now(timezone.utc)
-        _seed_users(db, pwd, now)
-        db.flush()  # users должны быть в БД до FK (memberships / notifications / apps)
-        _seed_rbac(db)
-        _seed_catalog(db, now)
-        db.flush()
-        _seed_company_ip(db, now)
-        _seed_company_ooo(db, now)
-        db.flush()
-        _seed_applications(db, now)
-        db.flush()
-        _seed_scenarios_and_notifications(db, now)
-
+        populate(db)
         db.commit()
         print(f"Seed OK  seed_version={SEED_VERSION}")
         print(f"  INN IP  = {INN_IP}")
@@ -1005,4 +1086,9 @@ def seed(*, force: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    seed()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--force", action="store_true", help="Wipe all tables and reseed")
+    args = parser.parse_args()
+    seed(force=args.force)

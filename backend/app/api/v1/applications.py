@@ -12,7 +12,6 @@ from app.deps import CorrelationId, CurrentUser, DbDep
 from app.models.application import ApplicationComment, CreditApplication
 from app.models.credit import CreditProduct
 from app.models.funding import FundingNeed
-from app.models.user import User
 from app.schemas.application import (
     ApplicationChecksOut,
     ApplicationCreate,
@@ -38,6 +37,13 @@ from app.schemas.application import (
     RequiredDocumentSlot,
     StatusUpdate,
     ValidationIssue,
+)
+from app.schemas.finance_p1 import AgreementConfirmIn, AgreementConfirmOut, AgreementOut
+from app.services.agreements import (
+    confirm_agreement,
+    ensure_agreement,
+    pdf_stub_bytes,
+    serialize_agreement,
 )
 from app.services.access import (
     ANALYST_ROLES,
@@ -739,6 +745,76 @@ def respond_to_document_request(
     db.commit()
     return DocumentRequestOut(**serialize_document_request(req))
 
+
+# --- agreement (demo) ---
+
+
+@router.get(
+    "/companies/{company_id}/applications/{application_id}/agreement",
+    response_model=AgreementOut,
+)
+def get_application_agreement(
+    company_id: str, application_id: str, db: DbDep, user: CurrentUser
+) -> AgreementOut:
+    app = _company_app(db, company_id, application_id, user)
+    agreement = ensure_agreement(db, app)
+    db.commit()
+    db.refresh(agreement)
+    return AgreementOut(**serialize_agreement(agreement))
+
+
+@router.get(
+    "/companies/{company_id}/applications/{application_id}/agreement/download",
+)
+def download_application_agreement(
+    company_id: str, application_id: str, db: DbDep, user: CurrentUser
+) -> Response:
+    app = _company_app(db, company_id, application_id, user)
+    agreement = ensure_agreement(db, app)
+    db.commit()
+    body = pdf_stub_bytes(agreement)
+    return Response(
+        content=body,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="agreement-{agreement.number or agreement.id}.pdf"',
+        },
+    )
+
+@router.post(
+    "/companies/{company_id}/applications/{application_id}/agreement/confirm",
+    response_model=AgreementConfirmOut,
+)
+def confirm_application_agreement(
+    company_id: str,
+    application_id: str,
+    body: AgreementConfirmIn,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+) -> AgreementConfirmOut:
+    require_company_access(db, user, company_id, write=True)
+    app = _company_app(db, company_id, application_id, user)
+    if not body.acknowledged:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Нужно подтвердить ознакомление")
+    agreement = ensure_agreement(db, app)
+    conf = confirm_agreement(db, agreement, actor_id=user.id, note=body.note)
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="agreement",
+        entity_id=agreement.id,
+        action="agreement_confirm",
+        details={"demo": True},
+        correlation_id=cid,
+        company_id=company_id,
+    )
+    db.commit()
+    return AgreementConfirmOut(
+        agreement_id=agreement.id,
+        status=agreement.status,
+        confirmed_at=conf.confirmed_at,
+    )
 
 # --- Legacy + analyst ---
 

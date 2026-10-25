@@ -51,6 +51,8 @@ class Settings(BaseSettings):
 
     rate_limit_per_minute: int = 120
 
+    demo_mode: bool = Field(default=True, validation_alias="DEMO_MODE")
+
     @property
     def is_production(self) -> bool:
         return self.app_env.lower() in ("production", "prod")

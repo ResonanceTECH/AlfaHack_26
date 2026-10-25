@@ -16,6 +16,7 @@ def write_audit(
     details: dict[str, Any] | None = None,
     correlation_id: str | None = None,
     ip_address: str | None = None,
+    company_id: str | None = None,
 ) -> AuditEvent:
     event = AuditEvent(
         actor_id=actor_id,
@@ -25,6 +26,7 @@ def write_audit(
         details=details,
         correlation_id=correlation_id,
         ip_address=ip_address,
+        company_id=company_id,
     )
     db.add(event)
     return event
