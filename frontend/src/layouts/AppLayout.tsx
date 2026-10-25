@@ -187,7 +187,9 @@ function pageTitle(pathname: string): string {
   if (pathname.startsWith('/app/team/') && pathname !== '/app/team/invite') {
     return 'Участник'
   }
-  if (pathname === '/app/notifications') return 'Уведомления'
+  if (pathname === '/app/notifications' || pathname === '/app/admin/notifications') {
+    return 'Уведомления'
+  }
   if (pathname === '/app/scenarios') return 'Сценарии и подбор'
   if (pathname === '/app/calculator') return 'Кредитный калькулятор'
   if (pathname === '/app/forecast') return 'Прогноз денежных средств'
@@ -628,13 +630,23 @@ export function AppLayout() {
 
           <IconButton
             size="small"
-            onClick={() => navigate('/app/notifications')}
+            onClick={() =>
+              navigate(user?.role === 'admin' ? '/app/admin/notifications' : '/app/notifications')
+            }
             sx={{
-              color: location.pathname === '/app/notifications' ? '#EF3124' : '#5A6B7D',
+              color:
+                location.pathname === '/app/notifications' ||
+                location.pathname === '/app/admin/notifications'
+                  ? '#EF3124'
+                  : '#5A6B7D',
             }}
             aria-label="Уведомления"
           >
-            <Badge badgeContent={4} color="error" overlap="circular">
+            <Badge
+              badgeContent={user?.role === 'admin' ? 5 : 4}
+              color="error"
+              overlap="circular"
+            >
               <NotificationsNoneRoundedIcon />
             </Badge>
           </IconButton>
