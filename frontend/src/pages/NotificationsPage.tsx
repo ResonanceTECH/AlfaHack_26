@@ -13,7 +13,8 @@ import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
 import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded'
 import PersonOutlineRoundedIcon from '@mui/icons-material/PersonOutlineRounded'
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
+import { useAuth } from '@/contexts/AuthContext'
 
 const tileSx = {
   bgcolor: '#fff',
@@ -124,8 +125,13 @@ const KIND_META: Record<
 type TabKey = 'all' | NotifCategory
 
 export function NotificationsPage() {
+  const { user } = useAuth()
   const navigate = useNavigate()
   const [items, setItems] = useState(INITIAL)
+
+  if (user?.role === 'admin') {
+    return <Navigate to="/app/admin/notifications" replace />
+  }
   const [tab, setTab] = useState<TabKey>('all')
   const [channels, setChannels] = useState({
     push: true,
