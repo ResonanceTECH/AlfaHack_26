@@ -151,6 +151,10 @@ function pageTitle(pathname: string): string {
   if (pathname === '/app/company/inn-check') return 'Проверка ИНН'
   if (pathname === '/app/statements/upload') return 'Загрузка выписки'
   if (pathname === '/app/statements/analysis') return 'Анализ выписки'
+  if (pathname === '/app/recommendations') return 'Подбор'
+  if (pathname === '/app/recommendations/budget') return 'Бюджет цели'
+  if (pathname === '/app/recommendations/results') return 'Результаты подбора'
+  if (pathname === '/app/compare') return 'Сравнение кредитов'
   const flat = [...entrepreneurGroups, ...managerGroups].flatMap((g) => g.items)
   const exact = flat.find((i) => i.to === pathname)
   if (exact) return exact.label
