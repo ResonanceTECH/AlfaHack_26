@@ -178,19 +178,19 @@ export const FIN_KPIS = [
 ]
 
 export const DOCUMENTS = [
-  { id: 'd1', name: 'Паспорт руководителя', size: '1.2 МБ', kind: 'PDF', status: 'accepted' as const },
-  { id: 'd2', name: 'Выписка ЕГРЮЛ', size: '340 КБ', kind: 'PDF', status: 'accepted' as const },
-  { id: 'd3', name: 'Выписка по счёту 6 мес.', size: '2.4 МБ', kind: 'CSV', status: 'accepted' as const },
-  { id: 'd4', name: 'Анкета бенефициара', size: '890 КБ', kind: 'PDF', status: 'accepted' as const },
-  { id: 'd5', name: 'Бухгалтерская отчётность', size: '1.1 МБ', kind: 'PDF', status: 'review' as const },
-  { id: 'd6', name: 'Договор аренды', size: '—', kind: 'PDF', status: 'missing' as const },
-  { id: 'd7', name: 'Справка об оборотах', size: '640 КБ', kind: 'PDF', status: 'replace' as const },
+  { id: 'd1', name: 'Паспорт руководителя', size: '2.1 МБ', kind: 'PDF', status: 'accepted' as const },
+  { id: 'd2', name: 'Выписка ЕГРЮЛ', size: '0.4 МБ', kind: 'PDF', status: 'accepted' as const },
+  { id: 'd3', name: 'Выписка по счёту (6 мес.)', size: '1.8 МБ', kind: 'CSV', status: 'accepted' as const },
+  { id: 'd4', name: 'Бухгалтерская отчётность', size: '3.2 МБ', kind: 'PDF', status: 'review' as const },
+  { id: 'd5', name: 'Договор аренды', size: '—', kind: 'PDF', status: 'missing' as const },
+  { id: 'd6', name: 'Справка об оборотах', size: '0.9 МБ', kind: 'PDF', status: 'replace' as const },
+  { id: 'd7', name: 'Анкета бенефициара', size: '0.3 МБ', kind: 'PDF', status: 'accepted' as const },
 ]
 
 export const AUTOCHECKS = [
   {
     id: 'c1',
-    title: 'Полнота данных',
+    title: 'Полнота данных заявки',
     fact: '100%',
     condition: '≥ 95%',
     source: 'Заявка',
@@ -200,7 +200,7 @@ export const AUTOCHECKS = [
   {
     id: 'c2',
     title: 'Корректность ИНН',
-    fact: 'OK',
+    fact: '7701234567',
     condition: 'checksum OK',
     source: 'Компания',
     result: 'pass' as const,
@@ -208,7 +208,7 @@ export const AUTOCHECKS = [
   },
   {
     id: 'c3',
-    title: 'Срок бизнеса',
+    title: 'Срок существования',
     fact: '6 лет 7 мес',
     condition: '≥ 12 мес',
     source: 'Демо-реестр',
@@ -218,9 +218,9 @@ export const AUTOCHECKS = [
   {
     id: 'c4',
     title: 'Соответствие продукту',
-    fact: 'OK',
-    condition: 'OKVED match',
-    source: 'Политика',
+    fact: 'Оборотный',
+    condition: 'product.whitelist',
+    source: 'Каталог',
     result: 'pass' as const,
     at: '10:03',
   },
@@ -228,7 +228,7 @@ export const AUTOCHECKS = [
     id: 'c5',
     title: 'Фин. история',
     fact: '6 мес',
-    condition: '≥ 6 мес',
+    condition: '≥ 3 мес',
     source: 'Выписка',
     result: 'pass' as const,
     at: '10:03',
@@ -250,7 +250,7 @@ export const AUTOCHECKS = [
     source: 'Документы',
     result: 'warn' as const,
     at: '10:04',
-    note: '1 документ отсутствует / на замену',
+    note: '1 отсутствует · 1 на замену',
   },
   {
     id: 'c8',
@@ -264,23 +264,47 @@ export const AUTOCHECKS = [
   {
     id: 'c9',
     title: 'ML-сервис',
-    fact: 'доступен',
-    condition: 'online',
-    source: 'Система',
+    fact: 'OK',
+    condition: 'available',
+    source: 'Risk API',
     result: 'pass' as const,
     at: '10:05',
   },
 ]
 
 export const RISK_SUMMARY = {
+  categoryLabel: 'Умеренный · B+',
   category: 'B+',
+  model: 'ML v2.3',
   pdProxy: 'Low',
-  model: 'v2.3',
+  lgdProxy: '0.22',
+  factorsCount: 8,
+  modelDecision: 'Review',
   drivers: [
-    { label: 'DSCR', impact: '+', detail: '1.42 выше порога 1.2' },
-    { label: 'Долговая нагрузка', impact: '+', detail: '18% в зелёной зоне' },
-    { label: 'Кассовые разрывы', impact: '−', detail: '2 коротких эпизода' },
-    { label: 'Срок бизнеса', impact: '+', detail: '> 5 лет' },
+    { label: 'Выручка стабильна 6 мес.', impact: '+' as const },
+    { label: 'Концентрация контрагентов 61%', impact: '−' as const },
+    { label: 'Возраст выписки 12 дней', impact: '−' as const },
+    { label: 'Совпадение ОКВЭД', impact: '+' as const },
+    { label: 'DSCR 1.42 ≥ порога', impact: '+' as const },
+    { label: 'Срок бизнеса > 5 лет', impact: '+' as const },
+  ],
+  sources: [
+    {
+      title: 'Детерминированные правила политики',
+      detail: 'Лимиты, документы, срок бизнеса',
+    },
+    {
+      title: 'ML Risk Assessment',
+      detail: 'PD/LGD proxy, объяснимость',
+    },
+    {
+      title: 'Финансовые расчёты',
+      detail: 'NCF, DSCR, концентрация',
+    },
+    {
+      title: 'AI Copilot',
+      detail: 'Черновик — не решение',
+    },
   ],
 }
 
@@ -316,11 +340,87 @@ export const ATTENTION_ITEMS = [
 ]
 
 export const HISTORY_EVENTS = [
-  { at: '25.10.2026 14:12', actor: 'Система', text: 'Автопроверки завершены: 8 pass · 1 warn' },
-  { at: '25.10.2026 11:40', actor: 'Иванова А.С.', text: 'Заявка взята в работу' },
-  { at: '24.10.2026 18:05', actor: 'Клиент', text: 'Загружена выписка по счёту 6 мес.' },
-  { at: '24.10.2026 16:20', actor: 'Система', text: 'Статус → IN_REVIEW' },
-  { at: '24.10.2026 15:55', actor: 'Клиент', text: 'Заявка отправлена' },
+  {
+    at: '24.10 09:12',
+    actor: 'Предприниматель',
+    badge: 'SUBMITTED',
+    text: 'Заявка отправлена · DRAFT → SUBMITTED',
+  },
+  {
+    at: '24.10 09:13',
+    actor: 'System',
+    badge: 'VALIDATING',
+    text: 'Автоматические проверки запущены',
+  },
+  {
+    at: '24.10 09:15',
+    actor: 'System',
+    badge: 'IN_REVIEW',
+    text: 'Поставлена в очередь аналитика',
+  },
+  {
+    at: '24.10 10:02',
+    actor: 'Иванова А.С.',
+    badge: 'ASSIGNED',
+    text: 'Взята в работу',
+  },
+  {
+    at: '24.10 11:40',
+    actor: 'Иванова А.С.',
+    badge: 'DOC_REQUEST',
+    text: 'Запрос договора аренды · IN_REVIEW → WAITING_FOR_CLIENT',
+  },
+  {
+    at: '24.10 14:20',
+    actor: 'Предприниматель',
+    badge: 'CLIENT_RESPONDED',
+    text: 'Загружен договор аренды',
+  },
+  {
+    at: '24.10 15:05',
+    actor: 'System',
+    badge: 'RISK_REVIEW',
+    text: 'ML v2.3 пересчитал риск → B+',
+  },
+  {
+    at: '24.10 16:30',
+    actor: 'Иванова А.С.',
+    badge: 'CONCLUSION',
+    text: 'Черновик заключения сохранён',
+  },
+  {
+    at: '24.10 17:00',
+    actor: 'Иванова А.С.',
+    badge: 'PREAPPROVED',
+    text: 'Решение отправлено · DECISION_PENDING → PREAPPROVED',
+  },
+]
+
+export const AGREEMENT_STEPS = [
+  {
+    id: 's1',
+    title: 'Условия приняты клиентом',
+    status: 'OFFER_ACCEPTED',
+    done: true,
+  },
+  {
+    id: 's2',
+    title: 'Договор подготовлен',
+    status: 'AGREEMENT_PREPARED',
+    done: true,
+  },
+  {
+    id: 's3',
+    title: 'Ожидается подтверждение',
+    status: 'AGREEMENT_CONFIRMED',
+    done: false,
+  },
+  {
+    id: 's4',
+    title: 'Завершение заявки',
+    status: 'COMPLETED',
+    done: false,
+  },
 ]
 
 export const WORKFLOW_STAGES = [
