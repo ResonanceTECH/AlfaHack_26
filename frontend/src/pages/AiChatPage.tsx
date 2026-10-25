@@ -16,7 +16,7 @@ import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
 import InsightsOutlinedIcon from '@mui/icons-material/InsightsOutlined'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link as RouterLink, useNavigate } from 'react-router-dom'
+import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { listCompanies } from '@/api/companies'
 import { aiChat } from '@/api/statements'
@@ -111,6 +111,16 @@ function welcomeMessage(): AiChatMessage {
   }
 }
 
+function managerWelcomeMessage(): AiChatMessage {
+  return {
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content:
+      'Здравствуйте! Это чат с персональным менеджером Ивановой А.С. Опишите вопрос по заявке, документам или условиям — передам контекст и помогу сориентироваться.',
+    createdAt: new Date().toISOString(),
+  }
+}
+
 function titleFromMessages(messages: AiChatMessage[]): string {
   const firstUser = messages.find((m) => m.role === 'user')
   if (!firstUser) return 'Новый диалог'
@@ -184,22 +194,26 @@ export function AiChatPage() {
     ? financials.avgMonthlyRevenue * 12
     : 18_400_000
 
+  const [searchParams, setSearchParams] = useSearchParams()
   const [threads, setThreads] = useState<ChatThread[]>([])
   const [activeId, setActiveId] = useState<string>('')
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [threadsReady, setThreadsReady] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!companyId) {
       setThreads([])
       setActiveId('')
+      setThreadsReady(false)
       return
     }
     const loaded = loadThreads(companyId)
     setThreads(loaded.threads)
     setActiveId(loaded.activeId)
+    setThreadsReady(true)
   }, [companyId])
 
   useEffect(() => {
@@ -223,11 +237,12 @@ export function AiChatPage() {
     )
   }
 
-  function startNewDialog() {
+  function startNewDialog(opts?: { withManager?: boolean }) {
+    const withManager = Boolean(opts?.withManager)
     const thread: ChatThread = {
       id: crypto.randomUUID(),
-      title: 'Новый диалог',
-      messages: [welcomeMessage()],
+      title: withManager ? 'Чат с менеджером' : 'Новый диалог',
+      messages: [withManager ? managerWelcomeMessage() : welcomeMessage()],
       updatedAt: new Date().toISOString(),
     }
     setThreads((prev) => [thread, ...prev])
@@ -235,6 +250,15 @@ export function AiChatPage() {
     setInput('')
     setError(null)
   }
+
+  useEffect(() => {
+    if (!threadsReady || !companyId) return
+    const flag = searchParams.get('new')
+    if (flag !== 'manager' && flag !== '1') return
+    startNewDialog({ withManager: flag === 'manager' })
+    setSearchParams({}, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- open once from query
+  }, [threadsReady, companyId, searchParams, setSearchParams])
 
   function selectThread(id: string) {
     setActiveId(id)
@@ -266,7 +290,9 @@ export function AiChatPage() {
     patchThread(threadId, {
       messages: nextMessages,
       title:
-        thread.title === 'Новый диалог' || thread.id === 'demo'
+        thread.title === 'Новый диалог' ||
+        thread.title === 'Чат с менеджером' ||
+        thread.id === 'demo'
           ? titleFromMessages(nextMessages)
           : thread.title,
     })

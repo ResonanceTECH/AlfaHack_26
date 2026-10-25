@@ -14,6 +14,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { listCompanies } from '@/api/companies'
 import { useAuth } from '@/contexts/AuthContext'
+import { LogoutConfirmDialog } from '@/components/common/LogoutConfirmDialog'
 
 const tileSx = {
   bgcolor: '#fff',
@@ -100,6 +101,7 @@ export function ProfilePage() {
   const [biometry, setBiometry] = useState(false)
   const [notifyDevice, setNotifyDevice] = useState(true)
   const [sessions, setSessions] = useState(DEMO_SESSIONS)
+  const [logoutOpen, setLogoutOpen] = useState(false)
 
   const subtitle = useMemo(() => {
     const name = fullName.trim() || 'Пользователь'
@@ -108,6 +110,7 @@ export function ProfilePage() {
   }, [fullName, company?.name, roleLabel])
 
   function doLogout() {
+    setLogoutOpen(false)
     logout()
     navigate('/login')
   }
@@ -152,7 +155,11 @@ export function ProfilePage() {
           </Typography>
           <Typography sx={{ color: '#7A8795', fontSize: 14, mt: 0.6 }}>{subtitle}</Typography>
         </Box>
-        <Button variant="outlined" onClick={doLogout} sx={{ ...outlineBtn, alignSelf: 'flex-start' }}>
+        <Button
+          variant="outlined"
+          onClick={() => setLogoutOpen(true)}
+          sx={{ ...outlineBtn, alignSelf: 'flex-start' }}
+        >
           Выйти
         </Button>
       </Stack>
@@ -449,7 +456,7 @@ export function ProfilePage() {
             <Stack direction="row" spacing={1.25} sx={{ mb: 1.5 }}>
               <Button
                 variant="contained"
-                onClick={doLogout}
+                onClick={() => setLogoutOpen(true)}
                 sx={{
                   borderRadius: 2,
                   fontWeight: 700,
@@ -466,10 +473,18 @@ export function ProfilePage() {
                 Остаться
               </Button>
             </Stack>
-            <Typography sx={{ fontSize: 12, color: '#9AA5B1' }}>Подтверждение выхода</Typography>
+            <Typography sx={{ fontSize: 12, color: '#9AA5B1' }}>
+              Перед выходом спросим подтверждение
+            </Typography>
           </Box>
         </Stack>
       </Box>
+
+      <LogoutConfirmDialog
+        open={logoutOpen}
+        onClose={() => setLogoutOpen(false)}
+        onConfirm={doLogout}
+      />
     </Box>
   )
 }

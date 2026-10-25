@@ -14,6 +14,7 @@ import { useMemo, useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { createApplication, submitApplication } from '@/api/applications'
+import { makeLocalApplication, upsertLocalApp } from '@/features/applications/localApps'
 import { SelectionStepper } from '@/features/selection/SelectionStepper'
 import { loadSelectionDraft, saveSelectionDraft } from '@/features/selection/draft'
 import { DEMO_PRODUCTS } from '@/features/selection/demoProducts'
@@ -76,7 +77,16 @@ export function ApplicationWizardPage() {
   const [confirmed, setConfirmed] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [flash, setFlash] = useState<string | null>(null)
+  const [submitted, setSubmitted] = useState<{
+    id?: string
+    code: string
+    productName: string
+    amount: number
+  } | null>(null)
+
+  function appCodeFromId(id: string): string {
+    return `ABC-${id.replace(/-/g, '').slice(-8).toUpperCase()}`
+  }
 
   const checks: { ok: boolean; warn?: boolean; label: string }[] = [
     { ok: Boolean(company?.name && company?.inn), label: 'Профиль компании заполнен' },
@@ -116,13 +126,37 @@ export function ApplicationWizardPage() {
           purpose: `${name} · ${goalTitle(draft.goalKey)}`,
         })
         app = await submitApplication(app.id)
+        upsertLocalApp(app)
         await qc.invalidateQueries({ queryKey: ['applications'] })
-        navigate(`/app/applications/${app.id}`)
+        setSubmitted({
+          id: app.id,
+          code: appCodeFromId(app.id),
+          productName: app.productName || name,
+          amount: app.amount || amount,
+        })
         return
       }
 
-      setFlash('Демо-заявка отправлена в очередь аналитика')
-      setTimeout(() => navigate('/app/applications'), 900)
+      const code = `ABC-2026-${String(Math.floor(1000 + Math.random() * 9000))}`
+      const local = makeLocalApplication({
+        companyId,
+        productId: pickId,
+        productName: name,
+        amount,
+        termMonths: term,
+        rate,
+        purpose: `${name} · ${goalTitle(draft.goalKey)}`,
+        status: 'submitted',
+        code,
+      })
+      upsertLocalApp(local)
+      await qc.invalidateQueries({ queryKey: ['applications'] })
+      setSubmitted({
+        id: local.id,
+        code,
+        productName: name,
+        amount,
+      })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось отправить заявку')
     } finally {
@@ -180,14 +214,16 @@ export function ApplicationWizardPage() {
             {goalTitle(draft.goalKey)} · {formatMoney(amount)} · {term} мес
           </Typography>
         </Box>
-        <Button
-          variant="outlined"
-          color="secondary"
-          onClick={() => navigate('/app/recommendations/results')}
-          sx={{ alignSelf: 'flex-start' }}
-        >
-          Назад к подбору
-        </Button>
+        {!submitted && (
+          <Button
+            variant="outlined"
+            color="secondary"
+            onClick={() => navigate('/app/recommendations/results')}
+            sx={{ alignSelf: 'flex-start' }}
+          >
+            Назад к подбору
+          </Button>
+        )}
       </Stack>
 
       <SelectionStepper active={5} />
@@ -197,12 +233,19 @@ export function ApplicationWizardPage() {
           {error}
         </Alert>
       )}
-      {flash && (
-        <Alert severity="success" sx={{ mb: 2, borderRadius: 2.5 }}>
-          {flash}
-        </Alert>
-      )}
 
+      {submitted ? (
+        <SubmittedPlaque
+          code={submitted.code}
+          productName={submitted.productName}
+          amount={submitted.amount}
+          onTracker={() => navigate('/app/applications')}
+          onOpen={() =>
+            navigate(submitted.id ? `/app/applications/${submitted.id}` : '/app/applications')
+          }
+        />
+      ) : (
+        <>
       {/* Product summary */}
       <Box
         sx={{
@@ -350,7 +393,7 @@ export function ApplicationWizardPage() {
           }
           label={
             <Typography sx={{ fontSize: 14, fontWeight: 650, color: '#0B1F35', pt: 0.35 }}>
-              Подтверждаю достоверность данных и отправку демо-заявки
+              Подтверждаю достоверность данных и отправку заявки
             </Typography>
           }
         />
@@ -380,6 +423,102 @@ export function ApplicationWizardPage() {
           {saving ? 'Отправляем…' : 'Отправить заявку →'}
         </Button>
       </Box>
+        </>
+      )}
+    </Box>
+  )
+}
+
+function SubmittedPlaque({
+  code,
+  productName,
+  amount,
+  onTracker,
+  onOpen,
+}: {
+  code: string
+  productName: string
+  amount: number
+  onTracker: () => void
+  onOpen: () => void
+}) {
+  return (
+    <Box
+      sx={{
+        ...tileSx,
+        mt: 1,
+        px: { xs: 2.5, sm: 4 },
+        py: { xs: 3.5, sm: 4.5 },
+        textAlign: 'center',
+        maxWidth: 560,
+        mx: 'auto',
+      }}
+    >
+      <Box
+        sx={{
+          width: 56,
+          height: 56,
+          borderRadius: '50%',
+          bgcolor: 'rgba(27,138,90,0.12)',
+          display: 'grid',
+          placeItems: 'center',
+          mx: 'auto',
+          mb: 2,
+        }}
+      >
+        <CheckCircleRoundedIcon sx={{ fontSize: 30, color: '#1B8A5A' }} />
+      </Box>
+
+      <Typography
+        sx={{
+          fontFamily: 'Manrope, sans-serif',
+          fontWeight: 800,
+          fontSize: { xs: 22, sm: 24 },
+          letterSpacing: '-0.03em',
+          color: '#0B1F35',
+          mb: 1,
+        }}
+      >
+        Заявка отправлена
+      </Typography>
+
+      <Typography sx={{ fontSize: 14, color: '#7A8795', mb: 1.25, lineHeight: 1.45 }}>
+        {code} · {productName} · {formatMoney(amount)}
+      </Typography>
+
+      <Typography sx={{ fontSize: 14.5, fontWeight: 650, color: '#0B1F35', mb: 2.75 }}>
+        Статус: На рассмотрении
+      </Typography>
+
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        spacing={1.25}
+        justifyContent="center"
+        sx={{ mb: 2.25 }}
+      >
+        <Button
+          type="button"
+          variant="outlined"
+          color="secondary"
+          onClick={onTracker}
+          sx={{ borderRadius: 2, px: 2.5, fontWeight: 700 }}
+        >
+          К трекеру заявки
+        </Button>
+        <Button
+          type="button"
+          variant="contained"
+          color="primary"
+          onClick={onOpen}
+          sx={{ borderRadius: 2, px: 2.5, fontWeight: 700 }}
+        >
+          Открыть заявку
+        </Button>
+      </Stack>
+
+      <Typography sx={{ fontSize: 12, color: '#9AA5B1' }}>
+        Демо: без SMS и реальной банковской интеграции
+      </Typography>
     </Box>
   )
 }

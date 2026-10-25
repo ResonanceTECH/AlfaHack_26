@@ -69,7 +69,7 @@ const entrepreneurGroups: NavGroup[] = [
       { to: '/app/recommendations', label: 'Подбор', icon: <TuneRoundedIcon sx={iconSx} /> },
       {
         to: '/app/scenarios',
-        label: 'Сценарии и расчёты',
+        label: 'Сценарии и подбор',
         icon: <InsightsRoundedIcon sx={iconSx} />,
       },
     ],
@@ -123,6 +123,26 @@ function pageTitle(pathname: string): string {
   if (pathname === '/app/recommendations/budget') return 'Бюджет цели'
   if (pathname === '/app/recommendations/results') return 'Результаты подбора'
   if (pathname === '/app/compare') return 'Сравнение кредитов'
+  if (pathname === '/app/team/invite') return 'Пригласить сотрудника'
+  if (pathname === '/app/team/tasks') return 'Совместные задачи'
+  if (pathname.startsWith('/app/team/') && pathname !== '/app/team/invite') {
+    return 'Участник'
+  }
+  if (pathname === '/app/notifications') return 'Уведомления'
+  if (pathname === '/app/scenarios') return 'Сценарии и подбор'
+  if (pathname === '/app/calculator') return 'Кредитный калькулятор'
+  if (pathname === '/app/forecast') return 'Прогноз денежных средств'
+  if (pathname === '/app/roi') return 'Окупаемость проекта'
+  if (pathname === '/app/readiness') return 'Индекс готовности'
+  if (pathname.endsWith('/edit') && pathname.startsWith('/app/applications/')) {
+    return 'Редактирование заявки'
+  }
+  if (pathname.endsWith('/contract') && pathname.startsWith('/app/applications/')) {
+    return 'Договор'
+  }
+  if (pathname.startsWith('/app/documents/') && pathname !== '/app/documents') {
+    return 'Документ'
+  }
   const flat = [...entrepreneurGroups, ...managerGroups].flatMap((g) => g.items)
   const exact = flat.find((i) => i.to === pathname)
   if (exact) return exact.label
@@ -361,7 +381,7 @@ export function AppLayout() {
           {rail ? (
             <Tooltip title="Иванова А.С. · Написать" placement="right">
               <IconButton
-                onClick={() => navigate('/app/help')}
+                onClick={() => navigate('/app/ai?new=manager')}
                 sx={{
                   p: 0.5,
                   '&:hover': { bgcolor: 'rgba(239,49,36,0.06)' },
@@ -410,7 +430,7 @@ export function AppLayout() {
                 fullWidth
                 size="small"
                 variant="outlined"
-                onClick={() => navigate('/app/help')}
+                onClick={() => navigate('/app/ai?new=manager')}
                 sx={{
                   borderRadius: 2,
                   borderColor: 'rgba(11,31,53,0.14)',
@@ -545,7 +565,14 @@ export function AppLayout() {
             {headerTitle}
           </Typography>
 
-          <IconButton size="small" sx={{ color: '#5A6B7D' }}>
+          <IconButton
+            size="small"
+            onClick={() => navigate('/app/notifications')}
+            sx={{
+              color: location.pathname === '/app/notifications' ? '#EF3124' : '#5A6B7D',
+            }}
+            aria-label="Уведомления"
+          >
             <Badge badgeContent={4} color="error" overlap="circular">
               <NotificationsNoneRoundedIcon />
             </Badge>

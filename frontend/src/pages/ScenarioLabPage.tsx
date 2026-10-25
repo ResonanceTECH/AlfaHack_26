@@ -1,241 +1,151 @@
-import Grid from '@mui/material/Grid2'
-import {
-  Alert,
-  Box,
-  Button,
-  MenuItem,
-  Paper,
-  Slider,
-  Stack,
-  TextField,
-  Typography,
-} from '@mui/material'
-import { useEffect, useMemo, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
-import {
-  CartesianGrid,
-  Legend,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
-import { PageHeader } from '@/components/common/PageHeader'
-import { StatBlock } from '@/components/common/StatBlock'
-import { Disclaimer } from '@/components/common/Disclaimer'
-import { useAppStore } from '@/hooks/useAppStore'
-import { saveScenario as persistScenario } from '@/api/credit'
-import { runCreditScenario } from '@/utils/finance'
-import { formatMoney } from '@/utils/format'
-import type { CreditScenarioParams, ScheduleType } from '@/types'
+import { Box, Button, Stack, Typography } from '@mui/material'
+import CalculateRoundedIcon from '@mui/icons-material/CalculateRounded'
+import ShowChartRoundedIcon from '@mui/icons-material/ShowChartRounded'
+import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded'
+import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded'
+import { useNavigate } from 'react-router-dom'
+
+const tileSx = {
+  bgcolor: '#fff',
+  borderRadius: 3,
+  border: '1px solid rgba(11,31,53,0.06)',
+  boxShadow: '0 1px 8px rgba(11,31,53,0.04)',
+  p: { xs: 2.25, md: 2.75 },
+} as const
+
+const SCENARIOS = [
+  {
+    to: '/app/calculator',
+    title: 'Кредитный калькулятор',
+    body: 'Сумма, срок, ставка → платёж, переплата и график. Параметры можно унести в заявку.',
+    Icon: CalculateRoundedIcon,
+    accent: '#EF3124',
+  },
+  {
+    to: '/app/forecast',
+    title: 'Прогноз денежных средств',
+    body: 'Остаток по месяцам с кредитом и без — одна фраза вывода и таблица для доверия.',
+    Icon: ShowChartRoundedIcon,
+    accent: '#C45A12',
+  },
+  {
+    to: '/app/roi',
+    title: 'Окупаемость проекта',
+    body: 'Инвестиции, NPV и срок окупаемости с допущениями и чувствительностью.',
+    Icon: TrendingUpRoundedIcon,
+    accent: '#1B8A5A',
+  },
+]
 
 export function ScenarioLabPage() {
-  const { financials, goal, scenarios, companyId } = useAppStore()
-  const qc = useQueryClient()
-  const [name, setName] = useState('Базовый')
-  const [error, setError] = useState<string | null>(null)
-  const [params, setParams] = useState<CreditScenarioParams>({
-    amount: goal?.requiredAmount ?? 0,
-    termMonths: 36,
-    annualRate: 20,
-    scheduleType: 'annuity',
-    disbursementDate: new Date().toISOString().slice(0, 10),
-    repaymentStartDate: new Date().toISOString().slice(0, 10),
-    revenueChangePct: 0,
-    expenseChangePct: 0,
-    oneTimeInvestment: 0,
-    ownFunds: 0,
-    seasonalSwingPct: 8,
-    baseMonthlyRevenue: financials.avgMonthlyRevenue,
-    baseMonthlyExpenses: financials.operatingExpenses,
-  })
-
-  useEffect(() => {
-    setParams((p) => ({
-      ...p,
-      amount: goal?.requiredAmount ?? p.amount,
-      baseMonthlyRevenue: financials.avgMonthlyRevenue,
-      baseMonthlyExpenses: financials.operatingExpenses,
-    }))
-  }, [goal, financials])
-
-  const result = useMemo(() => runCreditScenario(name, params), [name, params])
-
-  function patch<K extends keyof CreditScenarioParams>(key: K, value: CreditScenarioParams[K]) {
-    setParams((p) => ({ ...p, [key]: value }))
-  }
-
-  async function onSave() {
-    if (!companyId) {
-      setError('Нет компании')
-      return
-    }
-    setError(null)
-    try {
-      await persistScenario({
-        companyId,
-        name,
-        params,
-        persist: true,
-      })
-      await qc.invalidateQueries({ queryKey: ['scenarios', companyId] })
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ошибка сохранения')
-    }
-  }
+  const navigate = useNavigate()
 
   return (
-    <Box>
-      <PageHeader
-        title="Credit Scenario Lab"
-        subtitle="Стресс-тест бизнеса: платежи накладываются на прогноз cash flow."
-      />
-      <Disclaimer dense />
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
+    <Box sx={{ maxWidth: 1100, mx: 'auto', pb: 3 }}>
+      <Typography
+        sx={{
+          fontFamily: 'Manrope, sans-serif',
+          fontWeight: 800,
+          fontSize: { xs: 26, md: 28 },
+          letterSpacing: '-0.03em',
+          color: '#0B1F35',
+          mb: 0.75,
+        }}
+      >
+        Сценарии и подбор
+      </Typography>
+      <Typography
+        sx={{
+          color: '#5A6B7D',
+          fontSize: 15,
+          mb: 2.5,
+          maxWidth: 560,
+          lineHeight: 1.55,
+        }}
+      >
+        Проверьте кредит до заявки: хватит ли на платежи, не уйдёт ли счёт в минус и окупится ли
+        вложение.
+      </Typography>
 
-      <Grid container spacing={2} sx={{ mt: 1 }}>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Paper sx={{ p: 2.5 }} elevation={1}>
-            <Stack spacing={2}>
-              <TextField label="Название сценария" value={name} onChange={(e) => setName(e.target.value)} fullWidth />
-              <TextField
-                label="Сумма финансирования"
-                type="number"
-                value={params.amount}
-                onChange={(e) => patch('amount', Number(e.target.value))}
-                fullWidth
-              />
-              <Typography variant="caption">Срок: {params.termMonths} мес.</Typography>
-              <Slider
-                min={6}
-                max={84}
-                value={params.termMonths}
-                onChange={(_, v) => patch('termMonths', v as number)}
-              />
-              <Typography variant="caption">Ставка: {params.annualRate}%</Typography>
-              <Slider
-                min={10}
-                max={30}
-                step={0.5}
-                value={params.annualRate}
-                onChange={(_, v) => patch('annualRate', v as number)}
-              />
-              <Typography variant="caption">Снижение/рост выручки: {params.revenueChangePct}%</Typography>
-              <Slider
-                min={-50}
-                max={30}
-                value={params.revenueChangePct}
-                onChange={(_, v) => patch('revenueChangePct', v as number)}
-              />
-              <Typography variant="caption">Изменение расходов: {params.expenseChangePct}%</Typography>
-              <Slider
-                min={-20}
-                max={40}
-                value={params.expenseChangePct}
-                onChange={(_, v) => patch('expenseChangePct', v as number)}
-              />
-              <TextField
-                select
-                label="График"
-                value={params.scheduleType}
-                onChange={(e) => patch('scheduleType', e.target.value as ScheduleType)}
-                fullWidth
-              >
-                <MenuItem value="annuity">Аннуитет</MenuItem>
-                <MenuItem value="differentiated">Дифференцированный</MenuItem>
-              </TextField>
-              <TextField
-                label="Разовые инвестиции"
-                type="number"
-                value={params.oneTimeInvestment}
-                onChange={(e) => patch('oneTimeInvestment', Number(e.target.value))}
-                fullWidth
-              />
-              <Button variant="contained" onClick={() => void onSave()}>
-                Сохранить сценарий
-              </Button>
-              <Button
-                variant="outlined"
-                onClick={() => {
-                  setName('Стресс −20% выручки')
-                  patch('revenueChangePct', -20)
-                }}
-              >
-                Стресс: −20% выручки
-              </Button>
+      <Box
+        sx={{
+          display: 'grid',
+          gap: 1.75,
+          gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' },
+        }}
+      >
+        {SCENARIOS.map((s) => (
+          <Box
+            key={s.to}
+            component="button"
+            type="button"
+            onClick={() => navigate(s.to)}
+            sx={{
+              all: 'unset',
+              cursor: 'pointer',
+              ...tileSx,
+              display: 'flex',
+              flexDirection: 'column',
+              boxSizing: 'border-box',
+              transition: 'border-color 0.15s, box-shadow 0.15s',
+              '&:hover': {
+                borderColor: 'rgba(239,49,36,0.35)',
+                boxShadow: '0 4px 18px rgba(11,31,53,0.08)',
+              },
+            }}
+          >
+            <Box
+              sx={{
+                width: 44,
+                height: 44,
+                borderRadius: 2,
+                bgcolor: `${s.accent}14`,
+                color: s.accent,
+                display: 'grid',
+                placeItems: 'center',
+                mb: 1.75,
+              }}
+            >
+              <s.Icon sx={{ fontSize: 24 }} />
+            </Box>
+            <Typography
+              sx={{
+                fontFamily: 'Manrope, sans-serif',
+                fontWeight: 800,
+                fontSize: 17,
+                color: '#0B1F35',
+                mb: 0.75,
+                letterSpacing: '-0.02em',
+              }}
+            >
+              {s.title}
+            </Typography>
+            <Typography sx={{ fontSize: 13.5, color: '#7A8795', lineHeight: 1.45, flex: 1, mb: 2 }}>
+              {s.body}
+            </Typography>
+            <Stack direction="row" alignItems="center" spacing={0.5} sx={{ color: '#EF3124' }}>
+              <Typography sx={{ fontSize: 13.5, fontWeight: 800 }}>Открыть</Typography>
+              <ArrowForwardRoundedIcon sx={{ fontSize: 18 }} />
             </Stack>
-          </Paper>
-        </Grid>
+          </Box>
+        ))}
+      </Box>
 
-        <Grid size={{ xs: 12, md: 8 }}>
-          <Grid container spacing={2} sx={{ mb: 2 }}>
-            <Grid size={{ xs: 6, md: 3 }}>
-              <StatBlock label="Платёж в месяц" value={formatMoney(result.monthlyPayment)} accent />
-            </Grid>
-            <Grid size={{ xs: 6, md: 3 }}>
-              <StatBlock label="Денежный поток после платежа" value={formatMoney(result.cashFlowAfterPayment)} />
-            </Grid>
-            <Grid size={{ xs: 6, md: 3 }}>
-              <StatBlock label="Min остаток" value={formatMoney(result.minBalance)} />
-            </Grid>
-            <Grid size={{ xs: 6, md: 3 }}>
-              <StatBlock label="Месяцев дефицита" value={String(result.deficitMonths.length)} />
-            </Grid>
-          </Grid>
-
-          <Alert severity={result.cashFlowAfterPayment >= 0 ? 'success' : 'warning'} sx={{ mb: 2 }}>
-            {result.explanation}
-          </Alert>
-
-          <Paper sx={{ p: 2, height: 320, mb: 2 }} elevation={1}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={result.series}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
-                <YAxis tickFormatter={(v) => `${Math.round(Number(v) / 1000)}k`} />
-                <Tooltip formatter={(v) => formatMoney(Number(v))} />
-                <Legend />
-                <Line type="monotone" dataKey="balance" name="Остаток" stroke="#EF3124" dot={false} />
-                <Line type="monotone" dataKey="netFlow" name="Net flow" stroke="#0B1F35" dot={false} />
-                <Line type="monotone" dataKey="payment" name="Платёж" stroke="#D97706" dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </Paper>
-
-          {scenarios.length > 0 && (
-            <Paper sx={{ p: 2 }} elevation={1}>
-              <Typography variant="subtitle2" gutterBottom>
-                Сохранённые сценарии
-              </Typography>
-              <Stack spacing={1}>
-                {scenarios.map((s) => (
-                  <Stack key={s.id} direction="row" justifyContent="space-between">
-                    <Typography variant="body2">
-                      {s.name}: платёж {formatMoney(s.monthlyPayment)}, CF{' '}
-                      {formatMoney(s.cashFlowAfterPayment)}
-                    </Typography>
-                    <Button
-                      size="small"
-                      onClick={() => {
-                        setName(s.name)
-                        setParams(s.params)
-                      }}
-                    >
-                      Открыть
-                    </Button>
-                  </Stack>
-                ))}
-              </Stack>
-            </Paper>
-          )}
-        </Grid>
-      </Grid>
+      <Button
+        variant="contained"
+        color="primary"
+        onClick={() => navigate('/app/recommendations')}
+        sx={{
+          mt: 2.5,
+          borderRadius: 2,
+          fontWeight: 700,
+          textTransform: 'none',
+          boxShadow: 'none',
+          '&:hover': { boxShadow: 'none' },
+        }}
+      >
+        К подбору продуктов
+      </Button>
     </Box>
   )
 }

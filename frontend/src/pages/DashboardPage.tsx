@@ -12,10 +12,11 @@ import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import EventOutlinedIcon from '@mui/icons-material/EventOutlined'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import { useMemo } from 'react'
-import { Link as RouterLink } from 'react-router-dom'
+import { Link as RouterLink, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { listCompanies } from '@/api/companies'
 import { fetchReadiness } from '@/api/credit'
+import { loadLocalApps, mergeApplications } from '@/features/applications/localApps'
 import { useAuth } from '@/contexts/AuthContext'
 import { useAppStore } from '@/hooks/useAppStore'
 import { goalLabels, statusLabels } from '@/data/labels'
@@ -99,6 +100,7 @@ function monthBars(): { label: string; h: number; active?: boolean }[] {
 
 export function DashboardPage() {
   const { user, selectCompany } = useAuth()
+  const location = useLocation()
   const { company, financials, goal, apps, obligations, companyId, isLoading } = useAppStore()
 
   const companiesQ = useQuery({
@@ -107,7 +109,13 @@ export function DashboardPage() {
     enabled: Boolean(user),
   })
 
-  const activeApp = useMemo(() => pickActiveApp(apps), [apps])
+  const displayApps = useMemo(
+    () => mergeApplications(apps, loadLocalApps(companyId)),
+    // re-read localStorage when navigating back to home after submit
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [apps, companyId, location.key],
+  )
+  const activeApp = useMemo(() => pickActiveApp(displayApps), [displayApps])
   const tasks = useMemo(() => upcomingTasks(obligations), [obligations])
   const bars = useMemo(() => monthBars(), [])
 
@@ -321,7 +329,7 @@ export function DashboardPage() {
                 <Meta label="Ежемес. платёж" value={monthly ? `≈ ${shortMoney(monthly)}` : '—'} />
               </Box>
 
-              <Stack direction="row" spacing={1.25} sx={{ mb: 2.5 }}>
+              <Stack direction="row" spacing={1.25} sx={{ mb: 2.5 }} flexWrap="wrap" useFlexGap>
                 <Button
                   component={RouterLink}
                   to={`/app/applications/${activeApp.id}`}
@@ -499,7 +507,7 @@ export function DashboardPage() {
               Все
             </Button>
           </Stack>
-          {apps.length === 0 ? (
+          {displayApps.length === 0 ? (
             <Typography sx={{ color: '#8A96A3', fontSize: 13 }}>Пока нет заявок.</Typography>
           ) : (
             <Box>
@@ -519,7 +527,7 @@ export function DashboardPage() {
                   </Typography>
                 ))}
               </Box>
-              {apps.slice(0, 5).map((a) => (
+              {displayApps.slice(0, 5).map((a) => (
                 <Box
                   key={a.id}
                   component={RouterLink}

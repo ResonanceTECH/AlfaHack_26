@@ -17,12 +17,7 @@ const COLUMNS = [
   },
   {
     title: 'Разработчикам',
-    links: [
-      { label: 'Design System', to: '/design-system' },
-      { label: 'Обзор на лендинге', to: '/#design-system' },
-      { label: 'Токены и код', to: '/design-system#theme-code' },
-      { label: 'Компоненты', to: '/design-system#blocks' },
-    ],
+    links: [{ label: 'Design System', to: '/design-system' }],
   },
 ]
 

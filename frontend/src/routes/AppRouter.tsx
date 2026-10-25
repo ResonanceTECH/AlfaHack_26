@@ -24,6 +24,7 @@ import { CalculatorPage } from '@/pages/CalculatorPage'
 import { ApplicationsPage } from '@/pages/ApplicationsPage'
 import { ApplicationWizardPage } from '@/pages/ApplicationWizardPage'
 import { ApplicationDetailPage } from '@/pages/ApplicationDetailPage'
+import { ApplicationEditPage } from '@/pages/ApplicationEditPage'
 import { ManagerPage } from '@/pages/ManagerPage'
 import { StatementsPage } from '@/pages/StatementsPage'
 import { StatementUploadPage } from '@/pages/StatementUploadPage'
@@ -35,8 +36,13 @@ import { RoiPage } from '@/pages/RoiPage'
 import { CalendarPage } from '@/pages/CalendarPage'
 import { ProfilePage } from '@/pages/ProfilePage'
 import { TeamPage } from '@/pages/TeamPage'
+import { TeamInvitePage } from '@/pages/TeamInvitePage'
+import { TeamMemberPage } from '@/pages/TeamMemberPage'
+import { TeamTasksPage } from '@/pages/TeamTasksPage'
 import { HelpPage } from '@/pages/HelpPage'
-import { StubSectionPage } from '@/pages/StubSectionPage'
+import { DocumentsPage } from '@/pages/DocumentsPage'
+import { DocumentViewPage } from '@/pages/DocumentViewPage'
+import { NotificationsPage } from '@/pages/NotificationsPage'
 import type { ReactNode } from 'react'
 
 function Protected({
@@ -124,6 +130,8 @@ export function AppRouter() {
         <Route path="calculator" element={<CalculatorPage />} />
         <Route path="applications" element={<ApplicationsPage />} />
         <Route path="applications/new" element={<ApplicationWizardPage />} />
+        <Route path="applications/:id/edit" element={<ApplicationEditPage />} />
+        <Route path="applications/:id/contract" element={<DocumentViewPage />} />
         <Route path="applications/:id" element={<ApplicationDetailPage />} />
         <Route
           path="manager"
@@ -142,8 +150,13 @@ export function AppRouter() {
         <Route path="roi" element={<RoiPage />} />
         <Route path="calendar" element={<CalendarPage />} />
         <Route path="profile" element={<ProfilePage />} />
-        <Route path="documents" element={<StubSectionPage />} />
+        <Route path="notifications" element={<NotificationsPage />} />
+        <Route path="documents" element={<DocumentsPage />} />
+        <Route path="documents/:docId" element={<DocumentViewPage />} />
         <Route path="team" element={<TeamPage />} />
+        <Route path="team/invite" element={<TeamInvitePage />} />
+        <Route path="team/tasks" element={<TeamTasksPage />} />
+        <Route path="team/:memberId" element={<TeamMemberPage />} />
         <Route path="help" element={<HelpPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

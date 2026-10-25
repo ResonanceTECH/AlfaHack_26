@@ -236,7 +236,7 @@ export function StatementsPage() {
             Источник: выписка и данные бухгалтерии · период ноя 2025 – окт 2026
           </Typography>
         </Box>
-        <Stack direction="row" spacing={1.25} flexShrink={0}>
+        <Stack direction="row" spacing={1.25} flexShrink={0} flexWrap="wrap" useFlexGap>
           <Button
             variant="outlined"
             onClick={() => {

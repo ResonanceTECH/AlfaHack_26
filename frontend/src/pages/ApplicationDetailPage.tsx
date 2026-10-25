@@ -8,14 +8,16 @@ import {
   Stack,
   Typography,
 } from '@mui/material'
-import { useParams } from 'react-router-dom'
-import { useState } from 'react'
+import { Navigate, useParams } from 'react-router-dom'
+import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { PageHeader } from '@/components/common/PageHeader'
 import { EmptyState } from '@/components/common/EmptyState'
 import { getApplication, uploadApplicationDocument } from '@/api/applications'
+import { loadLocalApps } from '@/features/applications/localApps'
 import { formatMoney, formatDateTime, formatFileSize } from '@/utils/format'
 import { statusColors, statusLabels } from '@/data/labels'
+import { isEditableApplication } from '@/pages/ApplicationEditPage'
 import axios from 'axios'
 
 export function ApplicationDetailPage() {
@@ -23,16 +25,27 @@ export function ApplicationDetailPage() {
   const qc = useQueryClient()
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const editable = Boolean(id && isEditableApplication(id))
 
   const appQ = useQuery({
     queryKey: ['application', id],
     queryFn: () => getApplication(id!),
-    enabled: Boolean(id),
+    enabled: Boolean(id) && !editable,
+    retry: false,
   })
 
-  const app = appQ.data
+  const localApp = useMemo(
+    () => (id ? loadLocalApps().find((a) => a.id === id) : undefined),
+    [id, appQ.dataUpdatedAt],
+  )
 
-  if (appQ.isLoading) {
+  const app = appQ.data ?? localApp
+
+  if (editable && id) {
+    return <Navigate to={`/app/applications/${id}/edit`} replace />
+  }
+
+  if (appQ.isLoading && !localApp) {
     return (
       <Box sx={{ display: 'grid', placeItems: 'center', minHeight: 240 }}>
         <CircularProgress />

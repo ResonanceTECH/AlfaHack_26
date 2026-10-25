@@ -22,7 +22,6 @@ import {
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import NotificationsNoneRoundedIcon from '@mui/icons-material/NotificationsNoneRounded'
 import { useState, type ReactNode } from 'react'
-import { AuthFooterLink } from '@/components/auth/AuthShell'
 import { LinkExpiryTimer } from '@/components/auth/LinkExpiryTimer'
 import { PasswordField } from '@/components/auth/PasswordField'
 import { LegalFormToggle } from '@/components/onboarding/LegalFormToggle'
@@ -274,9 +273,26 @@ export function ProductKitDemos() {
       >
         <Paper
           elevation={0}
-          sx={{ p: 2.5, border: '1px solid', borderColor: 'divider', borderRadius: 2, mb: 2 }}
+          sx={{ p: 2.5, border: '1px solid', borderColor: 'divider', borderRadius: 2, mb: 2, textAlign: 'center' }}
         >
-          <AuthFooterLink prompt="Вспомнили пароль?" to="/login" label="Войти" />
+          <Typography variant="body2" color="text.secondary" sx={{ fontSize: 14 }}>
+            Вспомнили пароль?{' '}
+            <Button
+              type="button"
+              variant="text"
+              disableRipple={false}
+              sx={{
+                color: 'primary.main',
+                fontWeight: 700,
+                p: 0,
+                minWidth: 0,
+                verticalAlign: 'baseline',
+                '&:hover': { bgcolor: 'transparent', textDecoration: 'underline' },
+              }}
+            >
+              Войти
+            </Button>
+          </Typography>
         </Paper>
         <Stack direction="row" spacing={3} alignItems="center" sx={{ mb: 2 }} flexWrap="wrap" useFlexGap>
           <LinkExpiryTimer active={false} />
@@ -285,11 +301,13 @@ export function ProductKitDemos() {
           </Typography>
         </Stack>
         <CopyCode
-          code={`import { AuthFooterLink } from '@/components/auth/AuthShell'
-import { LinkExpiryTimer } from '@/components/auth/LinkExpiryTimer'
+          code={`import { LinkExpiryTimer } from '@/components/auth/LinkExpiryTimer'
 
+// В продукте — со ссылкой:
 <AuthFooterLink prompt="Вспомнили пароль?" to="/login" label="Войти" />
-<LinkExpiryTimer active resetKey={resendCount} />`}
+<LinkExpiryTimer active resetKey={resendCount} />
+
+// В UI-kit демо — кнопка без навигации (как выше на экране).`}
         />
       </Section>
 
@@ -393,15 +411,21 @@ import { LinkExpiryTimer } from '@/components/auth/LinkExpiryTimer'
         />
       </Section>
 
-      <Section id="cta-row" title="CTA patterns" lead="Частые связки кнопок в мастерах и карточках.">
+      <Section id="cta-row" title="CTA patterns" lead="Частые связки кнопок в мастерах и карточках. На этом экране без навигации.">
         <Stack direction="row" flexWrap="wrap" gap={1.5} sx={{ mb: 2 }}>
-          <Button variant="contained">Продолжить</Button>
-          <Button variant="outlined">Назад</Button>
-          <Button variant="text">Пропустить</Button>
-          <Button variant="contained" color="secondary">
+          <Button type="button" variant="contained">
+            Продолжить
+          </Button>
+          <Button type="button" variant="outlined">
+            Назад
+          </Button>
+          <Button type="button" variant="text">
+            Пропустить
+          </Button>
+          <Button type="button" variant="contained" color="secondary">
             Сохранить черновик
           </Button>
-          <Button variant="outlined" color="error">
+          <Button type="button" variant="outlined" color="error">
             Отклонить
           </Button>
         </Stack>
