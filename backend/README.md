@@ -1,4 +1,4 @@
-# Backend — Alfa Business Credit API
+# Backend — Линия решения API
 
 FastAPI: auth/RBAC, компании, финансы, подбор кредитов, калькулятор, заявки, менеджер, выписки, прогноз, readiness, ROI, AI-консультант.
 

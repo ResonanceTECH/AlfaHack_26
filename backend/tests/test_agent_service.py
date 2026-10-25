@@ -157,7 +157,7 @@ def test_http_cannot_select_analyst_role_or_read_foreign_data(api_client):
 
 
 def test_http_product_selection_and_invalid_amount(api_client, monkeypatch):
-    from test_credit_agent import PRODUCTS
+    from tests.test_credit_agent import PRODUCTS
     client, _, _ = api_client
     monkeypatch.setattr(agent_service, "catalog_products", lambda db: PRODUCTS)
     response = client.post("/api/v1/companies/company/ai/product-selection",

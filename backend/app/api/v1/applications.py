@@ -7,13 +7,15 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
-from app.core.enums import ApplicationStatus, ProductStatus
+from app.core.enums import ApplicationStatus, ProductStatus, UserRole
 from app.deps import CorrelationId, CurrentUser, DbDep
 from app.models.application import ApplicationComment, CreditApplication
 from app.models.credit import CreditProduct
 from app.models.funding import FundingNeed
 from app.schemas.application import (
     ApplicationChecksOut,
+    ApplicationCommentCreate,
+    ApplicationCreate,
     ApplicationDocumentsOut,
     ApplicationDraftCreate,
     ApplicationDraftCreated,
@@ -22,7 +24,9 @@ from app.schemas.application import (
     ApplicationSubmitOut,
     ApplicationUpdate,
     ApplicationValidationOut,
+    CommentOut,
     DecisionOut,
+    DocsRequestIn,
     DocumentMetaOut,
     DocumentRequestOut,
     DocumentRequestRespondIn,
@@ -33,6 +37,7 @@ from app.schemas.application import (
     PublicCheckOut,
     ReasonCodeOut,
     RequiredDocumentSlot,
+    StatusUpdate,
     ValidationIssue,
 )
 from app.schemas.finance_p1 import AgreementConfirmIn, AgreementConfirmOut, AgreementOut
@@ -46,6 +51,8 @@ from app.services.access import (
     ANALYST_ROLES,
     require_application_access,
     require_company_access,
+    require_roles,
+    resolve_company_id,
 )
 from app.services.applications import (
     create_draft,
@@ -58,10 +65,12 @@ from app.services.audit import write_audit
 from app.services.decisions import (
     accept_offer,
     decline_offer,
+    ensure_decision_for_status,
     serialize_offer,
     serialize_public_decision,
 )
 from app.services.documents import (
+    create_document_request,
     list_documents_bundle,
     resolve_download_path,
     respond_document_request,
@@ -69,7 +78,8 @@ from app.services.documents import (
     serialize_document_request,
     upload_document as store_application_document,
 )
-from app.services.workflow import public_checks, serialize_check
+from app.services.notifications import notify
+from app.services.workflow import public_checks, serialize_check, transition_application
 
 router = APIRouter(tags=["applications"])
 
@@ -382,7 +392,19 @@ def submit_company_application(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Заявка не найдена")
     require_application_access(db, user, app, write=True)
 
-    if app.status not in (ApplicationStatus.DRAFT, ApplicationStatus.DOCS_REQUESTED, ApplicationStatus.SUBMITTED):
+    # Идемпотентный повтор (тот же Idempotency-Key) допускается из любого
+    # пост-submit статуса — логика в submit_draft. Первичная отправка — только из черновика / docs.
+    form = dict(app.form_data or {})
+    is_idempotent_replay = bool(
+        idempotency_key and form.get("submit_idempotency_key") == idempotency_key
+    )
+    if not is_idempotent_replay and app.status not in (
+        ApplicationStatus.DRAFT,
+        ApplicationStatus.DOCS_REQUESTED,
+        ApplicationStatus.SUBMITTED,
+        ApplicationStatus.VALIDATING,
+        ApplicationStatus.IN_REVIEW,
+    ):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Заявку нельзя отправить из текущего статуса")
 
     try:
@@ -442,6 +464,105 @@ def application_public_checks(
         application_id=app.id,
         status=app.status,
         checks=[PublicCheckOut(**serialize_check(c)) for c in public_checks(app)],
+    )
+
+
+@router.get(
+    "/companies/{company_id}/applications/{application_id}/comments",
+    response_model=list[CommentOut],
+)
+def list_application_comments(
+    company_id: str, application_id: str, db: DbDep, user: CurrentUser
+) -> list[CommentOut]:
+    """Публичная переписка по заявке (без внутренних заметок банка)."""
+    app = _company_app(db, company_id, application_id, user)
+    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    comments = sorted(
+        [c for c in (app.comments or []) if not c.is_internal],
+        key=lambda c: c.created_at or epoch,
+    )
+    return [
+        CommentOut(
+            id=c.id,
+            author_id=c.author_id,
+            author_name=c.author_name or "",
+            author_role=c.author_role or "",
+            text=c.text,
+            created_at=c.created_at,
+            is_internal=False,
+        )
+        for c in comments
+    ]
+
+
+@router.post(
+    "/companies/{company_id}/applications/{application_id}/comments",
+    response_model=CommentOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def post_application_comment(
+    company_id: str,
+    application_id: str,
+    body: ApplicationCommentCreate,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+) -> CommentOut:
+    """Сообщение предпринимателя / сотрудника компании банку."""
+    require_company_access(db, user, company_id, write=True)
+    app = _load_app(db, application_id)
+    if app.company_id != company_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Заявка не найдена")
+    require_application_access(db, user, app, write=True)
+
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Пустой текст")
+
+    comment = ApplicationComment(
+        application_id=app.id,
+        author_id=user.id,
+        author_name=user.full_name,
+        author_role=user.role.value,
+        text=text,
+        is_internal=False,
+    )
+    db.add(comment)
+
+    analyst_id = app.assigned_analyst_id or app.assigned_manager_id
+    if analyst_id:
+        notify(
+            db,
+            user_id=analyst_id,
+            type="CLIENT_MESSAGE",
+            title="Сообщение от клиента по заявке",
+            body=text[:240],
+            payload={
+                "application_id": app.id,
+                "company_id": app.company_id,
+                "comment_id": comment.id,
+            },
+        )
+
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="application_comment",
+        entity_id=app.id,
+        action="create",
+        details={"preview": text[:120]},
+        correlation_id=cid,
+    )
+    db.commit()
+    db.refresh(comment)
+    return CommentOut(
+        id=comment.id,
+        author_id=comment.author_id,
+        author_name=comment.author_name or "",
+        author_role=comment.author_role or "",
+        text=comment.text,
+        created_at=comment.created_at,
+        is_internal=False,
     )
 
 
@@ -774,7 +895,6 @@ def download_application_agreement(
         },
     )
 
-
 @router.post(
     "/companies/{company_id}/applications/{application_id}/agreement/confirm",
     response_model=AgreementConfirmOut,
@@ -810,3 +930,194 @@ def confirm_application_agreement(
         confirmed_at=conf.confirmed_at,
     )
 
+# --- Legacy + analyst ---
+
+
+@router.post("/applications", response_model=ApplicationOut, status_code=201, deprecated=True)
+def create_application(
+    body: ApplicationCreate, db: DbDep, user: CurrentUser, cid: CorrelationId
+) -> ApplicationOut:
+    draft = create_company_application(
+        company_id=body.company_id,
+        body=ApplicationDraftCreate(
+            funding_need_id=body.funding_need_id,
+            product_id=body.product_id,
+            requested_amount=body.amount,
+            term_months=body.term_months,
+            rate=body.rate,
+            purpose=body.purpose,
+            goal_type=body.goal_type,
+            currency=body.currency,
+        ),
+        db=db,
+        user=user,
+        cid=cid,
+        idempotency_key=body.idempotency_key,
+    )
+    return ApplicationOut(**serialize_application(_load_app(db, draft.id)))
+
+
+@router.get("/applications", response_model=list[ApplicationOut], deprecated=True)
+def list_my_applications(
+    db: DbDep,
+    user: CurrentUser,
+    company_id: str | None = Query(default=None, alias="companyId"),
+) -> list[ApplicationOut]:
+    if user.role in ANALYST_ROLES:
+        q = (
+            select(CreditApplication)
+            .options(
+                joinedload(CreditApplication.documents),
+                joinedload(CreditApplication.comments),
+                joinedload(CreditApplication.assigned_manager),
+            )
+            .where(CreditApplication.status != ApplicationStatus.DRAFT)
+        )
+        if company_id:
+            require_company_access(db, user, company_id)
+            q = q.where(CreditApplication.company_id == company_id)
+        apps = db.scalars(q.order_by(CreditApplication.updated_at.desc())).unique().all()
+        return [ApplicationOut(**serialize_application(a)) for a in apps]
+
+    if user.role == UserRole.ENTREPRENEUR:
+        cid = resolve_company_id(db, user, company_id)
+        # нельзя звать FastAPI-handler с Query()-дефолтом как обычную функцию —
+        # иначе status_filter = Query(...) и SQLAlchemy падает LookupError
+        return list_company_applications(company_id=cid, db=db, user=user, status_filter=None)
+
+    raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Недостаточно прав")
+
+
+@router.get("/applications/{application_id}", response_model=ApplicationOut, deprecated=True)
+def get_application(application_id: str, db: DbDep, user: CurrentUser) -> ApplicationOut:
+    app = _load_app(db, application_id)
+    require_application_access(db, user, app)
+    return ApplicationOut(**serialize_application(app))
+
+
+@router.patch("/applications/{application_id}", response_model=ApplicationOut, deprecated=True)
+def update_application(
+    application_id: str, body: ApplicationUpdate, db: DbDep, user: CurrentUser, cid: CorrelationId
+) -> ApplicationOut:
+    app = _load_app(db, application_id)
+    return patch_company_application(app.company_id, application_id, body, db, user, cid)
+
+
+@router.post("/applications/{application_id}/submit", response_model=ApplicationOut, deprecated=True)
+def submit_application(
+    application_id: str,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> ApplicationOut:
+    app = _load_app(db, application_id)
+    submit_company_application(app.company_id, application_id, db, user, cid, idempotency_key)
+    return ApplicationOut(**serialize_application(_load_app(db, application_id)))
+
+
+@router.post("/applications/{application_id}/documents", response_model=ApplicationOut, deprecated=True)
+async def upload_document(
+    application_id: str,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+    file: UploadFile = File(...),
+    document_type: str = Form(default="OTHER"),
+) -> ApplicationOut:
+    app = _load_app(db, application_id)
+    await upload_company_document(
+        company_id=app.company_id,
+        application_id=application_id,
+        db=db,
+        user=user,
+        cid=cid,
+        file=file,
+        doc_type=document_type,
+        document_request_id=None,
+    )
+    return ApplicationOut(**serialize_application(_load_app(db, application_id)))
+
+
+@router.patch("/applications/{application_id}/status", response_model=ApplicationOut)
+def change_status(
+    application_id: str, body: StatusUpdate, db: DbDep, user: CurrentUser, cid: CorrelationId
+) -> ApplicationOut:
+    require_roles(user, UserRole.ANALYST)
+    app = _load_app(db, application_id)
+
+    if body.idempotency_key and app.status == body.status:
+        return ApplicationOut(**serialize_application(app))
+
+    if app.assigned_manager_id is None:
+        app.assigned_manager_id = user.id
+    if app.assigned_analyst_id is None:
+        app.assigned_analyst_id = user.id
+
+    transition_application(
+        db,
+        app,
+        body.status,
+        actor=user,
+        comment=body.comment,
+    )
+    # При decision-статусах сразу публикуем демо decision + offers
+    ensure_decision_for_status(db, app, body.status, user)
+
+    if body.comment:
+        db.add(
+            ApplicationComment(
+                application_id=app.id,
+                author_id=user.id,
+                author_name=user.full_name,
+                author_role=user.role.value,
+                text=body.comment,
+            )
+        )
+
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="application",
+        entity_id=app.id,
+        action="status_change",
+        details={"status": body.status.value},
+        correlation_id=cid,
+    )
+    db.commit()
+    return ApplicationOut(**serialize_application(_load_app(db, app.id)))
+
+
+@router.post("/applications/{application_id}/request-documents", response_model=ApplicationOut)
+def request_documents(
+    application_id: str, body: DocsRequestIn, db: DbDep, user: CurrentUser, cid: CorrelationId
+) -> ApplicationOut:
+    require_roles(user, UserRole.ANALYST)
+    app = _load_app(db, application_id)
+    create_document_request(
+        db,
+        app=app,
+        analyst=user,
+        doc_type=body.document_type,
+        comment=body.comment,
+    )
+    db.add(
+        ApplicationComment(
+            application_id=app.id,
+            author_id=user.id,
+            author_name=user.full_name,
+            author_role=user.role.value,
+            text=body.comment or f"Запрошен документ: {body.document_type}",
+        )
+    )
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="application",
+        entity_id=app.id,
+        action="request_documents",
+        details={"document_type": body.document_type},
+        correlation_id=cid,
+    )
+    db.commit()
+    return ApplicationOut(**serialize_application(_load_app(db, app.id)))

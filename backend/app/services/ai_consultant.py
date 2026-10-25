@@ -62,7 +62,7 @@ def generate_reply(
             {"label": "Индекс готовности", "path": "/app/readiness"},
             {"label": "Оформить заявку", "path": "/app/applications"},
         ]
-        sources = ["Каталог продуктов Alfa Credit (демо)"]
+        sources = ["Каталог продуктов Линия решения (демо)"]
     elif detected_goal:
         label = GOAL_LABELS.get(detected_goal, detected_goal)
         suitable = [
@@ -127,7 +127,7 @@ def generate_reply(
     else:
         who = f" для {company_name}" if company_name else ""
         content = (
-            f"Я AI-консультант Alfa Credit{who}. Могу:\n"
+            f"Я AI-консультант Линии решения{who}. Могу:\n"
             "• помочь сформулировать бизнес-цель и сумму потребности;\n"
             "• объяснить продукты из каталога (со ссылкой на условия);\n"
             "• направить к подбору, сценариям и заявке.\n\n"
@@ -138,7 +138,7 @@ def generate_reply(
             {"label": "Бизнес-цель", "path": "/app/goals"},
             {"label": "AI-чат", "path": "/app/ai"},
         ]
-        sources = ["Alfa Credit demo catalog"]
+        sources = ["Линия решения demo catalog"]
 
     return {
         "id": str(uuid4()),

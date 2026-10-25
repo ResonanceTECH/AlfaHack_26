@@ -2,7 +2,6 @@ import {
   Accordion,
   AccordionDetails,
   AccordionSummary,
-  Avatar,
   Box,
   Button,
   InputAdornment,
@@ -15,11 +14,17 @@ import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined'
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
+import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined'
+import TaskAltOutlinedIcon from '@mui/icons-material/TaskAltOutlined'
+import ChatOutlinedIcon from '@mui/icons-material/ChatOutlined'
+import PolicyOutlinedIcon from '@mui/icons-material/PolicyOutlined'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '@/contexts/AuthContext'
+import { isAnalystRole } from '@/features/analyst/roles'
 
 const tileSx = {
   bgcolor: '#fff',
@@ -48,7 +53,9 @@ type Category = {
   icon: ReactNode
 }
 
-const CATEGORIES: Category[] = [
+type Faq = { id: string; q: string; a: string; tags: string[] }
+
+const ENT_CATEGORIES: Category[] = [
   {
     id: 'apps',
     title: 'Заявка и статусы',
@@ -75,9 +82,34 @@ const CATEGORIES: Category[] = [
   },
 ]
 
-type Faq = { id: string; q: string; a: string; tags: string[] }
+const ANALYST_CATEGORIES: Category[] = [
+  {
+    id: 'queue',
+    title: 'Очередь и статусы',
+    meta: 'разбор заявок',
+    icon: <DescriptionOutlinedIcon sx={{ fontSize: 22, color: '#EF3124' }} />,
+  },
+  {
+    id: 'checks',
+    title: 'Проверки и документы',
+    meta: 'checks · requests',
+    icon: <FactCheckOutlinedIcon sx={{ fontSize: 22, color: '#EF3124' }} />,
+  },
+  {
+    id: 'decision',
+    title: 'Решение',
+    meta: 'одобрить / отклонить',
+    icon: <TaskAltOutlinedIcon sx={{ fontSize: 22, color: '#EF3124' }} />,
+  },
+  {
+    id: 'policy',
+    title: 'Политика доступа',
+    meta: 'роли и видимость',
+    icon: <PolicyOutlinedIcon sx={{ fontSize: 22, color: '#EF3124' }} />,
+  },
+]
 
-const FAQ: Faq[] = [
+const ENT_FAQ: Faq[] = [
   {
     id: 'f1',
     q: 'Что значит «предварительное решение»?',
@@ -87,7 +119,7 @@ const FAQ: Faq[] = [
   {
     id: 'f2',
     q: 'Почему банк предложил сумму меньше запрошенной?',
-    a: 'Сумма зависит от выручки, долговой нагрузки и цели кредита. Можно уточнить условия у менеджера или подать заявку на другой продукт.',
+    a: 'Сумма зависит от выручки, долговой нагрузки и цели кредита. Можно уточнить условия в чате с банком или подать заявку на другой продукт.',
     tags: ['заявка', 'сумма'],
   },
   {
@@ -116,28 +148,97 @@ const FAQ: Faq[] = [
   },
 ]
 
-const DOCS = [
+const ANALYST_FAQ: Faq[] = [
+  {
+    id: 'a1',
+    q: 'Как взять заявку в работу?',
+    a: 'Откройте карточку из очереди или «Мои заявки» и нажмите «Взять в работу». Заявка закрепится за вами.',
+    tags: ['очередь', 'назначение'],
+  },
+  {
+    id: 'a2',
+    q: 'Какие решения можно вынести?',
+    a: 'Одобрить (с оффером клиенту), отклонить, предложить контрусловия по сумме/сроку/ставке или запросить дополнительную информацию.',
+    tags: ['решение', 'статусы'],
+  },
+  {
+    id: 'a3',
+    q: 'Почему нельзя одобрить заявку?',
+    a: 'Пока открыты запросы документов или есть замечания по проверкам, одобрение недоступно. Закройте замечания, выберите другое решение или подтвердите одобрение несмотря на замечания.',
+    tags: ['решение', 'проверки'],
+  },
+  {
+    id: 'a4',
+    q: 'Как запросить документы у клиента?',
+    a: 'Вкладка «Документы» → тип и комментарий → «Запросить». Клиент увидит запрос в карточке заявки и сможет загрузить файл.',
+    tags: ['документы', 'очередь'],
+  },
+  {
+    id: 'a5',
+    q: 'Где ответить клиенту на вопрос?',
+    a: 'Вкладка «Чат с клиентом» в карточке заявки. Публичные сообщения видит предприниматель; внутренние заметки — только банк.',
+    tags: ['чат', 'клиент'],
+  },
+  {
+    id: 'a6',
+    q: 'Что видит клиент, а что только банк?',
+    a: 'Клиенту доступны публичные проверки, офферы и сообщения. Внутренние проверки и служебные комментарии остаются только в кабинете аналитика.',
+    tags: ['политика', 'проверки'],
+  },
+]
+
+const ENT_DOCS = [
   { id: 'd1', title: 'Тарифы и комиссии' },
   { id: 'd2', title: 'Политика обработки данных' },
   { id: 'd3', title: 'Инструкция по выписке из 1С' },
 ]
 
+const ANALYST_DOCS = [
+  { id: 'd1', title: 'Кредитная политика CP-2026.10' },
+  { id: 'd2', title: 'Регламент запроса документов' },
+  { id: 'd3', title: 'Роли: аналитик и риск' },
+]
+
+function matchCategory(item: Faq, category: string | null, analyst: boolean): boolean {
+  if (!category) return true
+  if (analyst) {
+    if (category === 'queue' && !item.tags.some((t) => ['очередь', 'назначение', 'статусы'].includes(t)))
+      return false
+    if (category === 'checks' && !item.tags.some((t) => ['проверки', 'документы'].includes(t)))
+      return false
+    if (category === 'decision' && !item.tags.some((t) => ['решение', 'статусы'].includes(t)))
+      return false
+    if (category === 'policy' && !item.tags.some((t) => ['политика', 'чат', 'клиент'].includes(t)))
+      return false
+    return true
+  }
+  if (category === 'apps' && !item.tags.some((t) => ['заявка', 'статусы', 'решение', 'сумма'].includes(t)))
+    return false
+  if (category === 'docs' && !item.tags.includes('документы')) return false
+  if (category === 'pay' && !item.tags.some((t) => ['платежи', 'график'].includes(t))) return false
+  if (category === 'sec' && !item.tags.some((t) => ['безопасность', 'компания'].includes(t)))
+    return false
+  return true
+}
+
 export function HelpPage() {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const analyst = isAnalystRole(user?.role)
+
+  const categories = analyst ? ANALYST_CATEGORIES : ENT_CATEGORIES
+  const faq = analyst ? ANALYST_FAQ : ENT_FAQ
+  const docs = analyst ? ANALYST_DOCS : ENT_DOCS
+
   const [query, setQuery] = useState('')
   const [applied, setApplied] = useState('')
-  const [expanded, setExpanded] = useState<string | false>('f1')
+  const [expanded, setExpanded] = useState<string | false>(analyst ? 'a1' : 'f1')
   const [category, setCategory] = useState<string | null>(null)
 
   const filtered = useMemo(() => {
     const q = applied.trim().toLowerCase()
-    return FAQ.filter((item) => {
-      if (category === 'apps' && !item.tags.some((t) => ['заявка', 'статусы', 'решение', 'сумма'].includes(t)))
-        return false
-      if (category === 'docs' && !item.tags.includes('документы')) return false
-      if (category === 'pay' && !item.tags.some((t) => ['платежи', 'график'].includes(t))) return false
-      if (category === 'sec' && !item.tags.some((t) => ['безопасность', 'компания'].includes(t)))
-        return false
+    return faq.filter((item) => {
+      if (!matchCategory(item, category, analyst)) return false
       if (!q) return true
       return (
         item.q.toLowerCase().includes(q) ||
@@ -145,15 +246,15 @@ export function HelpPage() {
         item.tags.some((t) => t.includes(q))
       )
     })
-  }, [applied, category])
+  }, [applied, category, faq, analyst])
 
   function runSearch() {
     const q = query.trim().toLowerCase()
     setApplied(query)
     setCategory(null)
     const first = q
-      ? FAQ.find((item) => item.q.toLowerCase().includes(q) || item.a.toLowerCase().includes(q))
-      : FAQ[0]
+      ? faq.find((item) => item.q.toLowerCase().includes(q) || item.a.toLowerCase().includes(q))
+      : faq[0]
     setExpanded(first?.id ?? false)
   }
 
@@ -173,13 +274,19 @@ export function HelpPage() {
           Помощь и вопросы
         </Typography>
         <Typography sx={{ color: '#7A8795', fontSize: 14, mt: 0.6, mb: 2 }}>
-          Ответы про кредиты, документы и сроки рассмотрения
+          {analyst
+            ? 'Регламент разбора заявок, проверок, решений и переписки с клиентом'
+            : 'Ответы про кредиты, документы и сроки рассмотрения'}
         </Typography>
 
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
           <TextField
             fullWidth
-            placeholder="Например: какие документы нужны для заявки?"
+            placeholder={
+              analyst
+                ? 'Например: как запросить документы у клиента?'
+                : 'Например: какие документы нужны для заявки?'
+            }
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
@@ -220,7 +327,6 @@ export function HelpPage() {
         </Stack>
       </Box>
 
-      {/* Categories */}
       <Box
         sx={{
           display: 'grid',
@@ -229,7 +335,7 @@ export function HelpPage() {
           mb: 2.5,
         }}
       >
-        {CATEGORIES.map((c) => {
+        {categories.map((c) => {
           const active = category === c.id
           return (
             <Box
@@ -275,7 +381,6 @@ export function HelpPage() {
           alignItems: 'start',
         }}
       >
-        {/* FAQ */}
         <Box>
           <Typography
             sx={{
@@ -292,7 +397,9 @@ export function HelpPage() {
             {filtered.length === 0 && (
               <Box sx={tileSx}>
                 <Typography sx={{ color: '#9AA5B1', fontSize: 14 }}>
-                  Ничего не найдено — попробуйте другой запрос или напишите менеджеру.
+                  {analyst
+                    ? 'Ничего не найдено — попробуйте другой запрос или откройте регламент справа.'
+                    : 'Ничего не найдено — попробуйте другой запрос или напишите в чат банка.'}
                 </Typography>
               </Box>
             )}
@@ -307,9 +414,7 @@ export function HelpPage() {
                   onChange={(_, v) => setExpanded(v ? item.id : false)}
                   sx={{
                     borderRadius: '12px !important',
-                    border: open
-                      ? '1.5px solid #EF3124'
-                      : '1px solid rgba(11,31,53,0.06)',
+                    border: open ? '1.5px solid #EF3124' : '1px solid rgba(11,31,53,0.06)',
                     bgcolor: '#fff',
                     boxShadow: '0 1px 8px rgba(11,31,53,0.04)',
                     '&:before': { display: 'none' },
@@ -346,73 +451,103 @@ export function HelpPage() {
           </Stack>
         </Box>
 
-        {/* Sidebar */}
         <Stack spacing={2}>
-          <Box sx={tileSx}>
-            <Typography
-              sx={{
-                fontFamily: 'Manrope, sans-serif',
-                fontWeight: 800,
-                fontSize: 16,
-                color: '#0B1F35',
-                mb: 1.75,
-              }}
-            >
-              Связаться с банком
-            </Typography>
-            <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 2 }}>
-              <Avatar
+          {analyst ? (
+            <Box sx={tileSx}>
+              <Typography
                 sx={{
-                  width: 44,
-                  height: 44,
-                  bgcolor: '#EF3124',
-                  fontSize: 14,
+                  fontFamily: 'Manrope, sans-serif',
                   fontWeight: 800,
+                  fontSize: 16,
+                  color: '#0B1F35',
+                  mb: 1,
                 }}
               >
-                ИА
-              </Avatar>
-              <Box sx={{ minWidth: 0 }}>
-                <Typography sx={{ fontSize: 14, fontWeight: 750, color: '#0B1F35', lineHeight: 1.25 }}>
-                  Иванова А.С.
-                </Typography>
-                <Typography sx={{ fontSize: 12, color: '#9AA5B1', mt: 0.25 }}>
-                  Ваш менеджер · отвечает за 1 час
-                </Typography>
-              </Box>
-            </Stack>
-            <Stack spacing={1.1}>
-              <Button
-                fullWidth
-                variant="contained"
-                color="primary"
-                onClick={() => navigate('/app/ai')}
+                Быстрые действия
+              </Typography>
+              <Typography sx={{ fontSize: 13, color: '#7A8795', mb: 1.75, lineHeight: 1.45 }}>
+                Персонального менеджера нет — рабочий контур: очередь, карточка заявки и чат с
+                клиентом.
+              </Typography>
+              <Stack spacing={1.1}>
+                <Button
+                  fullWidth
+                  variant="contained"
+                  color="primary"
+                  onClick={() => navigate('/app/analyst')}
+                  sx={{
+                    borderRadius: 2,
+                    fontWeight: 700,
+                    textTransform: 'none',
+                    py: 1.1,
+                    boxShadow: 'none',
+                    '&:hover': { boxShadow: 'none' },
+                  }}
+                >
+                  К очереди заявок
+                </Button>
+                <Button
+                  fullWidth
+                  variant="outlined"
+                  startIcon={<ChatOutlinedIcon sx={{ fontSize: 18 }} />}
+                  sx={{ ...outlineBtn, py: 1.05 }}
+                  onClick={() => navigate('/app/analyst/mine')}
+                >
+                  Мои заявки / чат в карточке
+                </Button>
+              </Stack>
+              <Typography sx={{ fontSize: 12.5, color: '#9AA5B1', mt: 1.75, lineHeight: 1.45 }}>
+                Внутренняя поддержка платформы: helpdesk@alfa.demo
+                <br />
+                Пн–Пт 9:00–20:00
+              </Typography>
+            </Box>
+          ) : (
+            <Box sx={tileSx}>
+              <Typography
                 sx={{
-                  borderRadius: 2,
-                  fontWeight: 700,
-                  textTransform: 'none',
-                  py: 1.1,
-                  boxShadow: 'none',
-                  '&:hover': { boxShadow: 'none' },
+                  fontFamily: 'Manrope, sans-serif',
+                  fontWeight: 800,
+                  fontSize: 16,
+                  color: '#0B1F35',
+                  mb: 1.75,
                 }}
               >
-                Написать в чат
-              </Button>
-              <Button
-                fullWidth
-                variant="outlined"
-                sx={{ ...outlineBtn, py: 1.05 }}
-                href="tel:88000000000"
-              >
-                Заказать звонок
-              </Button>
-            </Stack>
-            <Typography sx={{ fontSize: 12.5, color: '#9AA5B1', mt: 1.75, lineHeight: 1.45 }}>
-              8 800 000-00-00
-              <br />
-              Пн–Пт 9:00–20:00 · Сб 10:00–16:00
-            </Typography>
-          </Box>
+                Связаться с банком
+              </Typography>
+              <Stack spacing={1.1}>
+                <Button
+                  fullWidth
+                  variant="contained"
+                  color="primary"
+                  onClick={() => navigate('/app/ai?new=manager')}
+                  sx={{
+                    borderRadius: 2,
+                    fontWeight: 700,
+                    textTransform: 'none',
+                    py: 1.1,
+                    boxShadow: 'none',
+                    '&:hover': { boxShadow: 'none' },
+                  }}
+                >
+                  Написать в чат
+                </Button>
+                <Button
+                  fullWidth
+                  variant="outlined"
+                  sx={{ ...outlineBtn, py: 1.05 }}
+                  href="tel:88000000000"
+                >
+                  Заказать звонок
+                </Button>
+              </Stack>
+              <Typography sx={{ fontSize: 12.5, color: '#9AA5B1', mt: 1.75, lineHeight: 1.45 }}>
+                8 800 000-00-00
+                <br />
+                Пн–Пт 9:00–20:00 · Сб 10:00–16:00
+              </Typography>
+            </Box>
+          )}
 
           <Box sx={tileSx}>
             <Typography
@@ -424,10 +559,10 @@ export function HelpPage() {
                 mb: 1.25,
               }}
             >
-              Документы и тарифы
+              {analyst ? 'Регламенты' : 'Документы и тарифы'}
             </Typography>
             <Stack spacing={0}>
-              {DOCS.map((d, i) => (
+              {docs.map((d, i) => (
                 <Stack
                   key={d.id}
                   direction="row"
@@ -435,11 +570,10 @@ export function HelpPage() {
                   spacing={1.25}
                   sx={{
                     py: 1.2,
-                    borderBottom: i < DOCS.length - 1 ? '1px solid rgba(11,31,53,0.06)' : 0,
+                    borderBottom: i < docs.length - 1 ? '1px solid rgba(11,31,53,0.06)' : 0,
                     cursor: 'pointer',
                     '&:hover .doc-title': { color: '#EF3124' },
                   }}
-                  onClick={() => undefined}
                 >
                   <PictureAsPdfOutlinedIcon sx={{ fontSize: 20, color: '#EF3124' }} />
                   <Typography

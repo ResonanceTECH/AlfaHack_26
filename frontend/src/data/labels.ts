@@ -42,11 +42,15 @@ export const productTypeLabels: Record<ProductType, string> = {
 
 export const statusLabels: Record<ApplicationStatus, string> = {
   draft: 'Черновик',
-  submitted: 'Отправлена',
-  in_review: 'На рассмотрении',
-  docs_requested: 'Запрос документов',
-  approved: 'Одобрена',
-  rejected: 'Отклонена',
+  submitted: 'Заявка обрабатывается',
+  validating: 'Заявка обрабатывается',
+  in_review: 'Заявка рассматривается аналитиком',
+  docs_requested: 'Нужны дополнительные данные или документы',
+  approved: 'Предварительно одобрено',
+  counteroffered: 'Предложены другие условия',
+  offer_accepted: 'Оферта принята',
+  agreement_preparation: 'Подготовка договора',
+  rejected: 'Получен отказ',
   issued: 'Выдана',
 }
 
@@ -56,9 +60,13 @@ export const statusColors: Record<
 > = {
   draft: 'default',
   submitted: 'info',
+  validating: 'info',
   in_review: 'primary',
   docs_requested: 'warning',
   approved: 'success',
+  counteroffered: 'warning',
+  offer_accepted: 'success',
+  agreement_preparation: 'success',
   rejected: 'error',
   issued: 'success',
 }
@@ -66,6 +74,7 @@ export const statusColors: Record<
 export const roleLabels: Record<UserRole, string> = {
   entrepreneur: 'Предприниматель',
   accountant: 'Бухгалтер',
+  analyst: 'Кредитный аналитик',
   manager: 'Кредитный менеджер',
   risk_analyst: 'Риск-аналитик',
   admin: 'Администратор',

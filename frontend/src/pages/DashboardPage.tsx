@@ -12,10 +12,12 @@ import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import EventOutlinedIcon from '@mui/icons-material/EventOutlined'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import { useMemo } from 'react'
-import { Link as RouterLink } from 'react-router-dom'
+import { Link as RouterLink, Navigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { fetchApplicationOffers, isLiveOffer } from '@/api/applications'
 import { listCompanies } from '@/api/companies'
 import { fetchReadiness } from '@/api/credit'
+import { loadLocalApps, mergeApplications } from '@/features/applications/localApps'
 import { useAuth } from '@/contexts/AuthContext'
 import { useAppStore } from '@/hooks/useAppStore'
 import { goalLabels, statusLabels } from '@/data/labels'
@@ -37,19 +39,35 @@ function pipelineStep(status: ApplicationStatus): number {
   switch (status) {
     case 'draft':
     case 'submitted':
+    case 'validating':
       return 0
     case 'docs_requested':
       return 1
     case 'in_review':
       return 2
     case 'approved':
+    case 'counteroffered':
       return 3
+    case 'offer_accepted':
+    case 'agreement_preparation':
     case 'rejected':
     case 'issued':
       return 4
     default:
       return 0
   }
+}
+
+function pipelineDone(status: ApplicationStatus, index: number, current: number): boolean {
+  if (index < current) return true
+  if (index !== current) return false
+  return [
+    'approved',
+    'counteroffered',
+    'offer_accepted',
+    'agreement_preparation',
+    'issued',
+  ].includes(status)
 }
 
 function greeting(): string {
@@ -68,7 +86,16 @@ function estimateMonthly(amount: number, termMonths: number, annualRate: number)
 
 function pickActiveApp(apps: CreditApplication[]): CreditApplication | null {
   const active = apps.find((a) =>
-    ['submitted', 'in_review', 'docs_requested', 'approved'].includes(a.status),
+    [
+      'submitted',
+      'validating',
+      'in_review',
+      'docs_requested',
+      'approved',
+      'counteroffered',
+      'offer_accepted',
+      'agreement_preparation',
+    ].includes(a.status),
   )
   return active ?? apps.find((a) => a.status === 'draft') ?? apps[0] ?? null
 }
@@ -99,15 +126,22 @@ function monthBars(): { label: string; h: number; active?: boolean }[] {
 
 export function DashboardPage() {
   const { user, selectCompany } = useAuth()
+  const location = useLocation()
   const { company, financials, goal, apps, obligations, companyId, isLoading } = useAppStore()
 
   const companiesQ = useQuery({
     queryKey: ['companies'],
     queryFn: listCompanies,
-    enabled: Boolean(user),
+    enabled: Boolean(user) && user?.role !== 'admin',
   })
 
-  const activeApp = useMemo(() => pickActiveApp(apps), [apps])
+  const displayApps = useMemo(
+    () => mergeApplications(apps, loadLocalApps(companyId)),
+    // re-read localStorage when navigating back to home after submit
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [apps, companyId, location.key],
+  )
+  const activeApp = useMemo(() => pickActiveApp(displayApps), [displayApps])
   const tasks = useMemo(() => upcomingTasks(obligations), [obligations])
   const bars = useMemo(() => monthBars(), [])
 
@@ -118,8 +152,31 @@ export function DashboardPage() {
         companyId: companyId!,
         applicationId: activeApp?.id,
       }),
-    enabled: Boolean(companyId),
+    enabled: Boolean(companyId) && user?.role !== 'admin',
   })
+
+  const offersQ = useQuery({
+    queryKey: ['application', activeApp?.id, 'offers', companyId],
+    queryFn: () => fetchApplicationOffers(companyId!, activeApp!.id),
+    enabled: Boolean(companyId && activeApp?.id) && user?.role !== 'admin',
+    retry: false,
+  })
+
+  const bankOffer = useMemo(() => {
+    const list = offersQ.data ?? []
+    return list.find((o) => isLiveOffer(o)) ?? null
+  }, [offersQ.data])
+
+  if (user?.role === 'admin') {
+    return <Navigate to="/app/admin" replace />
+  }
+  if (
+    user?.role === 'analyst' ||
+    user?.role === 'manager' ||
+    user?.role === 'risk_analyst'
+  ) {
+    return <Navigate to="/app/analyst" replace />
+  }
 
   if (isLoading) {
     return (
@@ -155,9 +212,11 @@ export function DashboardPage() {
       ? financials.liabilities / financials.avgMonthlyRevenue
       : 0
   const step = activeApp ? pipelineStep(activeApp.status) : -1
-  const offerAmount = activeApp ? Math.round(activeApp.amount * 0.6) : 0
-  const monthly = activeApp
-    ? estimateMonthly(offerAmount || activeApp.amount, activeApp.termMonths, activeApp.rate || 17.9)
+  const offerAmount = bankOffer?.amount ?? null
+  const offerRate = bankOffer?.rate ?? null
+  const monthly = bankOffer
+    ? bankOffer.monthlyPayment ||
+      estimateMonthly(bankOffer.amount, bankOffer.termMonths, bankOffer.rate || 0)
     : 0
   const firstName = user?.fullName.split(' ')[0] ?? ''
   const appCode = activeApp
@@ -312,16 +371,29 @@ export function DashboardPage() {
                 <Meta
                   label="Предложение банка"
                   value={
-                    activeApp.rate
-                      ? `${shortMoney(offerAmount)} · ${activeApp.rate.toFixed(1)}%`
-                      : shortMoney(offerAmount)
+                    offersQ.isLoading
+                      ? '…'
+                      : bankOffer && offerAmount != null
+                        ? offerRate != null
+                          ? `${shortMoney(offerAmount)} · ${offerRate.toFixed(1)}%`
+                          : shortMoney(offerAmount)
+                        : 'Нет предложения'
                   }
-                  accent
+                  accent={Boolean(bankOffer)}
                 />
-                <Meta label="Ежемес. платёж" value={monthly ? `≈ ${shortMoney(monthly)}` : '—'} />
+                <Meta
+                  label="Ежемес. платёж"
+                  value={
+                    offersQ.isLoading
+                      ? '…'
+                      : bankOffer && monthly
+                        ? `≈ ${shortMoney(monthly)}`
+                        : '—'
+                  }
+                />
               </Box>
 
-              <Stack direction="row" spacing={1.25} sx={{ mb: 2.5 }}>
+              <Stack direction="row" spacing={1.25} sx={{ mb: 2.5 }} flexWrap="wrap" useFlexGap>
                 <Button
                   component={RouterLink}
                   to={`/app/applications/${activeApp.id}`}
@@ -378,9 +450,7 @@ export function DashboardPage() {
             Подберите кредит под цель бизнеса
           </Typography>
           <Typography sx={{ fontSize: 13, color: 'rgba(255,255,255,0.82)', lineHeight: 1.4, mb: 2 }}>
-            {goal
-              ? `${goalLabels[goal.goalType]} · нужно ${formatMoney(goal.requiredAmount)}`
-              : 'Сравните условия и оформите заявку за несколько шагов'}
+            Умный помощник подскажет
           </Typography>
           <Stack direction="row" spacing={1} sx={{ mt: 'auto' }} flexWrap="wrap" useFlexGap>
             <Button
@@ -499,7 +569,7 @@ export function DashboardPage() {
               Все
             </Button>
           </Stack>
-          {apps.length === 0 ? (
+          {displayApps.length === 0 ? (
             <Typography sx={{ color: '#8A96A3', fontSize: 13 }}>Пока нет заявок.</Typography>
           ) : (
             <Box>
@@ -519,7 +589,7 @@ export function DashboardPage() {
                   </Typography>
                 ))}
               </Box>
-              {apps.slice(0, 5).map((a) => (
+              {displayApps.slice(0, 5).map((a) => (
                 <Box
                   key={a.id}
                   component={RouterLink}
@@ -667,8 +737,16 @@ function Pipeline({ current, status }: { current: number; status: ApplicationSta
     <Box sx={{ mt: 'auto' }}>
       <Stack direction="row" alignItems="flex-start" spacing={0.5}>
         {labels.map((label, i) => {
-          const done = i < current || (i === current && ['approved', 'issued'].includes(status))
-          const active = i === current && !['approved', 'issued', 'rejected'].includes(status)
+          const done = pipelineDone(status, i, current)
+          const settled = [
+            'approved',
+            'counteroffered',
+            'offer_accepted',
+            'agreement_preparation',
+            'issued',
+            'rejected',
+          ].includes(status)
+          const active = i === current && !settled
           const failed = status === 'rejected' && i === current
           return (
             <Box key={label} sx={{ flex: 1, minWidth: 0 }}>

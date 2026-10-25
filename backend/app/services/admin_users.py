@@ -65,6 +65,7 @@ def serialize_admin_user(user: User, *, company_ids: list[str] | None = None) ->
         "company_ids": company_ids,
         "last_login_at": user.last_login_at,
         "created_at": user.created_at,
+        "mfa_enabled": bool(getattr(user, "mfa_enabled", False)),
     }
 
 
@@ -228,7 +229,7 @@ def patch_user(db: Session, user: User, patch: dict[str, Any]) -> User:
             email=patch.get("email"),
             exclude_id=user.id,
         )
-    for key in ("login", "email", "phone", "full_name", "role", "status", "is_active"):
+    for key in ("login", "email", "phone", "full_name", "role", "status", "is_active", "mfa_enabled"):
         if key in patch and patch[key] is not None:
             setattr(user, key, patch[key])
     if "status" in patch and patch["status"] is not None:
@@ -315,6 +316,8 @@ def list_members(db: Session, company_id: str) -> list[dict[str, Any]]:
                 "email": u.email if u else None,
                 "login": u.login if u else None,
                 "user_role": u.role if u else None,
+                "status": u.status if u else None,
+                "last_login_at": u.last_login_at if u else None,
                 "permissions": m.permissions or {},
                 "created_at": m.created_at,
             }

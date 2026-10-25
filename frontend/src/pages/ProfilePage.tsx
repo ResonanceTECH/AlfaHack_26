@@ -9,11 +9,15 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import { useMemo, useState } from 'react'
+import axios from 'axios'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { listSessions, patchMe, revokeSession, type UserSession } from '@/api/auth'
 import { listCompanies } from '@/api/companies'
 import { useAuth } from '@/contexts/AuthContext'
+import { LogoutConfirmDialog } from '@/components/common/LogoutConfirmDialog'
+import { isAnalystRole } from '@/features/analyst/roles'
 
 const tileSx = {
   bgcolor: '#fff',
@@ -52,80 +56,184 @@ function initials(name?: string): string {
   return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || '·'
 }
 
-type Session = {
-  id: string
-  device: string
-  place: string
-  current?: boolean
+function apiError(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err)) {
+    const detail = err.response?.data?.detail
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail)) {
+      return detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join('; ')
+    }
+  }
+  if (err instanceof Error) return err.message
+  return fallback
 }
 
-const DEMO_SESSIONS: Session[] = [
-  { id: 's1', device: 'MacBook · Chrome', place: 'Москва · сейчас', current: true },
-  { id: 's2', device: 'iPhone · приложение', place: 'Москва · 22.10 18:20' },
-  { id: 's3', device: 'Windows · Edge', place: 'Москва · 19.10 09:44' },
-]
+function formatSessionPlace(s: UserSession): string {
+  if (s.current) return 'сейчас'
+  if (s.createdAt) {
+    const d = new Date(s.createdAt)
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    }
+  }
+  if (s.expiresAt) {
+    const d = new Date(s.expiresAt)
+    if (!Number.isNaN(d.getTime())) {
+      return `до ${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}`
+    }
+  }
+  return ''
+}
+
+function defaultsForRole(role?: string) {
+  if (role === 'admin') {
+    return {
+      fullName: 'Елена Васильева',
+      phone: '+7 (495) 755-58-58',
+      email: 'admin@demo.alfa',
+      position: 'Администратор',
+    }
+  }
+  if (isAnalystRole(role)) {
+    return {
+      fullName: 'Анна Соколова',
+      phone: '+7 (495) 788-88-78',
+      email: 'analyst@demo.alfa',
+      position: 'Аналитик',
+    }
+  }
+  return {
+    fullName: 'Миронов Сергей Павлович',
+    phone: '+7 (916) 482-14-20',
+    email: 'sergey.mironov@kofeplus.demo',
+    position: 'Генеральный директор',
+  }
+}
 
 export function ProfilePage() {
-  const { user, logout } = useAuth()
+  const { user, logout, logoutAll, setUserFromSession } = useAuth()
   const navigate = useNavigate()
+  const qc = useQueryClient()
+  const isAdmin = user?.role === 'admin'
+  const isBank = isAnalystRole(user?.role)
+  const defaults = defaultsForRole(user?.role)
 
   const companiesQ = useQuery({
     queryKey: ['companies'],
     queryFn: listCompanies,
-    enabled: Boolean(user),
+    enabled: Boolean(user) && !isAdmin && !isBank,
   })
 
   const company =
     companiesQ.data?.find((c) => c.id === user?.companyId) ?? companiesQ.data?.[0] ?? null
 
-  const roleLabel =
+  const membershipLabel =
     company?.membershipRole === 'OWNER'
       ? 'владелец'
       : company?.membershipRole === 'VIEWER'
         ? 'наблюдатель'
         : 'участник'
 
-  const [fullName, setFullName] = useState(
-    () => user?.fullName || 'Миронов Сергей Павлович',
-  )
-  const [phone, setPhone] = useState(() => user?.phone || '+7 (916) 482-14-20')
-  const [email, setEmail] = useState(
-    () => user?.email || 'sergey.mironov@kofeplus.demo',
-  )
+  const [fullName, setFullName] = useState(() => user?.fullName || defaults.fullName)
+  const [phone, setPhone] = useState(() => user?.phone || defaults.phone)
+  const [email, setEmail] = useState(() => user?.email || defaults.email)
   const [language, setLanguage] = useState('ru')
-  const [position, setPosition] = useState('Генеральный директор')
+  const [position, setPosition] = useState(defaults.position)
+  const [department, setDepartment] = useState(
+    isAdmin ? 'Администрирование платформы' : isBank ? 'Малый и средний бизнес · кредиты' : '',
+  )
+  const [desk, setDesk] = useState('МСБ · оборотные / инвестиционные')
+  const [limit, setLimit] = useState('до 20 млн ₽')
   const [savedFlash, setSavedFlash] = useState(false)
 
-  const [twoFa, setTwoFa] = useState(true)
+  const [twoFa, setTwoFa] = useState(() => Boolean(user?.mfaEnabled))
   const [biometry, setBiometry] = useState(false)
   const [notifyDevice, setNotifyDevice] = useState(true)
-  const [sessions, setSessions] = useState(DEMO_SESSIONS)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [logoutOpen, setLogoutOpen] = useState(false)
+
+  const sessionsQ = useQuery({
+    queryKey: ['auth', 'sessions'],
+    queryFn: listSessions,
+    enabled: Boolean(user),
+  })
+  const sessions = (sessionsQ.data ?? []).filter((s) => !s.revoked)
+
+  // Если роль банк/админ — не оставляем предпринимательские дефолты («Генеральный директор» и т.п.)
+  useEffect(() => {
+    if (!user) return
+    const d = defaultsForRole(user.role)
+    if (user.fullName) setFullName(user.fullName)
+    if (user.email) setEmail(user.email)
+    if (user.phone) setPhone(user.phone)
+    if (user.mfaEnabled != null) setTwoFa(user.mfaEnabled)
+    if (isAnalystRole(user.role) || user.role === 'admin') {
+      setPosition(d.position)
+      setDepartment(
+        user.role === 'admin' ? 'Администрирование платформы' : 'Малый и средний бизнес · кредиты',
+      )
+    }
+  }, [user?.id, user?.role, user?.fullName, user?.email, user?.phone, user?.mfaEnabled])
 
   const subtitle = useMemo(() => {
+    if (isAdmin || isBank) return null
     const name = fullName.trim() || 'Пользователь'
-    const companyPart = company?.name ? `${roleLabel} ${company.name}` : null
+    const companyPart = company?.name ? `${membershipLabel} ${company.name}` : null
     return companyPart ? `${name} · ${companyPart}` : name
-  }, [fullName, company?.name, roleLabel])
+  }, [fullName, company?.name, membershipLabel, isAdmin, isBank])
+
+  const stayPath = isAdmin ? '/app/admin' : isBank ? '/app/analyst' : '/app'
 
   function doLogout() {
+    setLogoutOpen(false)
     logout()
     navigate('/login')
   }
 
+  async function doLogoutAll() {
+    await logoutAll()
+    navigate('/login')
+  }
+
+  const saveM = useMutation({
+    mutationFn: () =>
+      patchMe({
+        fullName: fullName.trim(),
+        phone: phone.trim() || undefined,
+        email: email.trim() || undefined,
+      }),
+    onSuccess: (next) => {
+      setUserFromSession({
+        ...user!,
+        ...next,
+        companyId: user?.companyId ?? next.companyId,
+      })
+      setSaveError(null)
+      setSavedFlash(true)
+      window.setTimeout(() => setSavedFlash(false), 1800)
+    },
+    onError: (err) => setSaveError(apiError(err, 'Не удалось сохранить профиль')),
+  })
+
+  const revokeM = useMutation({
+    mutationFn: (id: string) => revokeSession(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['auth', 'sessions'] })
+    },
+  })
+
   function saveProfile() {
-    const next = {
-      ...user!,
-      fullName: fullName.trim(),
-      phone: phone.trim() || undefined,
-      email: email.trim() || undefined,
-    }
-    localStorage.setItem('alfa_user', JSON.stringify(next))
-    setSavedFlash(true)
-    window.setTimeout(() => setSavedFlash(false), 1800)
+    if (!user) return
+    saveM.mutate()
   }
 
   function killSession(id: string) {
-    setSessions((list) => list.filter((s) => s.id !== id))
+    revokeM.mutate(id)
   }
 
   return (
@@ -150,9 +258,15 @@ export function ProfilePage() {
           >
             Профиль пользователя
           </Typography>
-          <Typography sx={{ color: '#7A8795', fontSize: 14, mt: 0.6 }}>{subtitle}</Typography>
+          {subtitle && (
+            <Typography sx={{ color: '#7A8795', fontSize: 14, mt: 0.6 }}>{subtitle}</Typography>
+          )}
         </Box>
-        <Button variant="outlined" onClick={doLogout} sx={{ ...outlineBtn, alignSelf: 'flex-start' }}>
+        <Button
+          variant="outlined"
+          onClick={() => setLogoutOpen(true)}
+          sx={{ ...outlineBtn, alignSelf: 'flex-start' }}
+        >
           Выйти
         </Button>
       </Stack>
@@ -257,10 +371,49 @@ export function ProfilePage() {
                     value={position}
                     onChange={(e) => setPosition(e.target.value)}
                     sx={fieldSx}
+                    helperText={
+                      isAdmin
+                        ? 'Администратор системы'
+                        : isBank
+                          ? 'Кредитный аналитик'
+                          : undefined
+                    }
                   />
+                  {(isAdmin || isBank) && (
+                    <TextField
+                      label="Подразделение"
+                      fullWidth
+                      value={department}
+                      onChange={(e) => setDepartment(e.target.value)}
+                      sx={fieldSx}
+                    />
+                  )}
+                  {isBank && (
+                    <>
+                      <TextField
+                        label="Рабочий стол"
+                        fullWidth
+                        value={desk}
+                        onChange={(e) => setDesk(e.target.value)}
+                        sx={fieldSx}
+                      />
+                      <TextField
+                        label="Лимит согласования"
+                        fullWidth
+                        value={limit}
+                        onChange={(e) => setLimit(e.target.value)}
+                        sx={fieldSx}
+                      />
+                    </>
+                  )}
                 </Box>
 
                 <Stack direction="row" justifyContent="flex-end" alignItems="center" spacing={1.5} sx={{ mt: 2 }}>
+                  {saveError && (
+                    <Typography sx={{ fontSize: 13, color: '#C41E14', fontWeight: 600 }}>
+                      {saveError}
+                    </Typography>
+                  )}
                   {savedFlash && (
                     <Typography sx={{ fontSize: 13, color: '#1B8A5A', fontWeight: 600 }}>
                       Сохранено
@@ -270,6 +423,7 @@ export function ProfilePage() {
                     variant="contained"
                     color="primary"
                     onClick={saveProfile}
+                    disabled={saveM.isPending}
                     sx={{
                       borderRadius: 2,
                       fontWeight: 700,
@@ -280,7 +434,7 @@ export function ProfilePage() {
                       '&:hover': { boxShadow: 'none' },
                     }}
                   >
-                    Сохранить
+                    {saveM.isPending ? 'Сохранение…' : 'Сохранить'}
                   </Button>
                 </Stack>
               </Box>
@@ -346,7 +500,7 @@ export function ProfilePage() {
               fullWidth
               variant="outlined"
               sx={{ ...outlineBtn, mt: 2, py: 1.05 }}
-              onClick={doLogout}
+              onClick={() => void doLogoutAll()}
             >
               Выйти на всех устройствах
             </Button>
@@ -355,6 +509,39 @@ export function ProfilePage() {
 
         {/* ——— Right ——— */}
         <Stack spacing={2}>
+          {isBank && (
+            <Box sx={tileSx}>
+              <Typography
+                sx={{
+                  fontFamily: 'Manrope, sans-serif',
+                  fontWeight: 800,
+                  fontSize: 16,
+                  color: '#0B1F35',
+                  mb: 1.25,
+                }}
+              >
+                Доступ аналитика
+              </Typography>
+              <Stack spacing={1.1}>
+                {[
+                  ['Политика', 'CP-2026.10'],
+                  ['Права', 'Просмотр и решение по заявкам'],
+                  ['Очередь', 'Назначенные и свободные'],
+                  ['Кабинет', 'Аналитик'],
+                ].map(([k, v]) => (
+                  <Stack key={k} direction="row" justifyContent="space-between" spacing={1.5}>
+                    <Typography sx={{ fontSize: 13, color: '#8A96A3' }}>{k}</Typography>
+                    <Typography
+                      sx={{ fontSize: 13, fontWeight: 650, color: '#0B1F35', textAlign: 'right' }}
+                    >
+                      {v}
+                    </Typography>
+                  </Stack>
+                ))}
+              </Stack>
+            </Box>
+          )}
+
           <Box sx={tileSx}>
             <Typography
               sx={{
@@ -368,6 +555,16 @@ export function ProfilePage() {
               Активные сеансы
             </Typography>
             <Stack spacing={0}>
+              {sessionsQ.isLoading && (
+                <Typography sx={{ fontSize: 13, color: '#9AA5B1', py: 1 }}>
+                  Загрузка сеансов…
+                </Typography>
+              )}
+              {!sessionsQ.isLoading && sessions.length === 0 && (
+                <Typography sx={{ fontSize: 13, color: '#9AA5B1', py: 1 }}>
+                  Нет активных сеансов
+                </Typography>
+              )}
               {sessions.map((s, i) => (
                 <Stack
                   key={s.id}
@@ -385,10 +582,10 @@ export function ProfilePage() {
                     <Typography
                       sx={{ fontSize: 13.5, fontWeight: 700, color: '#0B1F35', lineHeight: 1.3 }}
                     >
-                      {s.device}
+                      {s.deviceInfo}
                     </Typography>
                     <Typography sx={{ fontSize: 12, color: '#9AA5B1', mt: 0.3 }}>
-                      {s.place}
+                      {formatSessionPlace(s)}
                     </Typography>
                   </Box>
                   {s.current ? (
@@ -410,6 +607,7 @@ export function ProfilePage() {
                   ) : (
                     <Button
                       size="small"
+                      disabled={revokeM.isPending}
                       onClick={() => killSession(s.id)}
                       sx={{
                         color: '#EF3124',
@@ -443,13 +641,16 @@ export function ProfilePage() {
               Выход из аккаунта
             </Typography>
             <Typography sx={{ fontSize: 13.5, color: '#7A8795', lineHeight: 1.45, mb: 2 }}>
-              Несохранённые данные заявок сохранятся как черновик. Сессия на этом устройстве
-              будет завершена.
+              {isAdmin
+                ? 'Сессия администратора на этом устройстве будет завершена. Доступ к консоли и аудиту закроется до повторного входа.'
+                : isBank
+                  ? 'Сессия аналитика будет завершена. Открытые карточки заявок сохранят статус на сервере.'
+                  : 'Несохранённые данные заявок сохранятся как черновик. Сессия на этом устройстве будет завершена.'}
             </Typography>
             <Stack direction="row" spacing={1.25} sx={{ mb: 1.5 }}>
               <Button
                 variant="contained"
-                onClick={doLogout}
+                onClick={() => setLogoutOpen(true)}
                 sx={{
                   borderRadius: 2,
                   fontWeight: 700,
@@ -462,14 +663,22 @@ export function ProfilePage() {
               >
                 Выйти
               </Button>
-              <Button variant="outlined" sx={outlineBtn} onClick={() => navigate('/app')}>
+              <Button variant="outlined" sx={outlineBtn} onClick={() => navigate(stayPath)}>
                 Остаться
               </Button>
             </Stack>
-            <Typography sx={{ fontSize: 12, color: '#9AA5B1' }}>Подтверждение выхода</Typography>
+            <Typography sx={{ fontSize: 12, color: '#9AA5B1' }}>
+              Перед выходом спросим подтверждение
+            </Typography>
           </Box>
         </Stack>
       </Box>
+
+      <LogoutConfirmDialog
+        open={logoutOpen}
+        onClose={() => setLogoutOpen(false)}
+        onConfirm={doLogout}
+      />
     </Box>
   )
 }

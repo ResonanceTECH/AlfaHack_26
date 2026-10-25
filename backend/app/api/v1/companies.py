@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
@@ -11,8 +12,10 @@ from app.deps import CorrelationId, CurrentUser, DbDep
 from app.models.company import Company, CompanyMember, RegistrySnapshot
 from app.models.finance import FinancialObligation, FinancialSnapshot
 from app.models.funding import FundingNeed, FundingNeedItem
+from app.schemas.common import MessageOut
 from app.schemas.company import (
     CompanyCreate,
+    CompanyDocumentOut,
     CompanyListItem,
     CompanyOut,
     CompanyUpdate,
@@ -47,7 +50,15 @@ from app.services.access import (
     resolve_company_id,
 )
 from app.services.audit import write_audit
+from app.services.company_documents import (
+    create_document,
+    delete_document,
+    list_documents,
+    require_document,
+    serialize_document,
+)
 from app.services.dashboard import build_dashboard
+from app.services.documents import resolve_download_path
 from app.services.funding import (
     costs_from_items,
     load_need,
@@ -731,3 +742,116 @@ def delete_funding_need_item(
     )
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/companies/{company_id}/documents", response_model=list[CompanyDocumentOut])
+def company_documents(
+    company_id: str,
+    db: DbDep,
+    user: CurrentUser,
+    category: str | None = None,
+    status_filter: str | None = Query(default=None, alias="status"),
+    q: str | None = None,
+) -> list[CompanyDocumentOut]:
+    require_company_access(db, user, company_id)
+    rows = list_documents(db, company_id, category=category, status=status_filter, q=q)
+    return [CompanyDocumentOut(**serialize_document(d)) for d in rows]
+
+
+@router.post(
+    "/companies/{company_id}/documents",
+    response_model=CompanyDocumentOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_company_document(
+    company_id: str,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+    title: str = Form(...),
+    category: str = Form(...),
+    file: UploadFile | None = File(default=None),
+) -> CompanyDocumentOut:
+    require_company_access(db, user, company_id, write=True)
+    content = await file.read() if file is not None else None
+    filename = file.filename if file is not None else None
+    content_type = file.content_type if file is not None else None
+    doc = create_document(
+        db,
+        company_id=company_id,
+        user=user,
+        title=title,
+        category=category,
+        content=content,
+        filename=filename,
+        content_type=content_type,
+    )
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="company_document",
+        entity_id=doc.id,
+        action="document_create",
+        details={"title": title, "category": category, "status": doc.status},
+        correlation_id=cid,
+        company_id=company_id,
+    )
+    db.commit()
+    db.refresh(doc)
+    return CompanyDocumentOut(**serialize_document(doc))
+
+
+@router.get("/companies/{company_id}/documents/{doc_id}", response_model=CompanyDocumentOut)
+def get_company_document(
+    company_id: str, doc_id: str, db: DbDep, user: CurrentUser
+) -> CompanyDocumentOut:
+    require_company_access(db, user, company_id)
+    doc = require_document(db, company_id, doc_id)
+    return CompanyDocumentOut(**serialize_document(doc))
+
+
+@router.get("/companies/{company_id}/documents/{doc_id}/download")
+def download_company_document(
+    company_id: str, doc_id: str, db: DbDep, user: CurrentUser
+) -> Response:
+    require_company_access(db, user, company_id)
+    doc = require_document(db, company_id, doc_id)
+    path = resolve_download_path(doc)  # type: ignore[arg-type]
+    if path is None:
+        body = (
+            f"Demo stub for company document {doc.id}\n"
+            f"title={doc.title}\n"
+            f"category={doc.category}\n"
+        ).encode("utf-8")
+        return Response(
+            content=body,
+            media_type="text/plain; charset=utf-8",
+            headers={
+                "Content-Disposition": f'attachment; filename="stub-{doc_id[:8]}.txt"',
+            },
+        )
+    return FileResponse(
+        path,
+        filename=doc.file_name or doc.title or path.name,
+        media_type=doc.mime_type or "application/octet-stream",
+    )
+
+
+@router.delete("/companies/{company_id}/documents/{doc_id}", response_model=MessageOut)
+def delete_company_document(
+    company_id: str, doc_id: str, db: DbDep, user: CurrentUser, cid: CorrelationId
+) -> MessageOut:
+    require_company_access(db, user, company_id, write=True)
+    doc = require_document(db, company_id, doc_id)
+    delete_document(db, doc)
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="company_document",
+        entity_id=doc_id,
+        action="document_delete",
+        correlation_id=cid,
+        company_id=company_id,
+    )
+    db.commit()
+    return MessageOut(message="ok")

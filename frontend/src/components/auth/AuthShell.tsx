@@ -2,6 +2,7 @@ import { Box, Link as MuiLink, Stack, Typography } from '@mui/material'
 import type { ReactNode } from 'react'
 import { Link as RouterLink } from 'react-router-dom'
 import buildingsImg from '@/assets/alfa-buildings.png'
+import { AlfaLogo } from '@/components/landing/AlfaLogo'
 
 type AuthShellProps = {
   title: string
@@ -43,37 +44,8 @@ export function AuthShell({ title, subtitle, beforeTitle, children, footer }: Au
             flexDirection: 'column',
           }}
         >
-          <Box
-            component={RouterLink}
-            to="/"
-            sx={{
-              textDecoration: 'none',
-              width: 'fit-content',
-              mb: 4,
-              height: 28,
-              '&:hover': { opacity: 0.85 },
-            }}
-          >
-            <Typography
-              sx={{
-                color: '#EF3124',
-                fontWeight: 700,
-                fontSize: 17,
-                letterSpacing: '-0.02em',
-                lineHeight: 1.1,
-              }}
-            >
-              Альфа Банк
-            </Typography>
-            <Box
-              sx={{
-                width: 40,
-                height: 3,
-                bgcolor: '#EF3124',
-                borderRadius: 1,
-                mt: 0.4,
-              }}
-            />
+          <Box sx={{ mb: 4, width: 'fit-content' }}>
+            <AlfaLogo ink compact />
           </Box>
 
           {beforeTitle ? <Box sx={{ mb: 2 }}>{beforeTitle}</Box> : null}

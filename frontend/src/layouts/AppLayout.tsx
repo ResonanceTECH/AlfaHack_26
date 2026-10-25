@@ -23,6 +23,7 @@ import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded'
 import HomeRoundedIcon from '@mui/icons-material/HomeRounded'
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import AccountBalanceRoundedIcon from '@mui/icons-material/AccountBalanceRounded'
+import AccountBalanceWalletRoundedIcon from '@mui/icons-material/AccountBalanceWalletRounded'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
 import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded'
@@ -33,11 +34,34 @@ import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded'
 import SupportAgentRoundedIcon from '@mui/icons-material/SupportAgentRounded'
 import NotificationsNoneRoundedIcon from '@mui/icons-material/NotificationsNoneRounded'
 import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded'
+import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
+import PolicyRoundedIcon from '@mui/icons-material/PolicyRounded'
+import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
+import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
+import ViewListRoundedIcon from '@mui/icons-material/ViewListRounded'
+import FolderSharedRoundedIcon from '@mui/icons-material/FolderSharedRounded'
+import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded'
+import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded'
+import BarChartRoundedIcon from '@mui/icons-material/BarChartRounded'
+import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
+import ShieldRoundedIcon from '@mui/icons-material/ShieldRounded'
+import CenterFocusStrongRoundedIcon from '@mui/icons-material/CenterFocusStrongRounded'
+import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
+import PersonRoundedIcon from '@mui/icons-material/PersonRounded'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { fetchAnalystQueue } from '@/api/analyst'
 import { listCompanies } from '@/api/companies'
+import { listNotifications } from '@/api/notifications'
 import { useAuth } from '@/contexts/AuthContext'
+import { AlfaMark } from '@/components/landing/AlfaLogo'
+import {
+  isAnalystCaseUuid,
+  readLastAnalystCaseId,
+  writeLastAnalystCaseId,
+} from '@/features/analyst/lastCase'
+import { isAnalystRole } from '@/features/analyst/roles'
 
 const DRAWER_WIDTH = 260
 const RAIL_WIDTH = 72
@@ -68,7 +92,7 @@ const entrepreneurGroups: NavGroup[] = [
       { to: '/app/recommendations', label: 'Подбор', icon: <TuneRoundedIcon sx={iconSx} /> },
       {
         to: '/app/scenarios',
-        label: 'Сценарии и расчёты',
+        label: 'Сценарии и подбор',
         icon: <InsightsRoundedIcon sx={iconSx} />,
       },
     ],
@@ -94,14 +118,103 @@ const entrepreneurGroups: NavGroup[] = [
   },
 ]
 
-const managerGroups: NavGroup[] = [
+function buildAnalystGroups(caseId: string): NavGroup[] {
+  const base = caseId ? `/app/analyst/cases/${caseId}` : '/app/analyst'
+  return [
+    {
+      title: 'Рабочий стол',
+      items: [
+        {
+          to: '/app/analyst',
+          label: 'Очередь заявок',
+          icon: <ViewListRoundedIcon sx={iconSx} />,
+          end: true,
+        },
+        {
+          to: '/app/analyst/mine',
+          label: 'Мои заявки',
+          icon: <FolderSharedRoundedIcon sx={iconSx} />,
+        },
+        {
+          to: '/app/analyst/workflow',
+          label: 'Рабочий процесс и SLA',
+          icon: <ScheduleRoundedIcon sx={iconSx} />,
+        },
+      ],
+    },
+    {
+      title: 'Заявка',
+      items: [
+        { to: base, label: 'Обзор', icon: <GridViewRoundedIcon sx={iconSx} />, end: true },
+        { to: `${base}/company`, label: 'Компания', icon: <ApartmentRoundedIcon sx={iconSx} /> },
+        { to: `${base}/finance`, label: 'Финансы', icon: <BarChartRoundedIcon sx={iconSx} /> },
+        { to: `${base}/documents`, label: 'Документы', icon: <TopicRoundedIcon sx={iconSx} /> },
+        { to: `${base}/checks`, label: 'Проверки', icon: <FactCheckRoundedIcon sx={iconSx} /> },
+        { to: `${base}/risks`, label: 'Риски', icon: <ShieldRoundedIcon sx={iconSx} /> },
+        {
+          to: `${base}/explainability`,
+          label: 'Объяснимость',
+          icon: <CenterFocusStrongRoundedIcon sx={iconSx} />,
+        },
+        { to: `${base}/ai`, label: 'Чат с клиентом', icon: <AutoAwesomeRoundedIcon sx={iconSx} /> },
+        { to: `${base}/decision`, label: 'Решение', icon: <TaskAltRoundedIcon sx={iconSx} /> },
+        { to: `${base}/history`, label: 'История', icon: <HistoryRoundedIcon sx={iconSx} /> },
+      ],
+    },
+    {
+      title: 'Сервис',
+      items: [
+        { to: '/app/help', label: 'Помощь', icon: <SupportAgentRoundedIcon sx={iconSx} /> },
+        { to: '/app/profile', label: 'Профиль', icon: <PersonRoundedIcon sx={iconSx} /> },
+      ],
+    },
+  ]
+}
+
+const adminGroups: NavGroup[] = [
   {
-    title: 'Работа',
+    title: 'Система',
     items: [
       {
-        to: '/app/manager',
-        label: 'Очередь заявок',
-        icon: <AssignmentRoundedIcon sx={iconSx} />,
+        to: '/app/admin',
+        label: 'Обзор',
+        icon: <DashboardRoundedIcon sx={iconSx} />,
+        end: true,
+      },
+      {
+        to: '/app/admin/analytics',
+        label: 'Аналитика конвейера',
+        icon: <InsightsRoundedIcon sx={iconSx} />,
+      },
+    ],
+  },
+  {
+    title: 'Кредитный конвейер',
+    items: [
+      {
+        to: '/app/admin/products',
+        label: 'Каталог продуктов',
+        icon: <AccountBalanceWalletRoundedIcon sx={iconSx} />,
+      },
+      {
+        to: '/app/admin/policy',
+        label: 'Кредитная политика',
+        icon: <PolicyRoundedIcon sx={iconSx} />,
+      },
+    ],
+  },
+  {
+    title: 'Администрирование',
+    items: [
+      {
+        to: '/app/admin/users',
+        label: 'Пользователи и роли',
+        icon: <ManageAccountsRoundedIcon sx={iconSx} />,
+      },
+      {
+        to: '/app/admin/audit',
+        label: 'Аудит изменений',
+        icon: <HistoryRoundedIcon sx={iconSx} />,
       },
     ],
   },
@@ -113,39 +226,6 @@ function initials(name?: string): string {
   return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || '·'
 }
 
-function AlfaMark({ size = 32 }: { size?: number }) {
-  return (
-    <Box
-      aria-hidden
-      sx={{
-        width: size,
-        height: size,
-        borderRadius: 1.25,
-        bgcolor: '#EF3124',
-        display: 'grid',
-        placeItems: 'center',
-        flexShrink: 0,
-      }}
-    >
-      <Box
-        component="span"
-        sx={{
-          color: '#fff',
-          fontFamily: 'Manrope, sans-serif',
-          fontWeight: 800,
-          fontSize: size * 0.55,
-          lineHeight: 1,
-          letterSpacing: '-0.04em',
-          borderBottom: '2px solid #fff',
-          pb: '1px',
-        }}
-      >
-        A
-      </Box>
-    </Box>
-  )
-}
-
 function pageTitle(pathname: string): string {
   if (pathname === '/app/profile') return 'Профиль'
   if (pathname === '/app/company/inn-check') return 'Проверка ИНН'
@@ -155,9 +235,54 @@ function pageTitle(pathname: string): string {
   if (pathname === '/app/recommendations/budget') return 'Бюджет цели'
   if (pathname === '/app/recommendations/results') return 'Результаты подбора'
   if (pathname === '/app/compare') return 'Сравнение кредитов'
-  const flat = [...entrepreneurGroups, ...managerGroups].flatMap((g) => g.items)
+  if (pathname === '/app/team/invite') return 'Пригласить сотрудника'
+  if (pathname === '/app/team/tasks') return 'Совместные задачи'
+  if (pathname.startsWith('/app/team/') && pathname !== '/app/team/invite') {
+    return 'Участник'
+  }
+  if (pathname === '/app/notifications' || pathname === '/app/admin/notifications') {
+    return 'Уведомления'
+  }
+  if (pathname === '/app/scenarios') return 'Сценарии и подбор'
+  if (pathname === '/app/calculator') return 'Кредитный калькулятор'
+  if (pathname === '/app/forecast') return 'Прогноз денежных средств'
+  if (pathname === '/app/roi') return 'Окупаемость проекта'
+  if (pathname === '/app/readiness') return 'Индекс готовности'
+  if (pathname.endsWith('/edit') && pathname.startsWith('/app/applications/')) {
+    return 'Редактирование заявки'
+  }
+  if (pathname.endsWith('/contract') && pathname.startsWith('/app/applications/')) {
+    return 'Договор'
+  }
+  if (pathname.startsWith('/app/documents/') && pathname !== '/app/documents') {
+    return 'Документ'
+  }
+  if (pathname === '/app/analyst' || pathname === '/app/analyst/') return 'Очередь заявок'
+  if (pathname === '/app/analyst/mine') return 'Мои заявки'
+  if (pathname === '/app/analyst/attention') return 'Требуют внимания'
+  if (pathname === '/app/analyst/workflow') return 'Рабочий процесс и SLA'
+  if (pathname.includes('/app/analyst/cases/')) {
+    const parts = pathname.split('/')
+    const tab = parts[5]
+    const labels: Record<string, string> = {
+      company: 'Компания',
+      finance: 'Финансы',
+      documents: 'Документы',
+      checks: 'Проверки',
+      risks: 'Риски',
+      explainability: 'Объяснимость',
+      ai: 'Чат с клиентом',
+      decision: 'Решение',
+      history: 'История',
+    }
+    return tab && labels[tab] ? labels[tab] : 'Обзор'
+  }
+  const flat = [...entrepreneurGroups, ...adminGroups, ...buildAnalystGroups('')].flatMap(
+    (g) => g.items,
+  )
   const exact = flat.find((i) => i.to === pathname)
   if (exact) return exact.label
+  if (pathname === '/app/admin' || pathname === '/app/admin/') return 'Обзор'
   if (pathname === '/app' || pathname === '/app/') return 'Главная'
   return 'Кабинет'
 }
@@ -193,12 +318,47 @@ export function AppLayout() {
   const companiesQ = useQuery({
     queryKey: ['companies'],
     queryFn: listCompanies,
-    enabled: Boolean(user) && user?.role !== 'manager',
+    enabled: Boolean(user) && !isAnalystRole(user?.role) && user?.role !== 'admin',
   })
+
+  const analystNavQ = useQuery({
+    queryKey: ['analyst', 'queue', 'nav'],
+    queryFn: () => fetchAnalystQueue({ assignedToMe: true, limit: 1 }),
+    enabled: Boolean(user) && isAnalystRole(user?.role),
+    staleTime: 60_000,
+  })
+
+  const notifBadgeQ = useQuery({
+    queryKey: ['notifications', 'badge'],
+    queryFn: () => listNotifications({ unread: true, limit: 1 }),
+    enabled: Boolean(user),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  })
+  const unreadNotifs = notifBadgeQ.data?.unreadCount ?? 0
+
+  const analystCaseId = useMemo(() => {
+    const m = location.pathname.match(/\/app\/analyst\/cases\/([^/]+)/)
+    const fromPath = m?.[1] ? decodeURIComponent(m[1]) : ''
+    if (isAnalystCaseUuid(fromPath)) {
+      writeLastAnalystCaseId(fromPath)
+      return fromPath
+    }
+    // demo ABC-… в URL не кладём в sidebar — иначе битые ссылки «Компания/Финансы»
+    const stored = readLastAnalystCaseId()
+    if (stored) return stored
+    const fromQueue = analystNavQ.data?.items[0]?.id ?? ''
+    if (isAnalystCaseUuid(fromQueue)) {
+      writeLastAnalystCaseId(fromQueue)
+      return fromQueue
+    }
+    return ''
+  }, [location.pathname, analystNavQ.data])
 
   const groups = useMemo(() => {
     if (!user) return []
-    if (user.role === 'manager') return managerGroups
+    if (user.role === 'admin') return adminGroups
+    if (isAnalystRole(user.role)) return buildAnalystGroups(analystCaseId)
     if (user.role === 'accountant') {
       return entrepreneurGroups
         .map((g) => ({
@@ -210,7 +370,7 @@ export function AppLayout() {
         .filter((g) => g.items.length > 0)
     }
     return entrepreneurGroups
-  }, [user])
+  }, [user, analystCaseId])
 
   const activeCompany =
     companiesQ.data?.find((c) => c.id === user?.companyId) ?? companiesQ.data?.[0] ?? null
@@ -262,10 +422,10 @@ export function AppLayout() {
                     lineHeight: 1.15,
                   }}
                 >
-                  Альфа‑Банк
+                  Линия решения
                 </Typography>
                 <Typography sx={{ fontSize: 11, color: '#8A96A3', fontWeight: 600 }}>
-                  Бизнес Кредит
+                  Альфа‑Банк
                 </Typography>
               </Box>
             </Stack>
@@ -375,89 +535,6 @@ export function AppLayout() {
           </Box>
         ))}
       </Box>
-
-      {user?.role !== 'manager' && (
-        <Box
-          sx={{
-            m: rail ? 1 : 1.5,
-            p: rail ? 1 : 1.75,
-            borderRadius: 2.5,
-            bgcolor: '#fff',
-            border: '1px solid rgba(11,31,53,0.06)',
-            boxShadow: '0 2px 10px rgba(11,31,53,0.04)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: rail ? 'center' : 'stretch',
-          }}
-        >
-          {rail ? (
-            <Tooltip title="Иванова А.С. · Написать" placement="right">
-              <IconButton
-                onClick={() => navigate('/app/help')}
-                sx={{
-                  p: 0.5,
-                  '&:hover': { bgcolor: 'rgba(239,49,36,0.06)' },
-                }}
-              >
-                <Avatar
-                  sx={{
-                    width: 36,
-                    height: 36,
-                    bgcolor: 'rgba(239,49,36,0.12)',
-                    color: '#EF3124',
-                    fontSize: 13,
-                    fontWeight: 700,
-                  }}
-                >
-                  ИА
-                </Avatar>
-              </IconButton>
-            </Tooltip>
-          ) : (
-            <>
-              <Typography sx={{ fontSize: 11, color: '#8A96A3', fontWeight: 600, mb: 0.75 }}>
-                Ваш менеджер
-              </Typography>
-              <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 1.25 }}>
-                <Avatar
-                  sx={{
-                    width: 36,
-                    height: 36,
-                    bgcolor: 'rgba(239,49,36,0.12)',
-                    color: '#EF3124',
-                    fontSize: 13,
-                    fontWeight: 700,
-                  }}
-                >
-                  ИА
-                </Avatar>
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#0B1F35', lineHeight: 1.2 }}>
-                    Иванова А.С.
-                  </Typography>
-                  <Typography sx={{ fontSize: 11, color: '#8A96A3' }}>Персональный менеджер</Typography>
-                </Box>
-              </Stack>
-              <Button
-                fullWidth
-                size="small"
-                variant="outlined"
-                onClick={() => navigate('/app/help')}
-                sx={{
-                  borderRadius: 2,
-                  borderColor: 'rgba(11,31,53,0.14)',
-                  color: '#0B1F35',
-                  fontWeight: 600,
-                  fontSize: 12,
-                  py: 0.85,
-                }}
-              >
-                Написать менеджеру
-              </Button>
-            </>
-          )}
-        </Box>
-      )}
 
       {rail && (
         <Box sx={{ pb: 1.5, display: 'grid', placeItems: 'center' }}>
@@ -577,8 +654,25 @@ export function AppLayout() {
             {headerTitle}
           </Typography>
 
-          <IconButton size="small" sx={{ color: '#5A6B7D' }}>
-            <Badge badgeContent={4} color="error" overlap="circular">
+          <IconButton
+            size="small"
+            onClick={() =>
+              navigate(user?.role === 'admin' ? '/app/admin/notifications' : '/app/notifications')
+            }
+            sx={{
+              color:
+                location.pathname === '/app/notifications' ||
+                location.pathname === '/app/admin/notifications'
+                  ? '#EF3124'
+                  : '#5A6B7D',
+            }}
+            aria-label="Уведомления"
+          >
+            <Badge
+              badgeContent={unreadNotifs > 0 ? unreadNotifs : undefined}
+              color="error"
+              overlap="circular"
+            >
               <NotificationsNoneRoundedIcon />
             </Badge>
           </IconButton>

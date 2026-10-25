@@ -1,9 +1,11 @@
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline'
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined'
 import { Box, Button, Divider, Link as MuiLink, Stack, Typography } from '@mui/material'
-import type { ReactNode } from 'react'
-import { Link as RouterLink, useNavigate } from 'react-router-dom'
+import { useState, type ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
+import { AlfaLogo } from '@/components/landing/AlfaLogo'
+import { LogoutConfirmDialog } from '@/components/common/LogoutConfirmDialog'
 
 export type OnboardingStep = 1 | 2 | 3
 
@@ -23,6 +25,7 @@ type OnboardingShellProps = {
 export function OnboardingShell({ step, title, children, sidebar }: OnboardingShellProps) {
   const { logout } = useAuth()
   const navigate = useNavigate()
+  const [logoutOpen, setLogoutOpen] = useState(false)
 
   return (
     <Box
@@ -48,40 +51,10 @@ export function OnboardingShell({ step, title, children, sidebar }: OnboardingSh
         }}
       >
         <Stack direction="row" alignItems="center" spacing={1.5}>
-          <Box
-            component={RouterLink}
-            to="/"
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1,
-              textDecoration: 'none',
-              color: 'inherit',
-            }}
-          >
-            <Box
-              aria-hidden
-              sx={{
-                width: 28,
-                height: 28,
-                borderRadius: '50%',
-                bgcolor: 'primary.main',
-                color: '#fff',
-                display: 'grid',
-                placeItems: 'center',
-                fontFamily: 'Manrope, sans-serif',
-                fontWeight: 800,
-                fontSize: 15,
-                lineHeight: 1,
-              }}
-            >
-              A
-            </Box>
-            <Typography sx={{ fontWeight: 700, fontSize: 15 }}>Альфа Банк</Typography>
-          </Box>
+          <AlfaLogo ink compact />
           <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
           <Typography sx={{ fontSize: 14, color: 'text.secondary', fontWeight: 500 }}>
-            Кредит для бизнеса
+            Линия решения
           </Typography>
         </Stack>
 
@@ -103,10 +76,7 @@ export function OnboardingShell({ step, title, children, sidebar }: OnboardingSh
           </Button>
           <Divider orientation="vertical" flexItem sx={{ mx: 0.5, height: 20, alignSelf: 'center' }} />
           <Button
-            onClick={() => {
-              logout()
-              navigate('/login')
-            }}
+            onClick={() => setLogoutOpen(true)}
             endIcon={<LogoutOutlinedIcon sx={{ fontSize: 18 }} />}
             sx={{
               color: 'text.secondary',
@@ -120,6 +90,16 @@ export function OnboardingShell({ step, title, children, sidebar }: OnboardingSh
           </Button>
         </Stack>
       </Box>
+
+      <LogoutConfirmDialog
+        open={logoutOpen}
+        onClose={() => setLogoutOpen(false)}
+        onConfirm={() => {
+          setLogoutOpen(false)
+          logout()
+          navigate('/login')
+        }}
+      />
 
       <Box
         sx={{

@@ -1,7 +1,7 @@
 import { createTheme } from '@mui/material/styles'
 
 /**
- * Alfa Credit visual system — red brand signal, cool slate surfaces,
+ * Линия решения visual system — red brand signal, cool slate surfaces,
  * Manrope for display, IBM Plex Sans for UI density.
  */
 export const theme = createTheme({

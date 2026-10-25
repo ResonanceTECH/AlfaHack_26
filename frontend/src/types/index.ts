@@ -1,6 +1,7 @@
 export type UserRole =
   | 'entrepreneur'
   | 'accountant'
+  | 'analyst'
   | 'manager'
   | 'risk_analyst'
   | 'admin'
@@ -24,9 +25,13 @@ export type ProductType =
 export type ApplicationStatus =
   | 'draft'
   | 'submitted'
+  | 'validating'
   | 'in_review'
   | 'docs_requested'
   | 'approved'
+  | 'counteroffered'
+  | 'offer_accepted'
+  | 'agreement_preparation'
   | 'rejected'
   | 'issued'
 
@@ -56,6 +61,7 @@ export interface User {
   emailVerified?: boolean
   phoneVerified?: boolean
   status?: UserStatus
+  mfaEnabled?: boolean
 }
 
 export type MemberRole = 'OWNER' | 'MEMBER' | 'VIEWER'
@@ -235,6 +241,7 @@ export interface ApplicationComment {
   authorRole: UserRole
   text: string
   createdAt: string
+  isInternal?: boolean
 }
 
 export interface CreditApplication {

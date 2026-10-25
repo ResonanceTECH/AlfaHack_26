@@ -40,8 +40,14 @@ export function LoginPage() {
       navigate(next)
       return
     }
-    if (user.role === 'manager' || user.role === 'risk_analyst') {
-      navigate('/app/manager')
+    if (user.role === 'admin') {
+      navigate('/app/admin')
+    } else if (
+      user.role === 'analyst' ||
+      user.role === 'manager' ||
+      user.role === 'risk_analyst'
+    ) {
+      navigate('/app/analyst')
     } else if (user.companyId) {
       navigate('/app')
     } else {
@@ -72,7 +78,7 @@ export function LoginPage() {
   }
 
   return (
-    <AuthShell title="Вход в Alfa Credit">
+    <AuthShell title="Вход в личный кабинет">
       <form onSubmit={onSubmit} autoComplete="on">
         <Stack spacing={2.25}>
           {error ? <Alert severity="error">{error}</Alert> : null}

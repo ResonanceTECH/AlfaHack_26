@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import Field
 
 from app.core.enums import UserRole, UserStatus
@@ -25,6 +27,22 @@ class UserOut(APIModel):
     company_id: str | None = None
     permissions: list[str] = Field(default_factory=list)
     status: UserStatus = UserStatus.ACTIVE
+    mfa_enabled: bool = False
+
+
+class UserPatch(APIModel):
+    full_name: str | None = Field(default=None, min_length=1, max_length=255)
+    email: str | None = None
+    phone: str | None = None
+
+
+class SessionOut(APIModel):
+    id: str
+    device_info: str | None = None
+    created_at: datetime | None = None
+    expires_at: datetime | None = None
+    current: bool = False
+    revoked: bool = False
 
 
 class AuthSessionOut(APIModel):
@@ -41,3 +59,20 @@ class TokenPairOut(APIModel):
     token_type: str = "bearer"
     expires_in: int
     refresh_token: str
+
+
+class EmailActionRequest(APIModel):
+    email: str = Field(min_length=3, max_length=255)
+
+
+class EmailActionOut(APIModel):
+    message: str
+    delivery_mode: str | None = None
+    email_masked: str | None = None
+    challenge_id: str | None = None
+
+
+class PasswordResetRequest(APIModel):
+    token: str = Field(min_length=10, max_length=2048)
+    password: str = Field(min_length=6, max_length=256)
+    password_confirm: str = Field(min_length=6, max_length=256)

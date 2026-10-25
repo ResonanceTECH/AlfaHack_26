@@ -106,6 +106,13 @@ async def upload_statement(
     if len(content) > max_bytes:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Файл слишком большой")
     filename = file.filename or "statement.csv"
+    from app.services.statements import statement_extension_ok
+
+    if not statement_extension_ok(filename):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Поддерживаются только CSV и XLSX",
+        )
     upload_root = Path(settings.upload_dir) / "statements" / company_id
     upload_root.mkdir(parents=True, exist_ok=True)
     stmt_id = str(uuid4())

@@ -19,7 +19,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   createCompany,
   getCompanyDashboard,
@@ -27,6 +27,8 @@ import {
   lookupCompanyByInn,
 } from '@/api/companies'
 import { useAuth } from '@/contexts/AuthContext'
+import { LogoutConfirmDialog } from '@/components/common/LogoutConfirmDialog'
+import { InviteAcceptPage } from '@/pages/InviteAcceptPage'
 import type { CompanyListItem, MemberRole, RegistryCompany } from '@/types'
 import { formatDate } from '@/utils/format'
 
@@ -63,6 +65,15 @@ function registryStatusLabel(status: string): string {
 type RoleFilter = 'ALL' | MemberRole
 
 export function SelectCompanyPage() {
+  const [searchParams] = useSearchParams()
+  // Ссылка из «Пригласить сотрудника»: ?invite=&company=&role=
+  if (searchParams.get('invite')) {
+    return <InviteAcceptPage />
+  }
+  return <SelectCompanyChooser />
+}
+
+function SelectCompanyChooser() {
   const { logout, selectCompany } = useAuth()
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -76,6 +87,7 @@ export function SelectCompanyPage() {
   const [inn, setInn] = useState('')
   const [lookupError, setLookupError] = useState<string | null>(null)
   const [found, setFound] = useState<RegistryCompany | null>(null)
+  const [logoutOpen, setLogoutOpen] = useState(false)
 
   const companiesQ = useQuery({
     queryKey: ['companies'],
@@ -190,6 +202,11 @@ export function SelectCompanyPage() {
   }
 
   function onLogout() {
+    setLogoutOpen(true)
+  }
+
+  function confirmLogout() {
+    setLogoutOpen(false)
     logout()
     navigate('/login')
   }
@@ -404,13 +421,13 @@ export function SelectCompanyPage() {
             }}
           >
             {filtered.map((item) => (
-                <CompanyCard
-                  key={item.id}
-                  item={item}
-                  selected={item.id === selectedId}
-                  onDetails={() => openDetails(item.id)}
-                />
-              ))}
+              <CompanyCard
+                key={item.id}
+                item={item}
+                selected={item.id === selectedId}
+                onDetails={() => openDetails(item.id)}
+              />
+            ))}
 
             {filtered.length === 0 && (
               <Box
@@ -561,6 +578,12 @@ export function SelectCompanyPage() {
           />
         )}
       </Drawer>
+
+      <LogoutConfirmDialog
+        open={logoutOpen}
+        onClose={() => setLogoutOpen(false)}
+        onConfirm={confirmLogout}
+      />
     </Box>
   )
 }

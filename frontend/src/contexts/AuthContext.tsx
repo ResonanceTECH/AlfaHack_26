@@ -12,6 +12,7 @@ import {
   fetchMe,
   getStoredUser,
   loginEmailRequest,
+  logoutAllRequest,
   logoutRequest,
 } from '@/api/auth'
 import { listCompanies } from '@/api/companies'
@@ -24,6 +25,7 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<User>
   refreshUser: () => Promise<User>
   logout: () => void
+  logoutAll: () => Promise<void>
   setUserFromSession: (user: User) => void
   /** Persist active company for multi-membership sessions */
   selectCompany: (companyId: string) => void
@@ -88,6 +90,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }, [])
 
+  const logoutAll = useCallback(async () => {
+    await logoutAllRequest()
+    setUser(null)
+  }, [])
+
   const setUserFromSession = useCallback((u: User) => {
     const next = withActiveCompany(u)
     localStorage.setItem('alfa_user', JSON.stringify(next))
@@ -108,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user) return
     if (user.companyId) return
-    if (user.role === 'manager' || user.role === 'risk_analyst') return
+    if (user.role === 'analyst' || user.role === 'manager' || user.role === 'risk_analyst') return
     let cancelled = false
     void (async () => {
       try {
@@ -135,10 +142,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       refreshUser,
       logout,
+      logoutAll,
       setUserFromSession,
       selectCompany,
     }),
-    [user, login, refreshUser, logout, setUserFromSession, selectCompany],
+    [user, login, refreshUser, logout, logoutAll, setUserFromSession, selectCompany],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

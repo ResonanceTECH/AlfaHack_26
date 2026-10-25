@@ -11,8 +11,12 @@ import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { compareCreditProducts, listProducts, type CreditCompareRow } from '@/api/credit'
+import { productTypeLabels } from '@/data/labels'
 import { loadSelectionDraft, saveSelectionDraft } from '@/features/selection/draft'
 import {
+  DEMO_PRODUCTS,
   overpayFor,
   paymentLabel,
   rateLabel,
@@ -22,7 +26,9 @@ import {
 } from '@/features/selection/demoProducts'
 import { goalTitle } from '@/features/selection/goalOptions'
 import { useAppStore } from '@/hooks/useAppStore'
+import { annuityPayment } from '@/utils/finance'
 import { formatMoney } from '@/utils/format'
+import type { CreditProduct } from '@/types'
 
 const tileSx = {
   bgcolor: '#fff',
@@ -31,6 +37,95 @@ const tileSx = {
   boxShadow: '0 1px 8px rgba(11,31,53,0.04)',
   p: { xs: 2, md: 2.25 },
 } as const
+
+function feeLabel(p?: CreditProduct): string {
+  const fees = p?.fees ?? []
+  if (!fees.length) return '0 ₽'
+  return fees
+    .map((f) =>
+      f.type === 'percent'
+        ? `${String(f.value).replace('.', ',')}%`
+        : `${Math.round(f.value).toLocaleString('ru-RU')} ₽`,
+    )
+    .join(' · ')
+}
+
+function rowToDemo(
+  row: CreditCompareRow,
+  catalog: CreditProduct | undefined,
+  amount: number,
+  term: number,
+): DemoProduct {
+  const estimatedRate = row.rateMin || catalog?.rateMin || 17.3
+  const payment =
+    row.estimatedMonthlyPayment ??
+    (row.productType === 'overdraft' || row.amountMax < amount
+      ? 0
+      : Math.round(annuityPayment(amount, estimatedRate, term)))
+  const typeLabel = productTypeLabels[row.productType] ?? 'Кредит'
+  return {
+    productId: row.productId,
+    productType: row.productType,
+    productName: row.productName,
+    matchScore: 80,
+    eligibleByBasicRules: row.fits !== false,
+    estimatedMonthlyPayment: payment,
+    estimatedRate,
+    recommendedAmount: amount,
+    recommendedTerm: term,
+    reasons: row.notes,
+    warnings: [],
+    tag: typeLabel,
+    badge: row.fits === false ? 'Не подходит под параметры' : 'Соответствует',
+    badgeTone: row.fits === false ? 'warn' : 'ok',
+    amountMax: row.amountMax,
+    termMax: row.termMax,
+    fee: feeLabel(catalog),
+    collateral: row.collateralRequired
+      ? 'Требуется залог / поручительство'
+      : 'Поручительство · без залога',
+    reviewDays: 1,
+    earlyRepayment: 'По условиям договора',
+    fitsGoal: row.fits === false ? 'no' : 'yes',
+    criteriaMatch: row.notes[0] ?? (row.fits === false ? 'ограничения' : 'подходит'),
+    shortType: typeLabel,
+  }
+}
+
+function catalogToDemo(p: CreditProduct, amount: number, term: number): DemoProduct {
+  const canCover = p.amountMax >= amount
+  const rate = p.rateMin || 17.3
+  const payment =
+    p.type === 'overdraft' || !canCover ? 0 : Math.round(annuityPayment(amount, rate, term))
+  const typeLabel = productTypeLabels[p.type] ?? 'Кредит'
+  return {
+    productId: p.id,
+    productType: p.type,
+    productName: p.name,
+    matchScore: 70,
+    eligibleByBasicRules: canCover,
+    estimatedMonthlyPayment: payment,
+    estimatedRate: rate,
+    recommendedAmount: amount,
+    recommendedTerm: term,
+    reasons: [],
+    warnings: canCover ? [] : ['Лимит ниже запрошенной суммы'],
+    tag: typeLabel,
+    badge: canCover ? 'Соответствует' : 'Лимит ниже суммы',
+    badgeTone: canCover ? 'ok' : 'warn',
+    amountMax: p.amountMax,
+    termMax: p.termMax,
+    fee: feeLabel(p),
+    collateral: p.collateralRequired
+      ? 'Требуется залог / поручительство'
+      : 'Поручительство · без залога',
+    reviewDays: 1,
+    earlyRepayment: 'По условиям договора',
+    fitsGoal: canCover ? 'yes' : 'partial',
+    criteriaMatch: canCover ? 'подходит' : 'частично',
+    shortType: typeLabel,
+  }
+}
 
 type Row = {
   key: string
@@ -48,10 +143,34 @@ export function ComparePage() {
 
   const amount = draft.amount || 5_000_000
   const term = draft.termMonths || 24
-  const products = useMemo(
-    () => (ids.length >= 2 ? resolveCompareProducts(ids, amount, term) : []),
-    [ids, amount, term],
-  )
+
+  const catalogQ = useQuery({
+    queryKey: ['products'],
+    queryFn: listProducts,
+  })
+  const compareQ = useQuery({
+    queryKey: ['credit-compare', ids, amount, term],
+    queryFn: () => compareCreditProducts({ productIds: ids, amount, termMonths: term }),
+    enabled: ids.length >= 2,
+    retry: false,
+  })
+
+  const products = useMemo(() => {
+    const catalog = catalogQ.data ?? []
+    const byId = new Map(catalog.map((p) => [p.id, p]))
+    if (compareQ.data?.length) {
+      return compareQ.data.map((row) => rowToDemo(row, byId.get(row.productId), amount, term))
+    }
+    const fromCatalog = ids
+      .map((id) => byId.get(id))
+      .filter((p): p is CreditProduct => Boolean(p))
+    if (fromCatalog.length >= 2) {
+      return fromCatalog.map((p) => catalogToDemo(p, amount, term))
+    }
+    const hasDemo = ids.some((id) => DEMO_PRODUCTS.some((p) => p.productId === id))
+    if (hasDemo) return resolveCompareProducts(ids, amount, term)
+    return []
+  }, [compareQ.data, catalogQ.data, ids, amount, term])
 
   const primary = products.find((p) => p.productId === 'biz-oborot') ?? products[0]
 
@@ -200,6 +319,17 @@ export function ComparePage() {
   const visibleRows = diffOnly
     ? rows.filter((r) => !rowValuesEqual(products.map((p) => r.text(p, amount, term))))
     : rows
+
+  const comparePending =
+    ids.length >= 2 && products.length < 2 && (compareQ.isLoading || catalogQ.isLoading)
+
+  if (comparePending) {
+    return (
+      <Box sx={{ maxWidth: 720, mx: 'auto', ...tileSx, textAlign: 'center', py: 5 }}>
+        <Typography sx={{ color: '#7A8795' }}>Загружаем сравнение…</Typography>
+      </Box>
+    )
+  }
 
   if (products.length < 2 || !primary) {
     return (

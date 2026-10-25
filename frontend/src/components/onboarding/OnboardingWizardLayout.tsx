@@ -16,6 +16,7 @@ import {
 import type { ReactNode } from 'react'
 import { Link as RouterLink } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
+import { AlfaLogo } from '@/components/landing/AlfaLogo'
 import type { Company } from '@/types'
 
 export type WizardStep = 1 | 2 | 3
@@ -76,32 +77,7 @@ export function OnboardingWizardLayout({
         }}
       >
         <Stack direction="row" alignItems="center" spacing={3}>
-          <Stack
-            component={RouterLink}
-            to="/app"
-            direction="row"
-            alignItems="center"
-            spacing={1}
-            sx={{ textDecoration: 'none', color: 'inherit' }}
-          >
-            <Box
-              sx={{
-                width: 28,
-                height: 28,
-                borderRadius: '50%',
-                bgcolor: 'primary.main',
-                color: '#fff',
-                display: 'grid',
-                placeItems: 'center',
-                fontWeight: 800,
-                fontSize: 14,
-                fontFamily: 'Manrope, sans-serif',
-              }}
-            >
-              A
-            </Box>
-            <Typography sx={{ fontWeight: 700, fontSize: 15 }}>Альфа Банк</Typography>
-          </Stack>
+          <AlfaLogo to="/app" ink compact />
           <Stack direction="row" spacing={2.5} sx={{ display: { xs: 'none', md: 'flex' } }}>
             {['Для бизнеса', 'Кредиты', 'Партнёры', 'Сервисы'].map((label, i) => (
               <Typography

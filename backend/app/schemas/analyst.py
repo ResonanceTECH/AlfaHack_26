@@ -146,6 +146,11 @@ class AnalystDocumentRequestCreate(APIModel):
     due_at: datetime | None = None
 
 
+class AnalystCommentCreate(APIModel):
+    text: str = Field(min_length=1, max_length=4000)
+    is_internal: bool = False
+
+
 class AnalystDocumentRequestCancel(APIModel):
     reason: str | None = None
 

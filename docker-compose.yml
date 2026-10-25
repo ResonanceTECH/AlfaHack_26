@@ -64,20 +64,13 @@ services:
       retries: 12
       start_period: 40s
 
-  frontend:
+  web:
     build: ./frontend
     ports:
       - "8080:80"
     depends_on:
       api:
         condition: service_healthy
-
-  web:
-    build: ./frontend
-    ports:
-      - "8080:80"
-    depends_on:
-      - api
 
 volumes:
   pgdata:

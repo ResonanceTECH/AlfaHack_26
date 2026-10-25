@@ -353,6 +353,11 @@ def create_document_request(
     if due_at is None:
         due_at = datetime.now(timezone.utc) + timedelta(days=7)
 
+    if app.assigned_analyst_id is None:
+        app.assigned_analyst_id = analyst.id
+    if app.assigned_manager_id is None:
+        app.assigned_manager_id = analyst.id
+
     req = DocumentRequest(
         application_id=app.id,
         requested_by=analyst.id,
