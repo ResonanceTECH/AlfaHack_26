@@ -10,6 +10,8 @@ export type TeamMember = {
   lastLogin: string
   status: TeamStatus
   statusLabel: string
+  /** member = company membership; invite = pending invite row */
+  source?: 'member' | 'invite'
 }
 
 const KEY = 'alfa_team_members'
