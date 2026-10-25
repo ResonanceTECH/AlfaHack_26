@@ -24,6 +24,7 @@ import { CalculatorPage } from '@/pages/CalculatorPage'
 import { ApplicationsPage } from '@/pages/ApplicationsPage'
 import { ApplicationWizardPage } from '@/pages/ApplicationWizardPage'
 import { ApplicationDetailPage } from '@/pages/ApplicationDetailPage'
+import { ApplicationDocumentsPage } from '@/pages/ApplicationDocumentsPage'
 import { ApplicationEditPage } from '@/pages/ApplicationEditPage'
 import { ManagerPage } from '@/pages/ManagerPage'
 import { StatementsPage } from '@/pages/StatementsPage'
@@ -131,6 +132,7 @@ export function AppRouter() {
         <Route path="applications" element={<ApplicationsPage />} />
         <Route path="applications/new" element={<ApplicationWizardPage />} />
         <Route path="applications/:id/edit" element={<ApplicationEditPage />} />
+        <Route path="applications/:id/documents" element={<ApplicationDocumentsPage />} />
         <Route path="applications/:id/contract" element={<DocumentViewPage />} />
         <Route path="applications/:id" element={<ApplicationDetailPage />} />
         <Route
