@@ -104,7 +104,6 @@ const REPO_SOURCES: { path: string; role: string }[] = [
   { path: 'src/features/selection/SelectionStepper.tsx', role: 'SelectionStepper' },
   { path: 'src/features/credit/CreditRecommendationCard.tsx', role: 'CreditRecommendationCard' },
   { path: 'src/features/credit/PaymentScheduleTable.tsx', role: 'PaymentScheduleTable' },
-  { path: 'src/components/landing/DesignSystemSection.tsx', role: 'Секция на лендинге' },
   { path: 'src/components/design-system/ProductKitDemos.tsx', role: 'Демо продуктовых компонентов' },
   { path: 'src/layouts/AppLayout.tsx', role: 'Кабинет: drawer 260 / rail 72' },
   { path: 'src/pages/DesignSystemPage.tsx', role: 'Эта страница' },
@@ -426,7 +425,7 @@ export function DesignSystemPage() {
                     minHeight: 140,
                   }}
                 >
-                  <AlfaLogo />
+                  <AlfaLogo to={false} />
                   <Typography sx={{ mt: 2, fontSize: 13, color: color.text.onDark62 }}>
                     AlfaLogo · dark (landing header/footer)
                   </Typography>
@@ -441,7 +440,7 @@ export function DesignSystemPage() {
                     minHeight: 140,
                   }}
                 >
-                  <AlfaLogo ink />
+                  <AlfaLogo ink to={false} />
                   <Typography sx={{ mt: 2, fontSize: 13, color: 'text.secondary' }}>
                     AlfaLogo ink · auth / onboarding
                   </Typography>
@@ -990,27 +989,37 @@ sx={{ fontSize: 20, color: '#EF3124' }}`}
             </Section>
 
             {/* ── Buttons ── */}
-            <Section id="buttons" title="Кнопки" lead="disableElevation. Primary = gradient. textTransform: none.">
+            <Section
+              id="buttons"
+              title="Кнопки"
+              lead="disableElevation. Primary = gradient. textTransform: none. На этом экране кнопки только демо — без переходов."
+            >
               <Stack direction="row" flexWrap="wrap" gap={1.5} sx={{ mb: 2 }} alignItems="center">
-                <Button variant="contained">Contained primary</Button>
-                <Button variant="contained" color="secondary">
+                <Button type="button" variant="contained">
+                  Contained primary
+                </Button>
+                <Button type="button" variant="contained" color="secondary">
                   Secondary
                 </Button>
-                <Button variant="outlined">Outlined</Button>
-                <Button variant="text">Text</Button>
-                <Button variant="contained" size="small">
+                <Button type="button" variant="outlined">
+                  Outlined
+                </Button>
+                <Button type="button" variant="text">
+                  Text
+                </Button>
+                <Button type="button" variant="contained" size="small">
                   Small
                 </Button>
-                <Button variant="contained" size="large">
+                <Button type="button" variant="contained" size="large">
                   Large
                 </Button>
-                <Button variant="contained" disabled>
+                <Button type="button" variant="contained" disabled>
                   Disabled
                 </Button>
-                <Button variant="contained" startIcon={<AddRoundedIcon />}>
+                <Button type="button" variant="contained" startIcon={<AddRoundedIcon />}>
                   With icon
                 </Button>
-                <Button variant="outlined" color="inherit">
+                <Button type="button" variant="outlined" color="inherit">
                   Inherit outline
                 </Button>
               </Stack>
@@ -1025,10 +1034,11 @@ sx={{ fontSize: 20, color: '#EF3124' }}`}
                   gap: 1.5,
                 }}
               >
-                <Button variant="contained" size="large">
+                <Button type="button" variant="contained" size="large">
                   Оформить заявку
                 </Button>
                 <Button
+                  type="button"
                   variant="outlined"
                   size="large"
                   sx={{
@@ -1042,21 +1052,13 @@ sx={{ fontSize: 20, color: '#EF3124' }}`}
               </Box>
               <CopyCode
                 code={`import { Button } from '@mui/material'
-import { Link as RouterLink } from 'react-router-dom'
 
-<Button variant="contained">Сохранить</Button>
-<Button variant="outlined">Отмена</Button>
-<Button variant="text">Подробнее</Button>
+// Демо / локальный клик
+<Button type="button" variant="contained">Сохранить</Button>
+<Button type="button" variant="outlined">Отмена</Button>
 
-<Button
-  component={RouterLink}
-  to="/login"
-  variant="contained"
-  size="large"
-  sx={{ borderRadius: 2, px: 3.5, py: 1.4, fontSize: 16, fontWeight: 700 }}
->
-  Оформить заявку
-</Button>
+// В продукте — навигация отдельно:
+// <Button component={RouterLink} to="/login" variant="contained">Оформить заявку</Button>
 
 // Theme already sets:
 // borderRadius: 8, paddingInline: 18, paddingBlock: 9
@@ -1144,9 +1146,9 @@ import { Disclaimer } from '@/components/common/Disclaimer'
                 <PageHeader
                   title="Компания"
                   subtitle="Реквизиты и контакты активного юрлица"
-                  crumbs={[{ label: 'Кабинет', to: '/app' }, { label: 'Компания' }]}
+                  crumbs={[{ label: 'Кабинет' }, { label: 'Компания' }]}
                   actions={
-                    <Button variant="contained" size="small">
+                    <Button type="button" variant="contained" size="small">
                       Изменить
                     </Button>
                   }
@@ -1189,7 +1191,7 @@ import { Disclaimer } from '@/components/common/Disclaimer'
                   title="Пока нет заявок"
                   description="Соберите подбор и отправьте первую демо-заявку."
                   actionLabel="К подбору"
-                  actionTo="/app/recommendations"
+                  onAction={() => undefined}
                 />
               </Box>
               <CopyCode
@@ -1297,8 +1299,8 @@ RAIL_WIDTH = 72`}
               lead={`Файл марки: frontend/public/logo.png → URL ${BRAND_LOGO_SRC}. Favicon: frontend/public/favicon.png → ${BRAND_FAVICON_SRC} (см. index.html).`}
             >
               <Stack direction="row" flexWrap="wrap" spacing={3} useFlexGap alignItems="center" sx={{ mb: 2 }}>
-                <AlfaLogo ink />
-                <AlfaLogo ink compact />
+                <AlfaLogo ink to={false} />
+                <AlfaLogo ink compact to={false} />
                 <AlfaMark size={40} />
                 <Box
                   component="img"
