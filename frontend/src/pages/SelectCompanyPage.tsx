@@ -19,7 +19,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   createCompany,
   getCompanyDashboard,
@@ -28,6 +28,7 @@ import {
 } from '@/api/companies'
 import { useAuth } from '@/contexts/AuthContext'
 import { LogoutConfirmDialog } from '@/components/common/LogoutConfirmDialog'
+import { InviteAcceptPage } from '@/pages/InviteAcceptPage'
 import type { CompanyListItem, MemberRole, RegistryCompany } from '@/types'
 import { formatDate } from '@/utils/format'
 
@@ -64,6 +65,15 @@ function registryStatusLabel(status: string): string {
 type RoleFilter = 'ALL' | MemberRole
 
 export function SelectCompanyPage() {
+  const [searchParams] = useSearchParams()
+  // Ссылка из «Пригласить сотрудника»: ?invite=&company=&role=
+  if (searchParams.get('invite')) {
+    return <InviteAcceptPage />
+  }
+  return <SelectCompanyChooser />
+}
+
+function SelectCompanyChooser() {
   const { logout, selectCompany } = useAuth()
   const navigate = useNavigate()
   const qc = useQueryClient()

@@ -2,9 +2,9 @@
 
 Эндпоинты API, которые дергает фронт. Базовый префикс: `/api/v1` (прокси Vite → backend).
 
-Экраны: **логин**, **забыли пароль**, **выбор / добавление компании**, **главная**, **профиль компании**, **финансовый профиль**, **календарь**, **профиль пользователя**, **команда**, **помощь**, **AI-консультант**, **аналитик** (очередь / мои / внимание / SLA / карточка заявки), **админ** (обзор / аналитика / продукты / политика / пользователи / аудит / уведомления).
+Экраны: **логин / verify / reset**, **онбординг**, **выбор компании**, **главная**, **компания**, **цели**, **финпрофиль / выписки**, **подбор / сравнение / калькуляторы / сценарии**, **заявки (список + карточка + wizard)**, **документы**, **календарь**, **команда**, **профиль**, **помощь**, **уведомления**, **AI**, **аналитик**, **админ**.
 
-Клиентские экраны предпринимателя — с бэка (на главной заявки ещё подмешиваются из локального кэша после демо-отправки). Каталог аналитика = реальный `backend/app/api/v1/analyst.py` (+ связанные company-scoped routes). UI кабинета аналитика пока на локальной синтетике (`features/analyst/demoData.ts`) — HTTP-клиент к `/analyst/*` ещё не подключён. Админ-каталог = `backend/app/api/v1/admin.py` (45 маршрутов); overview/analytics/notifications админа — тоже синтетика.
+Кабинет предпринимателя: live через `api/companies|applications|credit|statements|auth` + `useAppStore` (см. сводку ниже). Часть экранов (документы-реестр, команда, forecast/roi UI, уведомления) — демо/local. Аналитик — live `/analyst/*` (`api/analyst.ts`). Админ — каталог `admin.py`; часть UI-экранов ещё синтетика.
 
 ## Логин — `/login`
 
@@ -51,9 +51,21 @@
 
 ---
 
+## Подтверждение email — `/verify-email`
+
+| Method | Path | Когда |
+|--------|------|--------|
+| `GET` | `/auth/email/verify?token=` | Открытие ссылки из письма |
+| `POST` | `/auth/email/resend` | Повторная отправка (если есть в UI) |
+
+Код: `VerifyEmailPage.tsx` → `verifyEmailToken` · `api/auth.ts`.
+
+---
+
 ## Выбор компании — `/select-company`
 
-Код: `SelectCompanyPage.tsx` · клиент: `api/companies.ts` · `useAuth()` (`logout`, `selectCompany` — локально).
+Код: `SelectCompanyPage.tsx` · клиент: `api/companies.ts` · `useAuth()` (`logout`, `selectCompany` — локально).  
+`?invite=` → `InviteAcceptPage.tsx`: `GET /companies`, `GET /companies/{id}` + accept в **localStorage** (отдельного invite API нет).
 
 Два UI-состояния по ответу `GET /companies`:
 
@@ -275,7 +287,8 @@ PATCH:
 | `POST` | `/obligations` | «Добавить событие» |
 | `GET` | `/companies/{companyId}/financials` | Доля от выручки в блоке «Платежи за месяц» |
 | `GET` | `/companies/{companyId}/funding-needs` | (store) цели / график кредита → события |
-| `GET` | `/companies/{companyId}/applications` | (store) сроки по заявкам в «Ближайшие» |
+| `GET` | `/applications?companyId=` | (store) сроки по заявкам в «Ближайшие» |
+| `PATCH` | `/obligations/{id}` | смена статуса / правка события (клиент есть: `updateObligation`; UI может не звать) |
 
 Экспорт `.ics` — клиентский файл, без HTTP.
 
@@ -364,6 +377,7 @@ PATCH:
 | `GET` | `/companies/{id}/financials` | Mount (store) — масштаб KPI |
 | `GET` | `/companies/{id}/transactions` | (store) после импорта |
 | `POST` | `/statements/import` (multipart) | загрузка на `/app/statements/upload` |
+| `PATCH` | `/transactions/{id}/category` | смена категории (клиент готов; UI analysis может не звать) |
 
 «Загрузить выписку» → `/app/statements/upload` (`StatementUploadPage.tsx`).  
 «Запустить анализ» → `/app/statements/analysis` (`StatementAnalysisPage.tsx`, KPI/графики из `financials` + демо).  
@@ -386,10 +400,13 @@ Draft: localStorage `alfa_selection_draft:{companyId}` (`features/selection/`).
 |--------|------|--------|
 | `POST` | `/companies/{id}/funding-needs` | «Продолжить к бюджету» |
 | `POST` | `/credit/recommendations` | результаты (fallback — демо-продукты) |
+| `GET` | `/credit/products` | каталог / сравнение (store) |
+| `POST` | `/credit/readiness` | готовность перед заявкой |
 
 «Сравнить (N)» (N≥2) → `/app/compare` (`ComparePage.tsx`: таблица, diff-toggle, скачать TSV).  
 «Выбрать» → `/app/applications/new` (`ApplicationWizardPage`): карточка продукта, готовность, чекбокс, «Отправить заявку» → `POST` applications + submit (или демо-редирект).  
-Демо-продукты: `features/selection/demoProducts.ts`.
+Демо-продукты: `features/selection/demoProducts.ts`.  
+Бюджет (`/app/recommendations/budget`) — только draft + `financials` из store, без отдельного POST.
 
 ---
 
@@ -483,18 +500,27 @@ Draft: localStorage `alfa_selection_draft:{companyId}` (`features/selection/`).
 
 Код: `ApplicationDetailPage.tsx` · `api/applications.ts` · `features/applications/appDocuments.ts` · `localApps.ts`.
 
-Одна страница кабинета: **условия + пайплайн + чек-лист документов + история**.  
-Старый URL `/app/applications/:id/documents` редиректит сюда (`#documents`).
+Блоки UI: **условия · пайплайн · решение/офферы · запросы документов банка · чек-лист · чат с банком · история**.  
+`/app/applications/:id/documents` → редирект сюда (`#documents`).  
+`/app/applications/:id/edit` — `ApplicationEditPage` (демо / hardcoded editable map, без PATCH заявки).
 
 | Method | Path | Блок UI |
 |--------|------|---------|
-| `GET` | `/applications/{id}` | шапка, условия, статус, история, комментарии |
-| `POST` | `/applications/{id}/documents` | загрузка файла в слот чек-листа (multipart) |
-| `POST` | `/applications/{id}/submit` | после комплекта документов (wizard / следующий шаг) |
-| `PATCH` | `/applications/{id}/status` | аналитик (legacy; предпочтительно `POST /analyst/applications/{id}/propose`) |
+| `GET` | `/applications/{id}` | шапка, условия, статус, statusHistory |
+| `GET` | `/companies/{companyId}/applications/{id}/decision` | публичное решение банка |
+| `GET` | `/companies/{companyId}/applications/{id}/offers` | офферы / контрпредложение |
+| `POST` | `/companies/{companyId}/applications/{id}/offers/{offerId}/accept` | «Принять» |
+| `POST` | `/companies/{companyId}/applications/{id}/offers/{offerId}/decline` | «Отклонить» |
+| `GET` | `/companies/{companyId}/applications/{id}/document-requests` | открытые запросы документов |
+| `POST` | `/companies/{companyId}/applications/{id}/documents` | multipart: слот чек-листа **или** ответ на doc-request (`doc_type`, опц. `document_request_id`) |
+| `POST` | `/companies/{companyId}/applications/{id}/document-requests/{requestId}/respond` | явный respond (клиент: `respondDocumentRequest`; UI сейчас чаще грузит файл с `document_request_id`) |
+| `GET` | `/companies/{companyId}/applications/{id}/comments` | чат (poll ~15s) |
+| `POST` | `/companies/{companyId}/applications/{id}/comments` | сообщение предпринимателя банку |
+| `POST` | `/applications/{id}/documents` | legacy upload без company scope |
+| `POST` | `/applications/{id}/submit` | отправка после комплекта (wizard) |
 
-Fallback: если `GET` 404 — заявка из `alfa_local_applications`.  
-Чек-лист слотов (выписка, паспорт, договор/КП, УСН, БКИ, залог) — `localStorage` `alfa_app_documents:{applicationId}`; при успешном `POST …/documents` ещё invalidate `['application']` / `['applications']`.
+Fallback: `GET` 404 → `alfa_local_applications`.  
+Чек-лист слотов — `localStorage` `alfa_app_documents:{applicationId}` + invalidate `['application']` / `['applications']`.
 
 ### `GET /applications/{id}`
 
@@ -530,13 +556,275 @@ Fallback: если `GET` 404 — заявка из `alfa_local_applications`.
 }
 ```
 
-### `POST /applications/{id}/documents`
+### Decision / offers
 
-`multipart/form-data` · поле `file`.  
-Код: `uploadApplicationDocument(id, file)`.  
-UI: drag&drop / «Загрузить» / «Заменить» в блоке «Документы по заявке». Демо без бэка — только локальный чек-лист.
+**`GET …/decision`** — тип решения, explanation, статус.  
+**`GET …/offers`** — сумма / срок / ставка / `offerVersion` / status.  
+**`POST …/offers/{id}/accept`**
 
-Кнопка «К проверке перед отправкой» активна, когда все **обязательные** слоты в статусе `uploaded` | `review`.
+```json
+{ "offerVersion": 1, "acceptedTerms": true }
+```
+
+**`POST …/offers/{id}/decline`**
+
+```json
+{ "reason": "Отклонено клиентом" }
+```
+
+Код: `fetchApplicationDecision` · `fetchApplicationOffers` · `acceptApplicationOffer` · `declineApplicationOffer`.
+
+### Document requests (клиент)
+
+**`GET …/document-requests`** — список открытых запросов аналитика.  
+**`POST …/documents`** (multipart): `file`, `doc_type`, опционально `document_request_id`.  
+**`POST …/document-requests/{requestId}/respond`**
+
+```json
+{ "documentIds": ["…"], "comment": "…" }
+```
+
+### Comments (чат с банком)
+
+**`GET …/comments`** · **`POST …/comments`** `{ "text": "…" }` — только публичные; `is_internal` на стороне банка.
+
+### Legacy upload
+
+`POST /applications/{id}/documents` · `multipart` поле `file` · `uploadApplicationDocument`.  
+UI: drag&drop / «Загрузить» / «Заменить». Без companyId — локальный чек-лист.
+
+---
+
+## Онбординг — `/onboarding/*`
+
+Код: `CompanyCreatePage` · `OnboardingFinancesPage` · `OnboardingConfirmPage` · `api/companies.ts` · `api/statements.ts`.
+
+| Method | Path | Экран |
+|--------|------|--------|
+| `POST` | `/companies` | `/onboarding/company` — создать / подтвердить |
+| `GET` | `/companies/{id}` | company + confirm |
+| `PATCH` | `/companies/{id}` | правки на шаге компании |
+| `GET` | `/companies/{id}/financials` | finances + confirm |
+| `PATCH` | `/companies/{id}/financials` | ручной ввод / подтверждение |
+| `POST` | `/statements/import` | загрузка выписки на finances |
+| `GET` | `/companies/{id}/funding-needs` | цели на confirm (`listGoals`) |
+
+После confirm → `/app`.
+
+---
+
+## Список заявок — `/app/applications`
+
+Код: `ApplicationsPage.tsx` · данные из `useAppStore().apps`.
+
+| Method | Path | Когда |
+|--------|------|--------|
+| `GET` | `/applications?companyId=` | Mount (store) |
+| `POST` | `/applications` | «Новая заявка» → wizard |
+| `POST` | `/applications/{id}/submit` | из wizard |
+
+Фильтры/карточки — клиент. Демо-заявки из `alfa_local_applications` мержатся на главной/списке.
+
+Wizard: `/app/applications/new` · `ApplicationWizardPage` · create + submit (+ `POST /credit/readiness` при необходимости).
+
+---
+
+## Цель бизнеса — `/app/goals`
+
+Код: `BusinessGoalPage.tsx` · также шаг `/app/recommendations`.
+
+| Method | Path | Когда |
+|--------|------|--------|
+| `GET` | `/companies/{id}/funding-needs` | store / онбординг confirm |
+| `POST` | `/companies/{id}/funding-needs` | сохранить цель |
+
+```json
+{
+  "goalType": "equipment",
+  "title": "…",
+  "costs": { "equipment": 5000000 },
+  "reserve": 0,
+  "ownFunds": 1000000,
+  "otherFunding": 0,
+  "targetDate": "2026-12-01",
+  "termMonths": 36
+}
+```
+
+---
+
+## Сценарии и калькуляторы
+
+| Route | Код | API сейчас |
+|-------|-----|------------|
+| `/app/scenarios` | `ScenarioLabPage` | хаб-ссылки; store тянет `GET /credit/scenarios` |
+| `/app/forecast` | `ForecastPage` | UI-local; клиент готов: `POST /forecasts/cashflow` |
+| `/app/roi` | `RoiPage` | UI-local + handoff в localStorage |
+| `/app/calculator` | `CalculatorPage` | UI-local + handoff |
+| `/app/readiness` | `ReadinessPage` | UI; API: `POST /credit/readiness` (ещё с главной/wizard) |
+| `/app/compare` | `ComparePage` | продукты из store `GET /credit/products` (+ демо fallback) |
+
+### Credit catalog / scenarios (store + подбор)
+
+| Method | Path | Когда |
+|--------|------|--------|
+| `GET` | `/credit/products` | store · сравнение · подбор |
+| `GET` | `/credit/products/{productId}` | карточка продукта (клиент есть) |
+| `POST` | `/credit/recommendations` | `/app/recommendations/results` |
+| `POST` | `/credit/readiness` | готовность / главная |
+| `GET` | `/credit/scenarios?company_id=` | store |
+| `POST` | `/credit/scenarios` | сохранить сценарий (`saveScenario`; UI lab может не звать) |
+
+### Forecast (клиент готов)
+
+| Method | Path | Body |
+|--------|------|------|
+| `POST` | `/forecasts/cashflow` | `{ "companyId", "horizonDays": 30\|90\|180 }` |
+
+Код: `fetchForecast` · `api/statements.ts`. Экран `/app/forecast` пока считает локально.
+
+### Transactions (финпрофиль)
+
+| Method | Path | Когда |
+|--------|------|--------|
+| `GET` | `/companies/{id}/transactions` | store после импорта |
+| `PATCH` | `/transactions/{id}/category` | смена категории (`updateTransactionCategory`; UI может не звать) |
+| `POST` | `/statements/import` | upload / onboarding finances |
+
+---
+
+## Документы компании — `/app/documents`
+
+Код: `DocumentsPage.tsx` · `DocumentViewPage.tsx`.
+
+**Нет HTTP** — демо-список / превью. Живые документы заявки — на `/app/applications/:id` (см. выше).
+
+Опционально (есть в analyst company-scope, предприниматель может понадобиться для превью):
+
+| Method | Path | Назначение |
+|--------|------|------------|
+| `GET` | `/companies/{companyId}/applications/{applicationId}/documents` | список |
+| `GET` | `/companies/{companyId}/applications/{applicationId}/documents/{documentId}` | мета |
+| `GET` | `/companies/{companyId}/applications/{applicationId}/documents/{documentId}/download` | файл |
+
+---
+
+## Уведомления предпринимателя — `/app/notifications`
+
+Код: `NotificationsPage.tsx` (ветка entrepreneur).
+
+**Нет live API** — локальный список. Для полного продукта:
+
+| Method | Path | Когда |
+|--------|------|--------|
+| `GET` | `/notifications` | список |
+| `PATCH` | `/notifications/{id}/read` | прочитано |
+| `POST` | `/notifications/read-all` | всё прочитано |
+
+(точные пути — по бэкенд-контракту; UI пока синтетика.)
+
+---
+
+## Роли предпринимателя vs бухгалтер
+
+Один route-tree `/app/*`. Меню (`AppLayout`):
+
+- **entrepreneur** — полный `entrepreneurGroups`
+- **accountant** — урезанное меню: главная, компания, финпрофиль, календарь, помощь (deep-link на остальные экраны всё равно работает)
+
+Company switcher в хедере: `GET /companies`.
+
+---
+
+## Store hydration — `useAppStore` (почти все экраны `/app`)
+
+При `user.companyId` фронт параллельно дергает:
+
+| Method | Path |
+|--------|------|
+| `GET` | `/companies/{companyId}` |
+| `GET` | `/companies/{companyId}/financials` |
+| `GET` | `/companies/{companyId}/funding-needs` |
+| `GET` | `/applications?companyId=` |
+| `GET` | `/obligations?companyId=` |
+| `GET` | `/companies/{companyId}/transactions` |
+| `GET` | `/credit/scenarios?company_id=` |
+| `GET` | `/credit/products` |
+
+Код: `hooks/useAppStore.ts`.
+
+### Чеклист: все пути из `api/{auth,companies,applications,credit,statements}.ts` для кабинета бизнеса
+
+| Status | Method | Path |
+|--------|--------|------|
+| wired | `POST` | `/auth/login` |
+| wired | `POST` | `/auth/refresh` |
+| wired | `POST` | `/auth/logout` |
+| wired | `GET` | `/auth/me` |
+| wired | `GET` | `/auth/email/verify` |
+| client | `POST` | `/auth/email/resend` |
+| wired | `POST` | `/auth/password/forgot` |
+| wired | `POST` | `/auth/password/reset` |
+| wired | `GET` | `/companies` |
+| wired | `POST` | `/companies` |
+| wired | `GET` | `/companies/{id}` |
+| wired | `PATCH` | `/companies/{id}` |
+| wired | `GET` | `/companies/{id}/dashboard` |
+| wired | `POST` | `/companies/{id}/registry/verify` |
+| wired | `POST` | `/registry/companies/lookup` |
+| wired | `GET`/`PATCH` | `/companies/{id}/financials` |
+| wired | `GET`/`POST` | `/companies/{id}/funding-needs` |
+| wired | `GET`/`POST` | `/obligations` (+ `PATCH /obligations/{id}` client) |
+| wired | `GET` | `/companies/{id}/transactions` |
+| wired | `POST` | `/statements/import` |
+| client | `PATCH` | `/transactions/{id}/category` |
+| client | `POST` | `/forecasts/cashflow` |
+| wired | `POST` | `/ai/chat` |
+| wired | `GET` | `/credit/products` |
+| client | `GET` | `/credit/products/{id}` |
+| wired | `POST` | `/credit/recommendations` |
+| wired | `POST` | `/credit/readiness` |
+| wired | `GET` | `/credit/scenarios` |
+| client | `POST` | `/credit/scenarios` |
+| wired | `GET`/`POST` | `/applications` |
+| wired | `GET` | `/applications/{id}` |
+| wired | `POST` | `/applications/{id}/submit` |
+| wired | `POST` | `/applications/{id}/documents` |
+| wired | `GET` | `/companies/{cid}/applications/{id}/decision` |
+| wired | `GET`/`POST accept\|decline` | `…/offers[/{offerId}/…]` |
+| wired | `GET` | `…/document-requests` |
+| client | `POST` | `…/document-requests/{id}/respond` |
+| wired | `POST` | `…/documents` (company multipart) |
+| wired | `GET`/`POST` | `…/comments` |
+| not entrepreneur | `PATCH` | `/applications/{id}/status` → analyst legacy |
+| not entrepreneur | `POST` | `/applications/{id}/request-documents` → analyst legacy |
+| not entrepreneur | `GET` | `/manager/applications` → bank roles |
+
+**Нет в клиенте (продуктовые дыры UI):** team invite/members API, notifications list/read, vault `/app/documents`, `GET …/documents` + download (опц. выше).
+
+### Есть в `api/*`, UI предпринимателя пока не зовёт
+
+| Method | Path | Клиент |
+|--------|------|--------|
+| `POST` | `/auth/email/resend` | `resendEmailVerification` |
+| `PATCH` | `/transactions/{id}/category` | `updateTransactionCategory` |
+| `POST` | `/forecasts/cashflow` | `fetchForecast` (`/app/forecast` считает локально) |
+| `GET` | `/credit/products/{id}` | `getProduct` |
+| `POST` | `/credit/scenarios` | `saveScenario` |
+| `PATCH` | `/obligations/{id}` | `updateObligation` |
+| `POST` | `…/document-requests/{id}/respond` | `respondDocumentRequest` (деталь грузит файл с `document_request_id`) |
+
+---
+
+## Команда — доп. экраны
+
+| Route | API |
+|-------|-----|
+| `/app/team` | `GET /companies` (+ demo members) |
+| `/app/team/invite`, `/app/team/tasks`, `/app/team/:memberId` | UI demo / local |
+| Invite accept (если включён) | `GET /companies`, `GET /companies/{id}` |
+
+Полный продукт (ещё не wired): invites/members под `/admin/companies/…/members` или company-scoped team API.
 
 ---
 
@@ -547,41 +835,47 @@ UI: drag&drop / «Загрузить» / «Заменить» в блоке «Д
 
 Legacy URL `/app/manager` → redirect `/app/analyst`.
 
-**Сейчас UI:** live через `api/analyst.ts` → `/api/v1/analyst/*`. Route param — UUID (или `applicationNumber`, резолвится в id). Демо осталось на Risks / Explain / части AI.
+**Сейчас UI:** live через `api/analyst.ts` → `/api/v1/analyst/*`. Route param — UUID (`resolveAnalystApplicationId` умеет искать по `applicationNumber` через queue `q`). Демо: Risks / Explain; AI-помощник локальный, чат с клиентом — live comments.
 
-### UI ↔ API
+Shell всех вкладок кейса: `GET /analyst/applications/{id}` (`AnalystCaseShell` → outlet `card`).  
+Layout sidebar: `GET /analyst/applications?assigned_to_me=true&limit=1` (last case hint).
 
-| Экран | Код | Что есть на бэке | UI сейчас |
-|-------|-----|------------------|-----------|
-| `/app/analyst` | `AnalystQueuePage` | `GET /analyst/applications` | live |
-| `/app/analyst/mine` | `AnalystMinePage` | `GET /analyst/applications?assigned_to_me=true` | live |
-| `/app/analyst/attention` | `AnalystAttentionPage` | фильтр `assigned_to_me` очереди | live (derived) |
-| `/app/analyst/workflow` | `AnalystWorkflowPage` | `countsByStatus` очереди | live (derived) |
-| `/app/analyst/cases/:id` | `AnalystCaseOverviewPage` | `GET /analyst/applications/{id}` | live |
-| `…/company` | `AnalystCaseCompanyPage` | card.`company` + `financials` | live |
-| `…/finance` | `AnalystCaseFinancePage` | card.`financials` | live |
-| `…/documents` | `AnalystCaseDocumentsPage` | docs + `POST …/document-requests` | live |
-| `…/checks` | `AnalystCaseChecksPage` | `GET /analyst/applications/{id}/checks` | live |
-| `…/risks` | `AnalystCaseRisksPage` | checks / decision payload (отдельного `/risks` нет) | синтетика |
-| `…/explainability` | `AnalystCaseExplainPage` | `explanation` / `reason_codes` в decision | синтетика |
-| `…/ai` | `AnalystCaseAiPage` | `aiSummary` из card + локальный чат | partial |
-| `…/decision` | `AnalystCaseDecisionPage` | `POST /analyst/applications/{id}/propose` | live |
-| `…/history` | `AnalystCaseHistoryPage` | `statusHistory` / comments / decisions | live |
-| `/app/notifications` | `NotificationsPage` (ветка analyst) | `GET/PATCH /notifications*` | синтетика: SLA / очередь / docs клиента |
-| `/app/help` | `HelpPage` | — | статика |
-| `/app/profile` | `ProfilePage` | `GET /auth/me`, logout | как у всех |
+### UI ↔ API (по экранам)
 
-### Каталог `/analyst/*`
+| Экран | Код | Эндпоинты | UI |
+|-------|-----|-----------|-----|
+| `/app/analyst` | `AnalystQueuePage` | `GET /analyst/applications` (`status`, `q`, `limit`) | live |
+| `/app/analyst/mine` | `AnalystMinePage` | `GET …?assigned_to_me=true` | live |
+| `/app/analyst/attention` | `AnalystAttentionPage` | `GET …?assigned_to_me=true` → клиентский фильтр SLA/docs | live derived |
+| `/app/analyst/workflow` | `AnalystWorkflowPage` | `GET …?include_closed=true&limit=100` → `countsByStatus` | live derived |
+| `/app/analyst/cases/:id` | `AnalystCaseOverviewPage` | card + `POST …/assign` («Взять в работу») | live |
+| `…/company` | `AnalystCaseCompanyPage` | card.`company` | live |
+| `…/finance` | `AnalystCaseFinancePage` | card.`financials` | live (+ клиентский chart) |
+| `…/documents` | `AnalystCaseDocumentsPage` | card docs + `openDocumentRequests`; `POST …/document-requests` | live |
+| `…/checks` | `AnalystCaseChecksPage` | `GET …/checks` | live |
+| `…/risks` | `AnalystCaseRisksPage` | — (отдельного API нет) | демо |
+| `…/explainability` | `AnalystCaseExplainPage` | — (можно брать `decisions`/`checks` из card) | демо |
+| `…/ai` | `AnalystCaseAiPage` | `GET`/`POST …/comments` (`isInternal`); вкладка AI — local | live chat + local AI |
+| `…/decision` | `AnalystCaseDecisionPage` | card (`allowedActions`, offers, gate) + `POST …/propose` | live |
+| `…/history` | `AnalystCaseHistoryPage` | card.`statusHistory` + `application.comments` + `decisions` | live (из card) |
+| `/app/notifications` | `NotificationsPage` | целевой `/notifications*` | синтетика |
+| `/app/help` | `HelpPage` | — | статика (ветка analyst) |
+| `/app/profile` | `ProfilePage` | `GET /auth/me`, `POST /auth/logout`, `GET /companies` | как у всех |
 
-| Method | Path | Назначение |
-|--------|------|------------|
-| `GET` | `/analyst/applications` | Очередь / мои заявки |
-| `GET` | `/analyst/applications/{application_id}` | Карточка заявки (обзор + компания + финансы + summary) |
-| `GET` | `/analyst/applications/{application_id}/checks` | Автопроверки |
-| `GET` | `/analyst/applications/{application_id}/document-requests` | Список запросов документов |
-| `POST` | `/analyst/applications/{application_id}/document-requests` | Запросить документ (201) |
-| `POST` | `/analyst/applications/{application_id}/document-requests/{request_id}/cancel` | Отменить запрос |
-| `POST` | `/analyst/applications/{application_id}/propose` | Решение / контрпредложение |
+### Каталог `/analyst/*` (бэкенд `analyst.py` + фронт `api/analyst.ts`)
+
+| Method | Path | Назначение | Фронт |
+|--------|------|------------|-------|
+| `GET` | `/analyst/applications` | Очередь / мои / поиск / SLA-агрегаты | wired |
+| `GET` | `/analyst/applications/{id}` | Карточка (app+company+financials+workflow+checksSummary+openDocReqs+decisions+offers+allowedActions+statusHistory) | wired |
+| `POST` | `/analyst/applications/{id}/assign` | Взять в работу | wired |
+| `GET` | `/analyst/applications/{id}/checks` | Автопроверки | wired |
+| `GET` | `/analyst/applications/{id}/document-requests` | Список запросов | на бэке есть; UI берёт `openDocumentRequests` из card |
+| `POST` | `/analyst/applications/{id}/document-requests` | Запросить документ (201) | wired |
+| `POST` | `/analyst/applications/{id}/document-requests/{request_id}/cancel` | Отменить запрос | на бэке есть; UI не зовёт |
+| `GET` | `/analyst/applications/{id}/comments` | Чат / внутренние заметки | wired |
+| `POST` | `/analyst/applications/{id}/comments` | Сообщение (`isInternal`) | wired |
+| `POST` | `/analyst/applications/{id}/propose` | Решение / контр / NEED_INFO | wired |
 
 ### Связанные company-scoped (документы, статус)
 
@@ -728,15 +1022,23 @@ UI-маппинг:
 
 Экраны: **Проверки**; драйверы для **Риски** / **Объяснимость** — из `checks` + `decisions[].explanation` / `reasonCodes` (отдельных `/risks`, `/explainability` нет).
 
+### `POST /analyst/applications/{id}/assign`
+
+Тело пустое. Назначает текущего аналитика, при необходимости → `IN_REVIEW`.  
+Ответ бэка: `AnalystApplicationCard` (фронт после POST делает `GET` card заново).  
+Экран: **Обзор** · `assignAnalystApplication`.
+
 ### Document requests
+
+**`GET …/document-requests`** — полный список (открытые+закрытые). UI списка на экране Документы сейчас использует `card.openDocumentRequests`.
 
 **`POST /analyst/applications/{id}/document-requests`**
 
 ```json
-{ "docType": "lease_agreement", "comment": "Нужен актуальный договор аренды", "dueAt": "2026-10-28T18:00:00Z" }
+{ "docType": "LEASE_AGREEMENT", "comment": "Нужен актуальный договор аренды", "dueAt": "2026-10-28T18:00:00Z" }
 ```
 
-201 → `{ request, applicationId, status, currentStep }`
+201 → `{ request, applicationId, status, currentStep }` · `createAnalystDocumentRequest`.
 
 **`POST …/document-requests/{request_id}/cancel`**
 
@@ -744,7 +1046,20 @@ UI-маппинг:
 { "reason": "Клиент уже загрузил" }
 ```
 
-Экран **Документы**: список запросов + company docs; accept/reject файла на бэке пока через company document flow / status (UI-кнопки «Принять» / «Отклонить» — целевой UX, отдельного analyst accept-эндпоинта нет).
+На бэке есть; кнопки cancel в UI нет. Accept/reject загруженного файла клиентом — company document flow (отдельного analyst accept нет).
+
+### Comments — чат с клиентом (`…/ai`)
+
+**`GET /analyst/applications/{id}/comments`** → `CommentOut[]` (`isInternal`).  
+**`POST /analyst/applications/{id}/comments`**
+
+```json
+{ "text": "Уточните обороты за август", "isInternal": false }
+```
+
+`isInternal: true` — только банк; `false` — видит предприниматель (+ notification).  
+Код: `fetchAnalystComments` / `postAnalystComment` · poll ~12s в режиме клиента.  
+Вкладка «AI» на том же экране — **локальный** помощник (не `POST /ai/chat`).
 
 ### `POST /analyst/applications/{id}/propose` — решение
 
@@ -766,16 +1081,32 @@ UI-маппинг:
 
 Ответ: `{ applicationId, status, currentStep, decisionId, decisionType, offerId, reasonCodes, explanation, offer }`.
 
-Экран **Решение** (`AnalystCaseDecisionPage`).
+Экран **Решение** · `proposeAnalystDecision`. Gate на фронте: open doc requests / warnings / failed checks (override «Всё равно одобрить»).
 
-### Требуют внимания / SLA / история / AI
+### Требуют внимания / SLA / история
 
-| Экран | Целевой источник | Статус |
-|-------|------------------|--------|
-| Требуют внимания | `GET /notifications` (тип SLA / client_reply / ml) **или** очередь с `openDocumentRequests` / близким SLA | отдельного `/analyst/attention` нет |
-| Рабочий процесс и SLA | агрегата нет; `workflow` в card + counts из queue | UI-only |
-| История | `application.statusHistory` + `comments` в `ApplicationOut` / card | UI-only timeline |
-| AI Copilot | `POST /ai/chat` с `applicationId` в message/context | UI локальный; общий `/app/ai` уже на `/ai/chat` |
+| Экран | Источник | Статус |
+|-------|----------|--------|
+| Требуют внимания | `GET /analyst/applications?assigned_to_me=true` + клиентский filter; целевой ещё `GET /notifications` | live derived; отдельного `/analyst/attention` нет |
+| Рабочий процесс и SLA | queue `countsByStatus` + `include_closed` | live derived |
+| История | `statusHistory` + comments + decisions **из card** | live (без отдельного history API) |
+
+### Чеклист `/analyst/*`
+
+| Status | Method | Path |
+|--------|--------|------|
+| wired | `GET` | `/analyst/applications` |
+| wired | `GET` | `/analyst/applications/{id}` |
+| wired | `POST` | `/analyst/applications/{id}/assign` |
+| wired | `GET` | `/analyst/applications/{id}/checks` |
+| backend / UI via card | `GET` | `/analyst/applications/{id}/document-requests` |
+| wired | `POST` | `/analyst/applications/{id}/document-requests` |
+| backend only | `POST` | `/analyst/applications/{id}/document-requests/{id}/cancel` |
+| wired | `GET` | `/analyst/applications/{id}/comments` |
+| wired | `POST` | `/analyst/applications/{id}/comments` |
+| wired | `POST` | `/analyst/applications/{id}/propose` |
+
+**Целевые / дырки продукта:** notifications list/read; cancel doc-request в UI; risks/explain API (или wiring к checks+decisions); опц. `POST /ai/chat` с `applicationId`; document download/preview через company-scoped GET.
 
 ### Уведомления аналитика — `/app/notifications`
 
