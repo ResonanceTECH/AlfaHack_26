@@ -162,28 +162,37 @@ export function CompanyPage() {
     )
   }
 
-  if (isError || !company) {
+  if (!company) {
+    if (isError) {
+      return (
+        <Box>
+          <PageHeader title="Профиль компании" />
+          <Alert
+            severity="error"
+            action={
+              <Button color="inherit" size="small" onClick={() => refetchAll()}>
+                Повторить
+              </Button>
+            }
+          >
+            {storeError?.message || 'Не удалось загрузить компанию.'}
+          </Alert>
+        </Box>
+      )
+    }
     return (
       <Box>
         <PageHeader title="Профиль компании" />
         <Alert
-          severity="error"
+          severity="warning"
           action={
-            <Button color="inherit" size="small" onClick={() => refetchAll()}>
-              Повторить
+            <Button color="inherit" size="small" component={RouterLink} to="/select-company">
+              Выбрать компанию
             </Button>
           }
         >
-          {storeError?.message ||
-            'Не удалось загрузить компанию. Проверьте сессию или нажмите «Повторить».'}
+          Компания не найдена — выберите организацию заново.
         </Alert>
-        <Button
-          component={RouterLink}
-          to="/select-company"
-          sx={{ mt: 2, fontWeight: 600 }}
-        >
-          К выбору компании
-        </Button>
       </Box>
     )
   }
