@@ -14,6 +14,7 @@ from app.models.credit import CreditProduct
 from app.models.funding import FundingNeed
 from app.schemas.application import (
     ApplicationChecksOut,
+    ApplicationCommentCreate,
     ApplicationCreate,
     ApplicationDocumentsOut,
     ApplicationDraftCreate,
@@ -23,6 +24,7 @@ from app.schemas.application import (
     ApplicationSubmitOut,
     ApplicationUpdate,
     ApplicationValidationOut,
+    CommentOut,
     DecisionOut,
     DocsRequestIn,
     DocumentMetaOut,
@@ -76,6 +78,7 @@ from app.services.documents import (
     serialize_document_request,
     upload_document as store_application_document,
 )
+from app.services.notifications import notify
 from app.services.workflow import public_checks, serialize_check, transition_application
 
 router = APIRouter(tags=["applications"])
@@ -449,6 +452,105 @@ def application_public_checks(
         application_id=app.id,
         status=app.status,
         checks=[PublicCheckOut(**serialize_check(c)) for c in public_checks(app)],
+    )
+
+
+@router.get(
+    "/companies/{company_id}/applications/{application_id}/comments",
+    response_model=list[CommentOut],
+)
+def list_application_comments(
+    company_id: str, application_id: str, db: DbDep, user: CurrentUser
+) -> list[CommentOut]:
+    """Публичная переписка по заявке (без внутренних заметок банка)."""
+    app = _company_app(db, company_id, application_id, user)
+    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    comments = sorted(
+        [c for c in (app.comments or []) if not c.is_internal],
+        key=lambda c: c.created_at or epoch,
+    )
+    return [
+        CommentOut(
+            id=c.id,
+            author_id=c.author_id,
+            author_name=c.author_name or "",
+            author_role=c.author_role or "",
+            text=c.text,
+            created_at=c.created_at,
+            is_internal=False,
+        )
+        for c in comments
+    ]
+
+
+@router.post(
+    "/companies/{company_id}/applications/{application_id}/comments",
+    response_model=CommentOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def post_application_comment(
+    company_id: str,
+    application_id: str,
+    body: ApplicationCommentCreate,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+) -> CommentOut:
+    """Сообщение предпринимателя / сотрудника компании банку."""
+    require_company_access(db, user, company_id, write=True)
+    app = _load_app(db, application_id)
+    if app.company_id != company_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Заявка не найдена")
+    require_application_access(db, user, app, write=True)
+
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Пустой текст")
+
+    comment = ApplicationComment(
+        application_id=app.id,
+        author_id=user.id,
+        author_name=user.full_name,
+        author_role=user.role.value,
+        text=text,
+        is_internal=False,
+    )
+    db.add(comment)
+
+    analyst_id = app.assigned_analyst_id or app.assigned_manager_id
+    if analyst_id:
+        notify(
+            db,
+            user_id=analyst_id,
+            type="CLIENT_MESSAGE",
+            title="Сообщение от клиента по заявке",
+            body=text[:240],
+            payload={
+                "application_id": app.id,
+                "company_id": app.company_id,
+                "comment_id": comment.id,
+            },
+        )
+
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="application_comment",
+        entity_id=app.id,
+        action="create",
+        details={"preview": text[:120]},
+        correlation_id=cid,
+    )
+    db.commit()
+    db.refresh(comment)
+    return CommentOut(
+        id=comment.id,
+        author_id=comment.author_id,
+        author_name=comment.author_name or "",
+        author_role=comment.author_role or "",
+        text=comment.text,
+        created_at=comment.created_at,
+        is_internal=False,
     )
 
 

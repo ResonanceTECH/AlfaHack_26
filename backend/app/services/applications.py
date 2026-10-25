@@ -55,7 +55,7 @@ def application_number(app: CreditApplication) -> str:
     return f"ABC-{year}-{short}"
 
 
-def serialize_application(app: CreditApplication) -> dict[str, Any]:
+def serialize_application(app: CreditApplication, *, include_internal_comments: bool = False) -> dict[str, Any]:
     manager_name = app.assigned_manager.full_name if app.assigned_manager else None
     return {
         "id": app.id,
@@ -95,8 +95,10 @@ def serialize_application(app: CreditApplication) -> dict[str, Any]:
                 "author_role": c.author_role or "",
                 "text": c.text,
                 "created_at": c.created_at,
+                "is_internal": bool(c.is_internal),
             }
             for c in (app.comments or [])
+            if include_internal_comments or not c.is_internal
         ],
         "status_history": app.status_history or [],
         "created_at": app.created_at,
