@@ -187,7 +187,7 @@ UI превью: name / region / `membershipRole` из list item; KPI — `appli
 | `POST` | `/companies/{companyId}/registry/verify` | подтверждение на `/app/company/inn-check` |
 
 Владельцы / согласия — UI demo поверх реальных реквизитов.  
-Вкладка «Банковские счета»: демо-реквизиты счёта; «Загрузить выписку» → `/app/statements/upload`; история — по `transactions` из store. Полнота 5/6 без выписки.
+Вкладка «Банковские счета»: empty без счёта; «+ Добавить счёт» → модалка реквизитов → localStorage `alfa_company_bank_accounts:{id}` (JSON); «Загрузить выписку» → `/app/statements/upload`; история — по `transactions`. Полнота 4/6 без счёта, 5/6 без выписки.
 
 «Проверить ИНН» → `/app/company/inn-check` (`CompanyInnCheckPage.tsx`):
 
