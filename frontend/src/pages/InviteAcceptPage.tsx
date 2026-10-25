@@ -13,15 +13,12 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import axios from 'axios'
+import { acceptInvite } from '@/api/team'
 import { getCompany, listCompanies } from '@/api/companies'
 import { LogoutConfirmDialog } from '@/components/common/LogoutConfirmDialog'
 import { useAuth } from '@/contexts/AuthContext'
-import {
-  ROLE_LABEL,
-  ROLE_RIGHTS_TEXT,
-  type TeamRole,
-  upsertTeamMember,
-} from '@/features/team/store'
+import { ROLE_LABEL, ROLE_RIGHTS_TEXT, type TeamRole } from '@/features/team/store'
 
 const tileSx = {
   bgcolor: '#fff',
@@ -83,6 +80,18 @@ function RightIcon({ ok }: { ok: boolean }) {
 }
 
 /** Экран получателя ссылки `/select-company?invite=…&company=…&role=…` */
+function apiError(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err)) {
+    const detail = err.response?.data?.detail
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail)) {
+      return detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join('; ')
+    }
+  }
+  if (err instanceof Error) return err.message
+  return fallback
+}
+
 export function InviteAcceptPage() {
   const { user, selectCompany, logout } = useAuth()
   const navigate = useNavigate()
@@ -90,6 +99,7 @@ export function InviteAcceptPage() {
   const [logoutOpen, setLogoutOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState<'accepted' | 'declined' | null>(null)
+  const [acceptError, setAcceptError] = useState<string | null>(null)
 
   const inviteCode = (params.get('invite') ?? '').trim()
   const companyId = (params.get('company') ?? '').trim()
@@ -97,7 +107,7 @@ export function InviteAcceptPage() {
   const companyNameFromLink = (params.get('companyName') ?? '').trim()
   const inviterName = (params.get('from') ?? '').trim() || 'Владелец компании'
 
-  const invalid = !inviteCode || !companyId
+  const invalid = !inviteCode
 
   const companiesQ = useQuery({
     queryKey: ['companies'],
@@ -141,26 +151,22 @@ export function InviteAcceptPage() {
     navigate(path, { replace: true })
   }
 
-  function onAccept() {
+  async function onAccept() {
     if (invalid || busy) return
     setBusy(true)
-    selectCompany(companyId)
-    if (user) {
-      upsertTeamMember({
-        id: user.id || `me_${Date.now()}`,
-        name: user.fullName || user.email?.split('@')[0] || 'Участник',
-        email: user.email || '',
-        role,
-        rights: ROLE_RIGHTS_TEXT[role],
-        lastLogin: 'сейчас',
-        status: 'active',
-        statusLabel: role === 'owner' ? 'Активен' : 'Активен',
-      })
+    setAcceptError(null)
+    try {
+      const res = await acceptInvite(inviteCode)
+      const nextId = res.companyId || companyId
+      if (nextId) selectCompany(nextId)
+      setDone('accepted')
+      window.setTimeout(() => {
+        clearInviteAndGo('/app')
+      }, 700)
+    } catch (err) {
+      setBusy(false)
+      setAcceptError(apiError(err, 'Не удалось принять приглашение'))
     }
-    setDone('accepted')
-    window.setTimeout(() => {
-      clearInviteAndGo('/app')
-    }, 700)
   }
 
   function onDecline() {
@@ -358,6 +364,12 @@ export function InviteAcceptPage() {
                   </Stack>
                 ))}
               </Stack>
+
+              {acceptError && (
+                <Alert severity="error" sx={{ mb: 2, borderRadius: 2.5 }}>
+                  {acceptError}
+                </Alert>
+              )}
 
               {alreadyMember && (
                 <Alert severity="info" sx={{ mb: 2, borderRadius: 2.5 }}>

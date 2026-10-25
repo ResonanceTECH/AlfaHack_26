@@ -27,7 +27,6 @@ import {
 } from '@/api/team'
 import { useAuth } from '@/contexts/AuthContext'
 import { useAppStore } from '@/hooks/useAppStore'
-import type { TeamRole } from '@/features/team/store'
 
 const tileSx = {
   bgcolor: '#fff',
@@ -146,18 +145,19 @@ function RightIcon({ ok }: { ok: boolean }) {
 export function TeamInvitePage() {
   const navigate = useNavigate()
   const { user } = useAuth()
-
-  const companiesQ = useQuery({
-    queryKey: ['companies'],
-    queryFn: listCompanies,
-    enabled: Boolean(user),
-  })
-  const company =
-    companiesQ.data?.find((c) => c.id === user?.companyId) ?? companiesQ.data?.[0] ?? null
+  const { companyId: storeCompanyId, company } = useAppStore()
+  const qc = useQueryClient()
+  const companyId = storeCompanyId || user?.companyId
   const companyShort =
-    (company?.name || 'Кофе Плюс').replace(/^ООО\s*/i, '').replace(/[«»"]/g, '') || 'Кофе Плюс'
+    (company?.name || 'Компания').replace(/^ООО\s*/i, '').replace(/[«»"]/g, '') || 'Компания'
 
-  const [email, setEmail] = useState('maria.new@coffeeplus.ru')
+  const invitesQ = useQuery({
+    queryKey: ['team', 'invites', companyId],
+    queryFn: () => listInvites(companyId!),
+    enabled: Boolean(companyId),
+  })
+
+  const [email, setEmail] = useState('')
   const [role, setRole] = useState<InviteRole>('accountant')
   const [message, setMessage] = useState(
     `Добрый день! Подключайтесь к кабинету «${companyShort}» — нужен доступ к заявкам и документам.`,
@@ -167,21 +167,23 @@ export function TeamInvitePage() {
   const [showCodeInCabinet, setShowCodeInCabinet] = useState(false)
   const [sentFlash, setSentFlash] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
-  const [active, setActive] = useState<ActiveInvite[]>(INITIAL_ACTIVE)
+  const [formError, setFormError] = useState<string | null>(null)
   const [cancelTarget, setCancelTarget] = useState<ActiveInvite | null>(null)
+
+  const active = (invitesQ.data ?? []).map(toActive)
 
   const inviteLink = useMemo(() => {
     const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173'
-    const cid = user?.companyId || company?.id || 'demo'
+    const cid = companyId || 'demo'
     const qs = new URLSearchParams({
       invite: code,
       company: cid,
       role,
-      companyName: company?.name || `ООО «${companyShort}»`,
+      companyName: company?.name || companyShort,
       from: user?.fullName || 'Владелец',
     })
     return `${origin}/select-company?${qs.toString()}`
-  }, [code, role, user?.companyId, user?.fullName, company?.id, company?.name, companyShort])
+  }, [code, role, companyId, user?.fullName, company?.name, companyShort])
 
   function regenerateCode() {
     setCode(`INV-COFFEE-${randomCodeSuffix()}`)
@@ -197,58 +199,71 @@ export function TeamInvitePage() {
     }
   }
 
+  const sendM = useMutation({
+    mutationFn: async () => {
+      if (!companyId) throw new Error('Нет компании')
+      return inviteMember(companyId, {
+        email: email.trim(),
+        role: toInviteApiRole(role),
+        message: message.trim() || undefined,
+      })
+    },
+    onSuccess: async (inv) => {
+      if (inv.code) setCode(inv.code)
+      await qc.invalidateQueries({ queryKey: ['team'] })
+      setFormError(null)
+      setSentFlash(true)
+      window.setTimeout(() => setSentFlash(false), 2200)
+    },
+    onError: (err) => setFormError(apiError(err, 'Не удалось отправить приглашение')),
+  })
+
   function sendInvite() {
     const trimmed = email.trim()
     if (!trimmed.includes('@')) return
-    const namePart = trimmed.split('@')[0] ?? 'Участник'
-    const name = namePart
-      .split(/[._-]/)
-      .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
-      .join(' ')
-
-    const id = `inv_${Date.now()}`
-    setActive((list) => [
-      {
-        id,
-        name,
-        email: trimmed,
-        role,
-        code: `${code.slice(0, 6)}…${code.slice(-2)}`,
-        daysLeft: 7,
-      },
-      ...list,
-    ])
-    upsertTeamMember({
-      id,
-      name,
-      email: trimmed,
-      role,
-      rights: ROLE_RIGHTS_TEXT[role],
-      lastLogin: '—',
-      status: 'invited',
-      statusLabel: 'Приглашён',
-    })
-    setSentFlash(true)
-    window.setTimeout(() => setSentFlash(false), 2200)
+    sendM.mutate()
   }
+
+  const cancelM = useMutation({
+    mutationFn: async (id: string) => {
+      if (!companyId) throw new Error('Нет компании')
+      await cancelInvite(companyId, id)
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['team'] })
+      setCancelTarget(null)
+      setFormError(null)
+    },
+    onError: (err) => setFormError(apiError(err, 'Не удалось прервать приглашение')),
+  })
 
   function confirmCancelInvite() {
     if (!cancelTarget) return
-    setActive((list) => list.filter((i) => i.id !== cancelTarget.id))
-    removeTeamMember(cancelTarget.id)
-    setCancelTarget(null)
+    cancelM.mutate(cancelTarget.id)
   }
 
+  const cycleM = useMutation({
+    mutationFn: async (inv: ActiveInvite) => {
+      if (!companyId) throw new Error('Нет компании')
+      const next: InviteRole = inv.role === 'viewer' ? 'accountant' : 'viewer'
+      await cancelInvite(companyId, inv.id)
+      return inviteMember(companyId, {
+        email: inv.email,
+        role: toInviteApiRole(next),
+        message: message.trim() || undefined,
+      })
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['team'] })
+      setFormError(null)
+    },
+    onError: (err) => setFormError(apiError(err, 'Не удалось сменить роль')),
+  })
+
   function cycleRole(id: string) {
-    setActive((list) =>
-      list.map((i) => {
-        if (i.id !== id) return i
-        const next: InviteRole =
-          i.role === 'viewer' ? 'accountant' : i.role === 'accountant' ? 'owner' : 'viewer'
-        updateTeamMemberRole(id, next)
-        return { ...i, role: next }
-      }),
-    )
+    const inv = active.find((i) => i.id === id)
+    if (!inv) return
+    cycleM.mutate(inv)
   }
 
   return (
@@ -321,6 +336,11 @@ export function TeamInvitePage() {
           </Typography>
 
           <Stack spacing={1.75}>
+            {formError && (
+              <Typography sx={{ fontSize: 13, color: '#C41E14', fontWeight: 600 }}>
+                {formError}
+              </Typography>
+            )}
             <TextField
               label="E-mail"
               fullWidth
@@ -340,7 +360,6 @@ export function TeamInvitePage() {
             >
               <MenuItem value="accountant">Бухгалтер</MenuItem>
               <MenuItem value="viewer">Наблюдатель</MenuItem>
-              <MenuItem value="owner">Владелец</MenuItem>
             </TextField>
             <TextField
               label="Персональное сообщение"
@@ -429,7 +448,7 @@ export function TeamInvitePage() {
                 type="button"
                 variant="contained"
                 color="primary"
-                disabled={!email.trim().includes('@')}
+                disabled={!email.trim().includes('@') || sendM.isPending || !companyId}
                 onClick={sendInvite}
                 sx={{
                   flex: 1,
@@ -441,7 +460,7 @@ export function TeamInvitePage() {
                   '&:hover': { boxShadow: 'none' },
                 }}
               >
-                {sentFlash ? 'Отправлено' : 'Отправить приглашение'}
+                {sendM.isPending ? 'Отправка…' : sentFlash ? 'Отправлено' : 'Отправить приглашение'}
               </Button>
               <Button
                 type="button"
