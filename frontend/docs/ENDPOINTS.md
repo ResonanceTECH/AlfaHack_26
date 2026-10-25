@@ -2,9 +2,9 @@
 
 Эндпоинты API, которые дергает фронт. Базовый префикс: `/api/v1` (прокси Vite → backend).
 
-Экраны: **логин**, **забыли пароль**, **выбор / добавление компании**, **главная**, **профиль компании**, **финансовый профиль**, **календарь**, **профиль пользователя**, **команда**, **помощь**, **AI-консультант**, **админ** (обзор / аналитика / продукты / политика / пользователи / аудит / уведомления).
+Экраны: **логин**, **забыли пароль**, **выбор / добавление компании**, **главная**, **профиль компании**, **финансовый профиль**, **календарь**, **профиль пользователя**, **команда**, **помощь**, **AI-консультант**, **аналитик** (очередь / мои / внимание / SLA / карточка заявки), **админ** (обзор / аналитика / продукты / политика / пользователи / аудит / уведомления).
 
-Клиентские экраны — с бэка (на главной заявки ещё подмешиваются из локального кэша после демо-отправки). Админ-каталог ниже = реальный `backend/app/api/v1/admin.py` (45 маршрутов). UI-экраны overview/analytics/notifications пока на локальной синтетике — бэкенд-эндпоинтов под них нет.
+Клиентские экраны предпринимателя — с бэка (на главной заявки ещё подмешиваются из локального кэша после демо-отправки). Каталог аналитика = реальный `backend/app/api/v1/analyst.py` (+ связанные company-scoped routes). UI кабинета аналитика пока на локальной синтетике (`features/analyst/demoData.ts`) — HTTP-клиент к `/analyst/*` ещё не подключён. Админ-каталог = `backend/app/api/v1/admin.py` (45 маршрутов); overview/analytics/notifications админа — тоже синтетика.
 
 ## Логин — `/login`
 
@@ -25,7 +25,7 @@
 
 После успеха:
 - `admin` → `/app/admin`
-- `analyst` → `/app/manager` (если есть)
+- `analyst` / `manager` / `risk_analyst` → `/app/analyst`
 - предприниматель с `companyId` → `/app`
 - иначе → `/select-company`
 
@@ -491,7 +491,7 @@ Draft: localStorage `alfa_selection_draft:{companyId}` (`features/selection/`).
 | `GET` | `/applications/{id}` | шапка, условия, статус, история, комментарии |
 | `POST` | `/applications/{id}/documents` | загрузка файла в слот чек-листа (multipart) |
 | `POST` | `/applications/{id}/submit` | после комплекта документов (wizard / следующий шаг) |
-| `PATCH` | `/applications/{id}/status` | менеджер (не предприниматель) |
+| `PATCH` | `/applications/{id}/status` | аналитик (legacy; предпочтительно `POST /analyst/applications/{id}/propose`) |
 
 Fallback: если `GET` 404 — заявка из `alfa_local_applications`.  
 Чек-лист слотов (выписка, паспорт, договор/КП, УСН, БКИ, залог) — `localStorage` `alfa_app_documents:{applicationId}`; при успешном `POST …/documents` ещё invalidate `['application']` / `['applications']`.
@@ -537,6 +537,253 @@ Fallback: если `GET` 404 — заявка из `alfa_local_applications`.
 UI: drag&drop / «Загрузить» / «Заменить» в блоке «Документы по заявке». Демо без бэка — только локальный чек-лист.
 
 Кнопка «К проверке перед отправкой» активна, когда все **обязательные** слоты в статусе `uploaded` | `review`.
+
+---
+
+## Аналитик — кабинет (`/app/analyst/*`)
+
+Источник правды API: `backend/app/api/v1/analyst.py` + схемы `backend/app/schemas/analyst.py`.  
+Роль: `ANALYST` (`require_roles`). Фронт: `Protected roles={['analyst','manager','risk_analyst']}`, меню `AppLayout` → `buildAnalystGroups`, страницы `pages/analyst/*`, shell кейса `components/analyst/AnalystCaseShell.tsx`.
+
+Legacy URL `/app/manager` → redirect `/app/analyst`.
+
+**Сейчас UI:** демо-данные `features/analyst/demoData.ts` (кейсы `ABC-2026-*`). Ниже — целевой контракт для проводки HTTP.
+
+### UI ↔ API
+
+| Экран | Код | Что есть на бэке | UI сейчас |
+|-------|-----|------------------|-----------|
+| `/app/analyst` | `AnalystQueuePage` | `GET /analyst/applications` | синтетика |
+| `/app/analyst/mine` | `AnalystMinePage` | `GET /analyst/applications?assigned_to_me=true` | синтетика |
+| `/app/analyst/attention` | `AnalystAttentionPage` | нет отдельного API (фильтр очереди / notifications) | синтетика |
+| `/app/analyst/workflow` | `AnalystWorkflowPage` | нет агрегата SLA; куски в card.`workflow` | синтетика |
+| `/app/analyst/cases/:id` | `AnalystCaseOverviewPage` | `GET /analyst/applications/{id}` | синтетика |
+| `…/company` | `AnalystCaseCompanyPage` | card.`company` + `financials` | синтетика |
+| `…/finance` | `AnalystCaseFinancePage` | card.`financials` (+ company financials) | синтетика |
+| `…/documents` | `AnalystCaseDocumentsPage` | docs + document-requests (см. ниже) | синтетика |
+| `…/checks` | `AnalystCaseChecksPage` | `GET /analyst/applications/{id}/checks` | синтетика |
+| `…/risks` | `AnalystCaseRisksPage` | checks / decision payload (отдельного `/risks` нет) | синтетика |
+| `…/explainability` | `AnalystCaseExplainPage` | `explanation` / `reason_codes` в decision | синтетика |
+| `…/ai` | `AnalystCaseAiPage` | `POST /ai/chat` (общий) | локальный чат |
+| `…/decision` | `AnalystCaseDecisionPage` | `POST /analyst/applications/{id}/propose` | синтетика |
+| `…/history` | `AnalystCaseHistoryPage` | `statusHistory` / comments в `ApplicationOut` | синтетика |
+| `/app/notifications` | `NotificationsPage` | `GET/PATCH /notifications*` | смешанно |
+| `/app/help` | `HelpPage` | — | статика |
+| `/app/profile` | `ProfilePage` | `GET /auth/me`, logout | как у всех |
+
+### Каталог `/analyst/*`
+
+| Method | Path | Назначение |
+|--------|------|------------|
+| `GET` | `/analyst/applications` | Очередь / мои заявки |
+| `GET` | `/analyst/applications/{application_id}` | Карточка заявки (обзор + компания + финансы + summary) |
+| `GET` | `/analyst/applications/{application_id}/checks` | Автопроверки |
+| `GET` | `/analyst/applications/{application_id}/document-requests` | Список запросов документов |
+| `POST` | `/analyst/applications/{application_id}/document-requests` | Запросить документ (201) |
+| `POST` | `/analyst/applications/{application_id}/document-requests/{request_id}/cancel` | Отменить запрос |
+| `POST` | `/analyst/applications/{application_id}/propose` | Решение / контрпредложение |
+
+### Связанные company-scoped (документы, статус)
+
+Нужен `company_id` из карточки (`application.companyId` / `company.id`):
+
+| Method | Path | Экран |
+|--------|------|--------|
+| `GET` | `/companies/{company_id}/applications/{application_id}/documents` | Документы |
+| `GET` | `/companies/{company_id}/applications/{application_id}/documents/{document_id}` | Превью мета |
+| `GET` | `/companies/{company_id}/applications/{application_id}/documents/{document_id}/download` | Скачать / превью |
+| `GET` | `/companies/{company_id}/applications/{application_id}/status` | SLA / статус в шапке |
+| `GET` | `/companies/{company_id}/applications/{application_id}/decision` | Публичное решение (если есть) |
+| `GET` | `/companies/{company_id}/applications/{application_id}/offers` | Офферы в решении |
+| `PATCH` | `/applications/{application_id}/status` | Legacy смена статуса (роль ANALYST) |
+| `POST` | `/applications/{application_id}/request-documents` | Legacy запрос доков |
+
+### `GET /analyst/applications` — очередь / мои
+
+Query:
+
+| Param | Тип | Default | Notes |
+|-------|-----|---------|--------|
+| `status` | `ApplicationStatus` | — | фильтр |
+| `product_id` | string | — | |
+| `assigned_to_me` | bool | `false` | экран «Мои заявки» |
+| `unassigned` | bool | `false` | свободные в очереди |
+| `q` | string | — | поиск name/ИНН/продукт/id |
+| `include_closed` | bool | `false` | `REJECTED` / `ISSUED` |
+| `limit` | 1–100 | 50 | |
+| `offset` | ≥0 | 0 | |
+
+```json
+{
+  "items": [
+    {
+      "id": "app_…",
+      "applicationNumber": "ABC-2026-1042",
+      "companyId": "company_001",
+      "companyName": "ООО «Кофе Плюс»",
+      "inn": "7701234567",
+      "status": "IN_REVIEW",
+      "currentStep": "docs_review",
+      "productId": "prod_turnover",
+      "productName": "Оборотный кредит",
+      "amount": 1500000,
+      "termMonths": 24,
+      "rate": 17.9,
+      "readinessScore": 72,
+      "assignedAnalystId": "user_analyst_01",
+      "assignedAnalystName": "Иванова А.С.",
+      "openDocumentRequests": 1,
+      "submittedAt": "2026-10-24T15:55:00Z",
+      "updatedAt": "2026-10-25T14:12:00Z",
+      "createdAt": "2026-10-24T15:50:00Z"
+    }
+  ],
+  "total": 7,
+  "countsByStatus": { "IN_REVIEW": 2, "DOCS_REQUESTED": 1 }
+}
+```
+
+UI-маппинг:
+- `/app/analyst` → без `assigned_to_me` (или `unassigned=true` для «взять в работу»)
+- `/app/analyst/mine` → `assigned_to_me=true`
+
+### `GET /analyst/applications/{id}` — карточка
+
+Ответ `AnalystApplicationCard`:
+
+```json
+{
+  "application": { "id": "app_…", "status": "IN_REVIEW", "amount": 1500000 },
+  "company": {
+    "id": "company_001",
+    "inn": "7701234567",
+    "name": "ООО «Кофе Плюс»",
+    "legalForm": "OOO",
+    "ogrn": "1197746123456",
+    "industry": "Рестораны и кафе",
+    "registrationDate": "2019-03-14",
+    "region": "Москва",
+    "employeesCount": 12,
+    "registryStatus": "ACTIVE",
+    "version": 1
+  },
+  "financials": {
+    "id": "fin_…",
+    "companyId": "company_001",
+    "period": "2026-H1",
+    "avgMonthlyRevenue": 4800000,
+    "operatingExpenses": 4100000,
+    "cashBalance": 920000,
+    "liabilities": 860000,
+    "activeCredits": 0,
+    "source": "statement",
+    "confirmed": true,
+    "currency": "RUB"
+  },
+  "workflow": {
+    "id": "wf_…",
+    "workflowType": "credit_review",
+    "status": "RUNNING",
+    "currentStep": "docs_review"
+  },
+  "checksSummary": {
+    "total": 9,
+    "passed": 8,
+    "failed": 0,
+    "warnings": 1,
+    "byStatus": {},
+    "byAudience": {},
+    "internalCount": 0
+  },
+  "openDocumentRequests": [],
+  "decisions": [],
+  "offers": [],
+  "allowedActions": ["request_documents", "propose", "continue_checks"]
+}
+```
+
+Экраны: **Обзор** (summary + `allowedActions` → контекстная панель), **Компания**, **Финансы** (KPI из `financials`).
+
+### `GET /analyst/applications/{id}/checks`
+
+```json
+{
+  "applicationId": "app_…",
+  "status": "IN_REVIEW",
+  "summary": { "total": 9, "passed": 8, "failed": 0, "warnings": 1 },
+  "checks": [
+    {
+      "id": "chk_…",
+      "checkKey": "cash_gap_days",
+      "status": "WARN",
+      "score": 70,
+      "reasonCodes": ["CASH_GAP_AUG"],
+      "explanation": "2 эпизода в августе",
+      "audience": "analyst",
+      "payload": {}
+    }
+  ]
+}
+```
+
+Экраны: **Проверки**; драйверы для **Риски** / **Объяснимость** — из `checks` + `decisions[].explanation` / `reasonCodes` (отдельных `/risks`, `/explainability` нет).
+
+### Document requests
+
+**`POST /analyst/applications/{id}/document-requests`**
+
+```json
+{ "docType": "lease_agreement", "comment": "Нужен актуальный договор аренды", "dueAt": "2026-10-28T18:00:00Z" }
+```
+
+201 → `{ request, applicationId, status, currentStep }`
+
+**`POST …/document-requests/{request_id}/cancel`**
+
+```json
+{ "reason": "Клиент уже загрузил" }
+```
+
+Экран **Документы**: список запросов + company docs; accept/reject файла на бэке пока через company document flow / status (UI-кнопки «Принять» / «Отклонить» — целевой UX, отдельного analyst accept-эндпоинта нет).
+
+### `POST /analyst/applications/{id}/propose` — решение
+
+```json
+{
+  "decision": "APPROVED",
+  "reasonCodes": ["DSCR_OK"],
+  "explanation": "Данных достаточно для предварительного одобрения",
+  "comment": "Закрыть замечание по справке об оборотах",
+  "offerAmount": 1500000,
+  "offerTermMonths": 24,
+  "offerRate": 17.9,
+  "productId": "prod_turnover",
+  "offerLabel": "Базовые условия"
+}
+```
+
+`decision`: `APPROVED` | `REJECTED` | `COUNTEROFFERED` | `NEED_INFO`.
+
+Ответ: `{ applicationId, status, currentStep, decisionId, decisionType, offerId, reasonCodes, explanation, offer }`.
+
+Экран **Решение** (`AnalystCaseDecisionPage`).
+
+### Требуют внимания / SLA / история / AI
+
+| Экран | Целевой источник | Статус |
+|-------|------------------|--------|
+| Требуют внимания | `GET /notifications` (тип SLA / client_reply / ml) **или** очередь с `openDocumentRequests` / близким SLA | отдельного `/analyst/attention` нет |
+| Рабочий процесс и SLA | агрегата нет; `workflow` в card + counts из queue | UI-only |
+| История | `application.statusHistory` + `comments` в `ApplicationOut` / card | UI-only timeline |
+| AI Copilot | `POST /ai/chat` с `applicationId` в message/context | UI локальный; общий `/app/ai` уже на `/ai/chat` |
+
+### Уведомления аналитика — `/app/notifications`
+
+| Method | Path | Когда |
+|--------|------|--------|
+| `GET` | `/notifications` | список (`unread`, `type`, `limit`, `offset`) |
+| `PATCH` | `/notifications/{id}` | `{ "isRead": true }` |
+| `POST` | `/notifications/read-all` | прочитать все |
 
 ---
 
