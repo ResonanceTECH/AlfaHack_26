@@ -742,7 +742,7 @@ export function AppLayout() {
             aria-label="Уведомления"
           >
             <Badge
-              badgeContent={user?.role === 'admin' ? 5 : 4}
+              badgeContent={user?.role === 'admin' ? 5 : isAnalystRole(user?.role) ? 5 : 4}
               color="error"
               overlap="circular"
             >

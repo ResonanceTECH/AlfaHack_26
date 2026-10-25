@@ -1,59 +1,115 @@
-import { Box, Stack, Typography } from '@mui/material'
-import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
-import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
-import CancelRoundedIcon from '@mui/icons-material/CancelRounded'
+import {
+  Box,
+  Button,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  Typography,
+} from '@mui/material'
+import { useNavigate, useParams } from 'react-router-dom'
 import { AUTOCHECKS } from '@/features/analyst/demoData'
-import { tileSx } from '@/features/analyst/styles'
+import { outlineBtn, primaryBtn, statusPill, tileSx } from '@/features/analyst/styles'
 
-const icon = {
-  pass: <CheckCircleRoundedIcon sx={{ fontSize: 20, color: '#2E7D32' }} />,
-  warn: <WarningAmberRoundedIcon sx={{ fontSize: 20, color: '#E6A018' }} />,
-  fail: <CancelRoundedIcon sx={{ fontSize: 20, color: '#EF3124' }} />,
-}
+const statusUi = {
+  pass: { label: 'Passed', bg: 'rgba(46,125,50,0.12)', color: '#2E7D32' },
+  warn: { label: 'Warning', bg: 'rgba(230,160,24,0.16)', color: '#B86B12' },
+  fail: { label: 'Failed', bg: 'rgba(239,49,36,0.1)', color: '#EF3124' },
+} as const
+
+const thSx = {
+  fontSize: 12,
+  fontWeight: 700,
+  color: '#8A96A3',
+  borderBottom: '1px solid rgba(11,31,53,0.08)',
+  bgcolor: '#fff',
+  py: 1.25,
+  whiteSpace: 'nowrap',
+} as const
+
+const tdSx = {
+  fontSize: 13.5,
+  color: '#0B1F35',
+  borderBottom: '1px solid rgba(11,31,53,0.06)',
+  py: 1.35,
+  verticalAlign: 'middle',
+} as const
 
 export function AnalystCaseChecksPage() {
-  const pass = AUTOCHECKS.filter((c) => c.result === 'pass').length
-  const warn = AUTOCHECKS.filter((c) => c.result === 'warn').length
-  const fail = AUTOCHECKS.filter((c) => (c.result as string) === 'fail').length
+  const navigate = useNavigate()
+  const { caseId = 'ABC-2026-1042' } = useParams()
 
   return (
     <Box>
-      <Stack direction="row" spacing={1.5} sx={{ mb: 2 }} flexWrap="wrap" useFlexGap>
-        {[
-          { label: 'Passed', value: pass, color: '#2E7D32' },
-          { label: 'Warning', value: warn, color: '#E6A018' },
-          { label: 'Failed', value: fail, color: '#EF3124' },
-        ].map((s) => (
-          <Box key={s.label} sx={{ ...tileSx, minWidth: 120, py: 1.5 }}>
-            <Typography sx={{ fontSize: 12, color: '#8A96A3', fontWeight: 600 }}>{s.label}</Typography>
-            <Typography sx={{ fontWeight: 800, fontSize: 22, color: s.color }}>{s.value}</Typography>
-          </Box>
-        ))}
-      </Stack>
+      <Typography sx={{ fontWeight: 700, fontSize: 16, color: '#0B1F35', mb: 0.5 }}>
+        Автоматические проверки
+      </Typography>
+      <Typography sx={{ fontSize: 13, color: '#8A96A3', mb: 2 }}>
+        Policy CP-2026.10 · ruleset v1.4
+      </Typography>
 
-      <Box sx={{ ...tileSx, p: 0, overflow: 'hidden' }}>
-        {AUTOCHECKS.map((c, i) => (
-          <Stack
-            key={c.id}
-            direction="row"
-            spacing={1.5}
-            alignItems="flex-start"
-            sx={{
-              px: 2.25,
-              py: 1.5,
-              borderTop: i === 0 ? 'none' : '1px solid rgba(11,31,53,0.06)',
-            }}
-          >
-            <Box sx={{ mt: 0.15 }}>{icon[c.result]}</Box>
-            <Box>
-              <Typography sx={{ fontWeight: 650, fontSize: 14, color: '#0B1F35' }}>{c.title}</Typography>
-              {c.note && (
-                <Typography sx={{ mt: 0.35, fontSize: 13, color: '#7A8795' }}>{c.note}</Typography>
-              )}
-            </Box>
-          </Stack>
-        ))}
+      <Box sx={{ ...tileSx, p: 0, overflow: 'auto', mb: 2 }}>
+        <Table size="small" sx={{ minWidth: 720 }}>
+          <TableHead>
+            <TableRow>
+              <TableCell sx={thSx}>Проверка</TableCell>
+              <TableCell sx={thSx}>Факт</TableCell>
+              <TableCell sx={thSx}>Условие</TableCell>
+              <TableCell sx={thSx}>Источник</TableCell>
+              <TableCell sx={thSx}>Статус</TableCell>
+              <TableCell sx={{ ...thSx, textAlign: 'right' }}>Время</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {AUTOCHECKS.map((c) => {
+              const st = statusUi[c.result]
+              return (
+                <TableRow key={c.id} hover>
+                  <TableCell sx={{ ...tdSx, fontWeight: 650 }}>{c.title}</TableCell>
+                  <TableCell sx={tdSx}>{c.fact}</TableCell>
+                  <TableCell sx={{ ...tdSx, color: '#5A6B7D' }}>{c.condition}</TableCell>
+                  <TableCell sx={{ ...tdSx, color: '#7A8795' }}>{c.source}</TableCell>
+                  <TableCell sx={tdSx}>
+                    <Box
+                      component="span"
+                      sx={{ ...statusPill, bgcolor: st.bg, color: st.color }}
+                    >
+                      {st.label}
+                    </Box>
+                  </TableCell>
+                  <TableCell sx={{ ...tdSx, color: '#8A96A3', textAlign: 'right' }}>{c.at}</TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
       </Box>
+
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        justifyContent="space-between"
+        alignItems={{ xs: 'stretch', sm: 'center' }}
+        spacing={1.5}
+      >
+        <Typography sx={{ fontSize: 12.5, color: '#8A96A3', lineHeight: 1.45, maxWidth: 520 }}>
+          Failed блокирует решение. Warning — можно продолжить вручную (например, неполный комплект
+          документов).
+        </Typography>
+        <Stack direction="row" spacing={1} flexShrink={0}>
+          <Button variant="outlined" sx={outlineBtn}>
+            Пересчитать проверки
+          </Button>
+          <Button
+            variant="contained"
+            sx={primaryBtn}
+            onClick={() => navigate(`/app/analyst/cases/${caseId}/risks`)}
+          >
+            К оценке рисков
+          </Button>
+        </Stack>
+      </Stack>
     </Box>
   )
 }
