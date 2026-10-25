@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
+import jwt
 from fastapi import HTTPException, status
 from jwt.exceptions import InvalidTokenError
 from sqlalchemy import or_, select
@@ -10,7 +12,13 @@ from sqlalchemy.orm import Session, joinedload
 from app.config import get_settings
 from app.core.enums import UserRole, UserStatus
 from app.core.otp import hash_token
-from app.core.security import create_access_token, create_refresh_token, decode_token, verify_password
+from app.core.security import (
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    hash_password,
+    verify_password,
+)
 from app.models.session import RefreshToken
 from app.models.user import User
 from app.services.audit import write_audit
@@ -210,3 +218,56 @@ def revoke_session(db: Session, user: User, session_id: str, *, current_id: str 
     stored.revoked = True
     stored.revoked_at = utcnow()
     db.flush()
+
+
+def _purpose_token(subject: str, purpose: str, *, hours: int = 24) -> str:
+    settings = get_settings()
+    now = utcnow()
+    payload = {
+        "sub": subject,
+        "type": purpose,
+        "iat": now,
+        "exp": now + timedelta(hours=hours),
+        "jti": str(uuid4()),
+    }
+    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+def create_email_verify_token(user_id: str) -> str:
+    return _purpose_token(user_id, "email_verify", hours=48)
+
+
+def create_password_reset_token(user_id: str) -> str:
+    return _purpose_token(user_id, "password_reset", hours=2)
+
+
+def decode_purpose_token(token: str, purpose: str) -> dict:
+    try:
+        payload = decode_token(token)
+    except InvalidTokenError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Ссылка недействительна или устарела") from exc
+    if payload.get("type") != purpose:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Неверный тип токена")
+    return payload
+
+
+def find_user_by_email(db: Session, email: str) -> User | None:
+    email_norm = email.strip().lower()
+    return db.scalar(
+        select(User).options(joinedload(User.memberships)).where(User.email == email_norm)
+    )
+
+
+def mark_email_verified(db: Session, user: User) -> User:
+    if user.email_verified_at is None:
+        user.email_verified_at = utcnow()
+        if user.status == UserStatus.PENDING:
+            user.status = UserStatus.ACTIVE
+        db.flush()
+    return user
+
+
+def set_password(db: Session, user: User, password: str) -> User:
+    user.password_hash = hash_password(password)
+    db.flush()
+    return user

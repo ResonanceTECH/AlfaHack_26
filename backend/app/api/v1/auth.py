@@ -13,9 +13,13 @@ from app.core.security import decode_token
 from app.deps import CorrelationId, CurrentUser, DbDep, client_ip
 from app.models.session import RefreshToken
 from app.models.user import User
+from app.core.phone import mask_email
 from app.schemas.auth import (
     AuthSessionOut,
+    EmailActionOut,
+    EmailActionRequest,
     LoginRequest,
+    PasswordResetRequest,
     RefreshRequest,
     SessionOut,
     TokenPairOut,
@@ -25,6 +29,7 @@ from app.schemas.auth import (
 from app.schemas.common import MessageOut
 from app.services import auth_flow
 from app.services.audit import write_audit
+from app.services.email import get_email_provider
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -182,6 +187,137 @@ def logout_all(response: Response, db: DbDep, user: CurrentUser, cid: Correlatio
 @router.get("/me", response_model=UserOut)
 def me(user: CurrentUser) -> UserOut:
     return _user_out(user)
+
+
+def _send_link_email(*, to: str, subject: str, link: str) -> str:
+    settings = get_settings()
+    provider = get_email_provider()
+    text = (
+        f"{subject}\n\nОткройте ссылку (действует ограниченное время):\n{link}\n\n"
+        "Если вы не запрашивали это письмо — проигнорируйте его."
+    )
+    provider.send(to=to, subject=subject, text_body=text)
+    return settings.email_provider or "console"
+
+
+@router.post("/email/resend", response_model=EmailActionOut)
+def email_resend(body: EmailActionRequest, db: DbDep, cid: CorrelationId) -> EmailActionOut:
+    """Демо: шлёт ссылку подтверждения email (токен в письме / console log)."""
+    email = body.email.strip().lower()
+    user = auth_flow.find_user_by_email(db, email)
+    # Always same shape — no email enumeration
+    if user is None or not user.email:
+        return EmailActionOut(
+            message="Если аккаунт существует, мы отправили письмо",
+            delivery_mode="console",
+            email_masked=mask_email(email),
+        )
+    token = auth_flow.create_email_verify_token(user.id)
+    settings = get_settings()
+    link = f"{settings.frontend_url.rstrip('/')}/verify-email?token={token}"
+    mode = _send_link_email(
+        to=user.email, subject="Подтверждение email — Линия решения", link=link
+    )
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="user",
+        entity_id=user.id,
+        action="email_verify_resend",
+        correlation_id=cid,
+    )
+    db.commit()
+    return EmailActionOut(
+        message="Письмо отправлено",
+        delivery_mode=mode,
+        email_masked=mask_email(user.email),
+        challenge_id=token[:12],
+    )
+
+
+@router.get("/email/verify", response_model=AuthSessionOut)
+def email_verify(
+    token: str,
+    request: Request,
+    response: Response,
+    db: DbDep,
+    cid: CorrelationId,
+) -> AuthSessionOut:
+    payload = auth_flow.decode_purpose_token(token, "email_verify")
+    user = db.scalar(
+        select(User).options(joinedload(User.memberships)).where(User.id == payload["sub"])
+    )
+    if user is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Пользователь не найден")
+    auth_flow.mark_email_verified(db, user)
+    access, refresh = auth_flow.issue_session(db, user, device_info=_device_info(request))
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="user",
+        entity_id=user.id,
+        action="email_verified",
+        correlation_id=cid,
+        ip_address=client_ip(request),
+    )
+    db.commit()
+    return _session_response(response, user, access, refresh)
+
+
+@router.post("/password/forgot", response_model=EmailActionOut)
+def password_forgot(body: EmailActionRequest, db: DbDep, cid: CorrelationId) -> EmailActionOut:
+    email = body.email.strip().lower()
+    user = auth_flow.find_user_by_email(db, email)
+    if user is None or not user.email:
+        return EmailActionOut(
+            message="Если аккаунт существует, мы отправили ссылку для сброса",
+            delivery_mode="console",
+            email_masked=mask_email(email),
+        )
+    token = auth_flow.create_password_reset_token(user.id)
+    settings = get_settings()
+    link = f"{settings.frontend_url.rstrip('/')}/reset-password?token={token}"
+    mode = _send_link_email(to=user.email, subject="Сброс пароля — Линия решения", link=link)
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="user",
+        entity_id=user.id,
+        action="password_forgot",
+        correlation_id=cid,
+    )
+    db.commit()
+    return EmailActionOut(
+        message="Если аккаунт существует, мы отправили ссылку для сброса",
+        delivery_mode=mode,
+        email_masked=mask_email(user.email),
+        challenge_id=token[:12],
+    )
+
+
+@router.post("/password/reset", response_model=MessageOut)
+def password_reset(
+    body: PasswordResetRequest, request: Request, db: DbDep, cid: CorrelationId
+) -> MessageOut:
+    if body.password != body.password_confirm:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Пароли не совпадают")
+    payload = auth_flow.decode_purpose_token(body.token, "password_reset")
+    user = db.scalar(select(User).where(User.id == payload["sub"]))
+    if user is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Пользователь не найден")
+    auth_flow.set_password(db, user, body.password)
+    auth_flow.logout_all_sessions(db, user, correlation_id=cid)
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="user",
+        entity_id=user.id,
+        action="password_reset",
+        correlation_id=cid,
+        ip_address=client_ip(request),
+    )
+    db.commit()
+    return MessageOut(message="Пароль обновлён")
 
 
 @router.patch("/me", response_model=UserOut)

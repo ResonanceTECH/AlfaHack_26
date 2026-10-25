@@ -61,6 +61,14 @@ class Settings(BaseSettings):
 
     demo_mode: bool = Field(default=True, validation_alias="DEMO_MODE")
 
+    email_provider: str = Field(default="console", validation_alias="EMAIL_PROVIDER")
+    smtp_host: str = Field(default="", validation_alias="SMTP_HOST")
+    smtp_port: int = Field(default=587, validation_alias="SMTP_PORT")
+    smtp_username: str = Field(default="", validation_alias="SMTP_USER")
+    smtp_password: str = Field(default="", validation_alias="SMTP_PASSWORD")
+    smtp_from_email: str = Field(default="noreply@demo.alfa", validation_alias="SMTP_FROM_EMAIL")
+    smtp_use_tls: bool = Field(default=True, validation_alias="SMTP_USE_TLS")
+
     @property
     def is_production(self) -> bool:
         return self.app_env.lower() in ("production", "prod")
