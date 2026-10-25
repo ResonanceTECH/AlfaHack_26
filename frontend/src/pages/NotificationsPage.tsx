@@ -19,6 +19,7 @@ import { Navigate, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   formatNotificationTime,
+  inviteCodeFromNotification,
   listNotifications,
   markAllNotificationsRead,
   markNotificationRead,
@@ -27,6 +28,7 @@ import {
   notificationKind,
   type AppNotification,
 } from '@/api/notifications'
+import { acceptInvite, declineInvite } from '@/api/team'
 import { useAuth } from '@/contexts/AuthContext'
 import { isAnalystRole } from '@/features/analyst/roles'
 
@@ -51,6 +53,7 @@ type Notification = {
   time: string
   unread: boolean
   href?: string
+  inviteCode?: string
 }
 
 const KIND_META: Record<
@@ -77,11 +80,12 @@ function mapItem(n: AppNotification, analyst: boolean): Notification {
     time: formatNotificationTime(n.createdAt),
     unread: !n.isRead,
     href: notificationHref(n, analyst ? 'analyst' : 'entrepreneur'),
+    inviteCode: inviteCodeFromNotification(n),
   }
 }
 
 export function NotificationsPage() {
-  const { user } = useAuth()
+  const { user, selectCompany } = useAuth()
   const navigate = useNavigate()
   const qc = useQueryClient()
   const analyst = isAnalystRole(user?.role)
@@ -94,6 +98,23 @@ export function NotificationsPage() {
   const markAllM = useMutation({
     mutationFn: markAllNotificationsRead,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
+  })
+
+  const inviteActionM = useMutation({
+    mutationFn: async ({ code, action }: { code: string; action: 'accept' | 'decline' }) => {
+      if (action === 'accept') return acceptInvite(code)
+      await declineInvite(code)
+      return undefined
+    },
+    onSuccess: async (res) => {
+      await qc.invalidateQueries({ queryKey: ['notifications'] })
+      await qc.invalidateQueries({ queryKey: ['team'] })
+      await qc.invalidateQueries({ queryKey: ['companies'] })
+      if (res?.companyId) {
+        selectCompany(res.companyId)
+        navigate('/app/team')
+      }
+    },
   })
 
   const [tab, setTab] = useState<TabKey>('all')
@@ -289,17 +310,23 @@ export function NotificationsPage() {
             filtered.map((n) => {
               const meta = KIND_META[n.kind]
               const Icon = meta.Icon
+              const isInvite = Boolean(n.inviteCode)
               return (
                 <Box
                   key={n.id}
-                  component="button"
-                  type="button"
-                  onClick={() => openItem(n)}
+                  {...(isInvite
+                    ? {}
+                    : {
+                        component: 'button' as const,
+                        type: 'button' as const,
+                        onClick: () => openItem(n),
+                      })}
                   sx={{
-                    all: 'unset',
-                    cursor: 'pointer',
+                    ...(isInvite ? {} : { all: 'unset', cursor: 'pointer' }),
                     display: 'block',
                     boxSizing: 'border-box',
+                    width: '100%',
+                    textAlign: 'left',
                     bgcolor: '#fff',
                     borderRadius: 3,
                     border: n.unread
@@ -310,10 +337,18 @@ export function NotificationsPage() {
                       : '0 1px 8px rgba(11,31,53,0.03)',
                     p: { xs: 1.5, md: 1.75 },
                     transition: 'border-color 0.15s, box-shadow 0.15s, background 0.15s',
-                    '&:hover': {
-                      borderColor: n.unread ? 'rgba(239,49,36,0.45)' : 'rgba(11,31,53,0.14)',
-                      bgcolor: n.unread ? 'rgba(239,49,36,0.015)' : 'rgba(11,31,53,0.015)',
-                    },
+                    ...(!isInvite
+                      ? {
+                          '&:hover': {
+                            borderColor: n.unread
+                              ? 'rgba(239,49,36,0.45)'
+                              : 'rgba(11,31,53,0.14)',
+                            bgcolor: n.unread
+                              ? 'rgba(239,49,36,0.015)'
+                              : 'rgba(11,31,53,0.015)',
+                          },
+                        }
+                      : {}),
                   }}
                 >
                   <Stack direction="row" spacing={1.5} alignItems="flex-start">
@@ -354,6 +389,53 @@ export function NotificationsPage() {
                       >
                         {n.body}
                       </Typography>
+                      {isInvite && n.inviteCode && (
+                        <Stack direction="row" spacing={1} sx={{ mt: 1.25 }}>
+                          <Button
+                            size="small"
+                            variant="text"
+                            color="secondary"
+                            disabled={inviteActionM.isPending}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (n.unread) {
+                                void markNotificationRead(n.id).catch(() => undefined)
+                              }
+                              inviteActionM.mutate({ code: n.inviteCode!, action: 'decline' })
+                            }}
+                            sx={{
+                              borderRadius: 2,
+                              fontWeight: 700,
+                              textTransform: 'none',
+                              color: '#5A6B7D',
+                            }}
+                          >
+                            Отказаться
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="contained"
+                            color="primary"
+                            disabled={inviteActionM.isPending}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (n.unread) {
+                                void markNotificationRead(n.id).catch(() => undefined)
+                              }
+                              inviteActionM.mutate({ code: n.inviteCode!, action: 'accept' })
+                            }}
+                            sx={{
+                              borderRadius: 2,
+                              fontWeight: 700,
+                              textTransform: 'none',
+                              boxShadow: 'none',
+                              '&:hover': { boxShadow: 'none' },
+                            }}
+                          >
+                            Принять
+                          </Button>
+                        </Stack>
+                      )}
                     </Box>
 
                     <Stack

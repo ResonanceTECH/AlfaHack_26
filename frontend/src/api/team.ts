@@ -222,3 +222,7 @@ export async function acceptInvite(code: string): Promise<AcceptInviteResult> {
     companyId: companyId != null && companyId !== '' ? str(companyId) : undefined,
   }
 }
+
+export async function declineInvite(code: string): Promise<void> {
+  await api.post(`/invites/${encodeURIComponent(code)}/decline`)
+}

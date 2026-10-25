@@ -1,7 +1,12 @@
 import { Box, Button, Stack, Typography } from '@mui/material'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
-import { acceptInvite, listMyInvites, type CompanyInvite } from '@/api/team'
+import {
+  acceptInvite,
+  declineInvite,
+  listMyInvites,
+  type CompanyInvite,
+} from '@/api/team'
 import { ROLE_LABEL } from '@/features/team/store'
 
 const tileSx = {
@@ -26,14 +31,17 @@ function apiError(err: unknown, fallback: string): string {
 
 type Props = {
   onAccepted?: (companyId?: string) => void
+  onDeclined?: () => void
   sx?: object
 }
 
-export function IncomingInvitesCard({ onAccepted, sx }: Props) {
+export function IncomingInvitesCard({ onAccepted, onDeclined, sx }: Props) {
   const qc = useQueryClient()
   const myInvitesQ = useQuery({
     queryKey: ['team', 'invites', 'mine'],
     queryFn: listMyInvites,
+    refetchOnMount: 'always',
+    staleTime: 0,
   })
   const invites = myInvitesQ.data ?? []
 
@@ -42,11 +50,43 @@ export function IncomingInvitesCard({ onAccepted, sx }: Props) {
     onSuccess: async (res) => {
       await qc.invalidateQueries({ queryKey: ['team'] })
       await qc.invalidateQueries({ queryKey: ['companies'] })
+      await qc.invalidateQueries({ queryKey: ['notifications'] })
       onAccepted?.(res.companyId)
     },
   })
 
-  if (myInvitesQ.isLoading || invites.length === 0) return null
+  const declineM = useMutation({
+    mutationFn: (code: string) => declineInvite(code),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['team'] })
+      await qc.invalidateQueries({ queryKey: ['notifications'] })
+      onDeclined?.()
+    },
+  })
+
+  if (myInvitesQ.isLoading) return null
+
+  if (myInvitesQ.isError) {
+    return (
+      <Box sx={{ ...tileSx, ...sx }}>
+        <Typography sx={{ color: '#C41E14', fontSize: 13, fontWeight: 600 }}>
+          {apiError(myInvitesQ.error, 'Не удалось загрузить приглашения')}
+        </Typography>
+        <Button
+          size="small"
+          onClick={() => void myInvitesQ.refetch()}
+          sx={{ mt: 1, textTransform: 'none', fontWeight: 700 }}
+        >
+          Повторить
+        </Button>
+      </Box>
+    )
+  }
+
+  if (invites.length === 0) return null
+
+  const busy = acceptM.isPending || declineM.isPending
+  const actionError = acceptM.error || declineM.error
 
   return (
     <Box sx={{ ...tileSx, ...sx }}>
@@ -62,11 +102,11 @@ export function IncomingInvitesCard({ onAccepted, sx }: Props) {
         Вас пригласили
       </Typography>
       <Typography sx={{ fontSize: 13, color: '#7A8795', mb: 1.75, lineHeight: 1.45 }}>
-        Примите приглашение, чтобы войти в команду компании.
+        Примите приглашение, чтобы войти в команду компании, или откажитесь.
       </Typography>
-      {acceptM.isError && (
+      {actionError && (
         <Typography sx={{ color: '#C41E14', fontSize: 13, fontWeight: 600, mb: 1.25 }}>
-          {apiError(acceptM.error, 'Не удалось принять приглашение')}
+          {apiError(actionError, 'Не удалось обработать приглашение')}
         </Typography>
       )}
       <Stack spacing={1.25}>
@@ -93,23 +133,41 @@ export function IncomingInvitesCard({ onAccepted, sx }: Props) {
                 {inv.invitedByName ? ` · от ${inv.invitedByName}` : ''}
               </Typography>
             </Box>
-            <Button
-              variant="contained"
-              color="primary"
-              disabled={!inv.code || acceptM.isPending}
-              onClick={() => inv.code && acceptM.mutate(inv.code)}
-              sx={{
-                borderRadius: 2,
-                fontWeight: 700,
-                textTransform: 'none',
-                boxShadow: 'none',
-                px: 2,
-                whiteSpace: 'nowrap',
-                '&:hover': { boxShadow: 'none' },
-              }}
-            >
-              {acceptM.isPending ? 'Принимаю…' : 'Принять'}
-            </Button>
+            <Stack direction="row" spacing={0.75} alignItems="center" flexShrink={0}>
+              <Button
+                variant="text"
+                color="secondary"
+                disabled={!inv.code || busy}
+                onClick={() => inv.code && declineM.mutate(inv.code)}
+                sx={{
+                  borderRadius: 2,
+                  fontWeight: 700,
+                  textTransform: 'none',
+                  px: 1.5,
+                  color: '#5A6B7D',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {declineM.isPending ? '…' : 'Отказаться'}
+              </Button>
+              <Button
+                variant="contained"
+                color="primary"
+                disabled={!inv.code || busy}
+                onClick={() => inv.code && acceptM.mutate(inv.code)}
+                sx={{
+                  borderRadius: 2,
+                  fontWeight: 700,
+                  textTransform: 'none',
+                  boxShadow: 'none',
+                  px: 2,
+                  whiteSpace: 'nowrap',
+                  '&:hover': { boxShadow: 'none' },
+                }}
+              >
+                {acceptM.isPending ? 'Принимаю…' : 'Принять'}
+              </Button>
+            </Stack>
           </Stack>
         ))}
       </Stack>
