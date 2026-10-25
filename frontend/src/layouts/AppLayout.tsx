@@ -124,6 +124,7 @@ function pageTitle(pathname: string): string {
   if (pathname === '/app/recommendations/results') return 'Результаты подбора'
   if (pathname === '/app/compare') return 'Сравнение кредитов'
   if (pathname === '/app/team/invite') return 'Пригласить сотрудника'
+  if (pathname === '/app/team/tasks') return 'Совместные задачи'
   if (pathname.startsWith('/app/team/') && pathname !== '/app/team/invite') {
     return 'Участник'
   }
@@ -131,6 +132,12 @@ function pageTitle(pathname: string): string {
   if (pathname === '/app/readiness') return 'Индекс готовности'
   if (pathname.endsWith('/edit') && pathname.startsWith('/app/applications/')) {
     return 'Редактирование заявки'
+  }
+  if (pathname.endsWith('/contract') && pathname.startsWith('/app/applications/')) {
+    return 'Договор'
+  }
+  if (pathname.startsWith('/app/documents/') && pathname !== '/app/documents') {
+    return 'Документ'
   }
   const flat = [...entrepreneurGroups, ...managerGroups].flatMap((g) => g.items)
   const exact = flat.find((i) => i.to === pathname)
