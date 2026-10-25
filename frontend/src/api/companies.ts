@@ -244,7 +244,7 @@ export async function updateFinancials(
 }
 
 export async function listGoals(companyId: string): Promise<BusinessGoal[]> {
-  const { data } = await api.get(`/companies/${companyId}/business-goals`)
+  const { data } = await api.get(`/companies/${companyId}/funding-needs`)
   return (data as Record<string, unknown>[]).map(mapGoal)
 }
 
@@ -260,7 +260,17 @@ export async function createGoal(input: {
   targetDate: string
   termMonths: number
 }): Promise<BusinessGoal> {
-  const { data } = await api.post('/business-goals', input)
+  const { data } = await api.post(`/companies/${input.companyId}/funding-needs`, {
+    goalType: input.goalType,
+    title: input.title,
+    description: input.description,
+    costs: input.costs,
+    reserve: input.reserve,
+    ownFunds: input.ownFunds,
+    otherFunding: input.otherFunding,
+    targetDate: input.targetDate,
+    termMonths: input.termMonths,
+  })
   return mapGoal(data as Record<string, unknown>)
 }
 
