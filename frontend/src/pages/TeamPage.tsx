@@ -19,14 +19,13 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  acceptInvite,
   cancelInvite,
   inviteToMember,
   listInvites,
   listMembers,
-  listMyInvites,
   removeMember as removeMemberApi,
 } from '@/api/team'
+import { IncomingInvitesCard } from '@/components/team/IncomingInvitesCard'
 import { useAuth } from '@/contexts/AuthContext'
 import { useAppStore } from '@/hooks/useAppStore'
 import {
@@ -136,10 +135,6 @@ export function TeamPage() {
     queryFn: () => listInvites(companyId!),
     enabled: Boolean(companyId),
   })
-  const myInvitesQ = useQuery({
-    queryKey: ['team', 'invites', 'mine'],
-    queryFn: listMyInvites,
-  })
 
   const members = useMemo(() => {
     const list = membersQ.data ?? []
@@ -162,17 +157,6 @@ export function TeamPage() {
   const showMatrix = shouldShowRoleMatrix(members)
   const matrixRoles = assignedRoles(members)
   const loading = Boolean(companyId) && (membersQ.isLoading || invitesQ.isLoading)
-  const myInvites = myInvitesQ.data ?? []
-
-  const acceptM = useMutation({
-    mutationFn: async (code: string) => acceptInvite(code),
-    onSuccess: async (res) => {
-      await qc.invalidateQueries({ queryKey: ['team'] })
-      setActionError(null)
-      if (res.companyId) selectCompany(res.companyId)
-    },
-    onError: (err) => setActionError(apiError(err, 'Не удалось принять приглашение')),
-  })
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -341,68 +325,13 @@ export function TeamPage() {
         </Typography>
       )}
 
-      {myInvites.length > 0 && (
-        <Box sx={{ ...tileSx, mb: 2 }}>
-          <Typography
-            sx={{
-              fontFamily: 'Manrope, sans-serif',
-              fontWeight: 800,
-              fontSize: 16,
-              color: '#0B1F35',
-              mb: 0.5,
-            }}
-          >
-            Вас пригласили
-          </Typography>
-          <Typography sx={{ fontSize: 13, color: '#7A8795', mb: 1.75, lineHeight: 1.45 }}>
-            Примите приглашение, чтобы появиться в команде компании.
-          </Typography>
-          <Stack spacing={1.25}>
-            {myInvites.map((inv) => (
-              <Stack
-                key={inv.id}
-                direction={{ xs: 'column', sm: 'row' }}
-                spacing={1.25}
-                alignItems={{ xs: 'stretch', sm: 'center' }}
-                justifyContent="space-between"
-                sx={{
-                  p: 1.5,
-                  borderRadius: 2,
-                  bgcolor: 'rgba(239,49,36,0.04)',
-                  border: '1px solid rgba(239,49,36,0.12)',
-                }}
-              >
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography sx={{ fontSize: 14, fontWeight: 700, color: '#0B1F35' }}>
-                    {inv.companyName || 'Компания'}
-                  </Typography>
-                  <Typography sx={{ fontSize: 12.5, color: '#7A8795', mt: 0.25 }}>
-                    Роль: {ROLE_LABEL[inv.role]}
-                    {inv.invitedByName ? ` · от ${inv.invitedByName}` : ''}
-                  </Typography>
-                </Box>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  disabled={!inv.code || acceptM.isPending}
-                  onClick={() => inv.code && acceptM.mutate(inv.code)}
-                  sx={{
-                    borderRadius: 2,
-                    fontWeight: 700,
-                    textTransform: 'none',
-                    boxShadow: 'none',
-                    px: 2,
-                    whiteSpace: 'nowrap',
-                    '&:hover': { boxShadow: 'none' },
-                  }}
-                >
-                  {acceptM.isPending ? 'Принимаю…' : 'Принять'}
-                </Button>
-              </Stack>
-            ))}
-          </Stack>
-        </Box>
-      )}
+      <IncomingInvitesCard
+        sx={{ mb: 2 }}
+        onAccepted={(id) => {
+          if (id) selectCompany(id)
+          setActionError(null)
+        }}
+      />
 
       <Box sx={{ ...tileSx, mb: 2, overflow: 'auto' }}>
         <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
