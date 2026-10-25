@@ -2,7 +2,8 @@ import { Box, Stack, Typography } from '@mui/material'
 import { Link as RouterLink } from 'react-router-dom'
 
 type AlfaLogoProps = {
-  to?: string
+  /** Route target. Pass `false` for a non-navigating mark (design-system demos). Default `/`. */
+  to?: string | false
   compact?: boolean
   /** Light surfaces (cabinet sidebar) vs dark hero */
   ink?: boolean
@@ -19,11 +20,12 @@ const MARK_SRC = BRAND_LOGO_SRC
 
 /** App mark (briefcase) + wordmark «Линия решения» */
 export function AlfaLogo({
-  to = '/',
+  to,
   compact = false,
   ink = false,
   markOnly = false,
 }: AlfaLogoProps) {
+  const href = to === false ? null : (to ?? '/')
   const size = compact ? 28 : 36
 
   const mark = (
@@ -60,12 +62,12 @@ export function AlfaLogo({
     </Stack>
   )
 
-  if (!to) return mark
+  if (!href) return mark
 
   return (
     <Box
       component={RouterLink}
-      to={to}
+      to={href}
       aria-label="Линия решения"
       sx={{ textDecoration: 'none', display: 'inline-flex', '&:hover': { opacity: 0.9 } }}
     >
