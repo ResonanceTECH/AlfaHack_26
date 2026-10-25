@@ -5,7 +5,11 @@ import { useNavigate, useOutletContext } from 'react-router-dom'
 import { assignAnalystApplication } from '@/api/analyst'
 import type { AnalystCaseOutlet } from '@/components/analyst/AnalystCaseShell'
 import { useAuth } from '@/contexts/AuthContext'
-import { formatCompactMoney } from '@/features/analyst/map'
+import {
+  analystStatusLabel,
+  analystStepLabel,
+  formatCompactMoney,
+} from '@/features/analyst/map'
 import { outlineBtn, primaryBtn, tileSx } from '@/features/analyst/styles'
 
 export function AnalystCaseOverviewPage() {
@@ -45,10 +49,10 @@ export function AnalystCaseOverviewPage() {
     { label: 'Документы', value: docsLine },
     { label: 'Автопроверки', value: checksLine },
     {
-      label: 'Workflow',
+      label: 'Этап',
       value: card.workflow
-        ? `${card.workflow.workflowType} · ${card.workflow.status} · ${card.workflow.currentStep || '—'}`
-        : '—',
+        ? `${analystStepLabel(card.workflow.currentStep) || '—'} · ${analystStatusLabel(card.workflow.status)}`
+        : c.nextStep || '—',
     },
     { label: 'Следующий шаг', value: c.nextStep },
   ]

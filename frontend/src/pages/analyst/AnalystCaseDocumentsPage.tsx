@@ -15,17 +15,27 @@ import { useMemo, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { createAnalystDocumentRequest } from '@/api/analyst'
 import type { AnalystCaseOutlet } from '@/components/analyst/AnalystCaseShell'
+import { analystStatusLabel } from '@/features/analyst/map'
 import { primaryBtn, statusPill, tileSx } from '@/features/analyst/styles'
 import { formatFileSize } from '@/utils/format'
 
-const DOC_TYPES = [
-  'PASSPORT',
-  'EGRUL',
-  'BANK_STATEMENT',
-  'FINANCIAL_REPORT',
-  'LEASE_AGREEMENT',
-  'OTHER',
+const DOC_TYPES: { value: string; label: string }[] = [
+  { value: 'PASSPORT', label: 'Паспорт' },
+  { value: 'EGRUL', label: 'Выписка ЕГРЮЛ / ЕГРИП' },
+  { value: 'BANK_STATEMENT', label: 'Банковская выписка' },
+  { value: 'FINANCIAL_REPORT', label: 'Финансовая отчётность' },
+  { value: 'LEASE_AGREEMENT', label: 'Договор аренды' },
+  { value: 'OTHER', label: 'Другой документ' },
 ]
+
+const DOC_TYPE_LABEL: Record<string, string> = Object.fromEntries(
+  DOC_TYPES.map((t) => [t.value, t.label]),
+)
+
+function docTypeLabel(type?: string | null): string {
+  if (!type) return 'Документ'
+  return DOC_TYPE_LABEL[type.toUpperCase()] || type
+}
 
 type DocRow = {
   id: string
@@ -60,15 +70,15 @@ export function AnalystCaseDocumentsPage() {
   const rows: DocRow[] = useMemo(() => {
     const uploaded = card.application.documents.map((d) => ({
       id: d.id,
-      name: d.name || d.type,
+      name: d.name && d.name !== d.type ? d.name : docTypeLabel(d.type),
       size: d.size ? formatFileSize(d.size) : '—',
       status: mapDocStatus(d.status),
       kind: 'FILE',
-      meta: d.type,
+      meta: docTypeLabel(d.type),
     }))
     const requested = card.openDocumentRequests.map((r, i) => ({
       id: String(r.id ?? `req-${i}`),
-      name: String(r.docType ?? r.doc_type ?? 'Документ'),
+      name: docTypeLabel(String(r.docType ?? r.doc_type ?? '')),
       size: '—',
       status: 'requested' as const,
       kind: 'REQUEST',
@@ -83,7 +93,6 @@ export function AnalystCaseDocumentsPage() {
   const [flash, setFlash] = useState<string | null>(null)
 
   const doc = rows.find((d) => d.id === selected) ?? rows[0]
-  const st = doc ? statusUi[doc.status] : null
 
   const requestM = useMutation({
     mutationFn: () =>
@@ -92,7 +101,7 @@ export function AnalystCaseDocumentsPage() {
         comment: comment.trim() || undefined,
       }),
     onSuccess: () => {
-      setFlash(`Запрос ${docType} отправлен`)
+      setFlash(`Запрос «${docTypeLabel(docType)}» отправлен`)
       setComment('')
       void qc.invalidateQueries({ queryKey: ['analyst', 'card', applicationId] })
     },
@@ -190,8 +199,8 @@ export function AnalystCaseDocumentsPage() {
           sx={{ mb: 1.5, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
         >
           {DOC_TYPES.map((t) => (
-            <MenuItem key={t} value={t}>
-              {t}
+            <MenuItem key={t.value} value={t.value}>
+              {t.label}
             </MenuItem>
           ))}
         </TextField>
@@ -215,12 +224,8 @@ export function AnalystCaseDocumentsPage() {
         </Button>
         {!canRequest && (
           <Typography sx={{ mt: 1.25, fontSize: 12.5, color: '#C45A12' }}>
-            Запрос документов сейчас недоступен для статуса «{card.application.statusLabel}»
-          </Typography>
-        )}
-        {doc && st && (
-          <Typography sx={{ mt: 2, fontSize: 12.5, color: '#8A96A3' }}>
-            Выбрано: {doc.name} · {st.label}
+            Запрос документов сейчас недоступен для статуса «
+            {analystStatusLabel(card.application.statusLabel)}»
           </Typography>
         )}
       </Box>

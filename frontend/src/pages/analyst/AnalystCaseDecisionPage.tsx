@@ -10,10 +10,16 @@ import {
 } from '@mui/material'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { useOutletContext } from 'react-router-dom'
+import { useNavigate, useOutletContext } from 'react-router-dom'
 import { proposeAnalystDecision, type AnalystProposeIn } from '@/api/analyst'
 import type { AnalystCaseOutlet } from '@/components/analyst/AnalystCaseShell'
-import { outlineBtn, primaryBtn, tileSx } from '@/features/analyst/styles'
+import {
+  analystOfferStatusLabel,
+  analystStatusLabel,
+  analystStepLabel,
+  formatCompactMoney,
+} from '@/features/analyst/map'
+import { outlineBtn, primaryBtn, statusPill, tileSx } from '@/features/analyst/styles'
 import { formatMoney } from '@/utils/format'
 
 const DECISIONS: { value: AnalystProposeIn['decision']; label: string; action?: string }[] = [
@@ -25,9 +31,11 @@ const DECISIONS: { value: AnalystProposeIn['decision']; label: string; action?: 
 
 export function AnalystCaseDecisionPage() {
   const { caseData: c, card, applicationId } = useOutletContext<AnalystCaseOutlet>()
+  const navigate = useNavigate()
   const qc = useQueryClient()
   const app = card.application
   const cs = card.checksSummary
+  const base = `/app/analyst/cases/${c.id}`
 
   const [decision, setDecision] = useState<AnalystProposeIn['decision']>('APPROVED')
   const [explanation, setExplanation] = useState('')
@@ -41,22 +49,21 @@ export function AnalystCaseDecisionPage() {
 
   const allowed = card.allowedActions
   const needsOffer = decision === 'APPROVED' || decision === 'COUNTEROFFERED'
-  const incomplete =
-    card.openDocumentRequests.length > 0 || cs.warnings > 0 || cs.failed > 0
+  const openDocs = card.openDocumentRequests.length
+  const incomplete = openDocs > 0 || cs.warnings > 0 || cs.failed > 0
   const approveBlocked = decision === 'APPROVED' && incomplete && !forceApprove
 
   const gateReasons = useMemo(() => {
     const r: string[] = []
-    if (card.openDocumentRequests.length > 0) {
-      r.push(`ожидаются документы (${card.openDocumentRequests.length})`)
-    }
+    if (openDocs > 0) r.push(`ожидаются документы (${openDocs})`)
     if (cs.warnings > 0) r.push(`есть замечания по проверкам (${cs.warnings})`)
     if (cs.failed > 0) r.push(`есть ошибки проверок (${cs.failed})`)
     return r
-  }, [card.openDocumentRequests.length, cs.failed, cs.warnings])
+  }, [openDocs, cs.failed, cs.warnings])
 
-  const decisionLabel =
-    DECISIONS.find((d) => d.value === decision)?.label ?? decision
+  const decisionLabel = DECISIONS.find((d) => d.value === decision)?.label ?? decision
+  const statusRu = analystStatusLabel(app.statusLabel || app.status)
+  const stepRu = analystStepLabel(app.currentStep) || c.nextStep || '—'
 
   const proposeM = useMutation({
     mutationFn: () =>
@@ -90,7 +97,7 @@ export function AnalystCaseDecisionPage() {
     <Box
       sx={{
         display: 'grid',
-        gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1.25fr) 280px' },
+        gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1.25fr) 300px' },
         gap: 2,
         alignItems: 'start',
       }}
@@ -183,7 +190,7 @@ export function AnalystCaseDecisionPage() {
           )}
 
           <TextField
-            label="Пояснение (клиенту)"
+            label="Пояснение клиенту"
             multiline
             minRows={2}
             value={explanation}
@@ -233,14 +240,17 @@ export function AnalystCaseDecisionPage() {
         {card.offers.length > 0 && (
           <Box sx={{ mt: 3 }}>
             <Typography sx={{ fontWeight: 700, fontSize: 14, color: '#0B1F35', mb: 1 }}>
-              Существующие офферы
+              Предложения клиенту
             </Typography>
             {card.offers.map((o, i) => {
               const row = o as Record<string, unknown>
+              const amount = Number(row.amount ?? 0)
+              const term = Number(row.termMonths ?? row.term_months ?? 0)
+              const rate = Number(row.rate ?? 0)
               return (
                 <Typography key={String(row.id ?? i)} sx={{ fontSize: 13, color: '#5A6B7D', mb: 0.5 }}>
-                  {String(row.status)} · {String(row.amount)} ₽ ·{' '}
-                  {String(row.termMonths ?? row.term_months)} мес · {String(row.rate)}%
+                  {analystOfferStatusLabel(String(row.status))} · {formatMoney(amount)} · {term} мес ·{' '}
+                  {rate}%
                 </Typography>
               )
             })}
@@ -249,30 +259,94 @@ export function AnalystCaseDecisionPage() {
       </Box>
 
       <Box sx={tileSx}>
-        <Typography sx={{ fontWeight: 700, fontSize: 14, color: '#0B1F35', mb: 1.25 }}>
-          Сводка
+        <Typography sx={{ fontWeight: 700, fontSize: 14, color: '#0B1F35', mb: 1.5 }}>
+          По заявке
         </Typography>
-        <Stack spacing={1.1}>
-          <Typography sx={{ fontSize: 13.5, color: '#5A6B7D' }}>
-            Статус:{' '}
-            <Box component="span" sx={{ fontWeight: 700, color: '#0B1F35' }}>
-              {app.statusLabel}
+
+        <Stack spacing={1.35} sx={{ mb: 2 }}>
+          <Box>
+            <Typography sx={{ fontSize: 12, color: '#8A96A3', mb: 0.5 }}>Статус</Typography>
+            <Box
+              component="span"
+              sx={{
+                ...statusPill,
+                bgcolor: 'rgba(239,49,36,0.08)',
+                color: '#EF3124',
+              }}
+            >
+              {statusRu}
             </Box>
-          </Typography>
-          <Typography sx={{ fontSize: 13.5, color: '#5A6B7D' }}>
-            Этап:{' '}
-            <Box component="span" sx={{ fontWeight: 700, color: '#0B1F35' }}>
-              {c.nextStep || '—'}
-            </Box>
-          </Typography>
-          <Typography sx={{ fontSize: 13.5, color: '#5A6B7D' }}>
-            Проверки:{' '}
-            <Box component="span" sx={{ fontWeight: 700, color: '#0B1F35' }}>
+          </Box>
+
+          <Box>
+            <Typography sx={{ fontSize: 12, color: '#8A96A3' }}>Этап</Typography>
+            <Typography sx={{ fontSize: 14, fontWeight: 700, color: '#0B1F35', mt: 0.25 }}>
+              {stepRu}
+            </Typography>
+          </Box>
+
+          <Box>
+            <Typography sx={{ fontSize: 12, color: '#8A96A3' }}>Проверки</Typography>
+            <Typography sx={{ fontSize: 14, fontWeight: 700, color: '#0B1F35', mt: 0.25 }}>
               {cs.passed} ок
               {cs.warnings ? ` · ${cs.warnings} замечаний` : ''}
-              {cs.failed ? ` · ${cs.failed} ошибок` : ''}
+              {cs.failed ? ` · ${cs.failed} ошибок` : !cs.warnings ? ' · замечаний нет' : ''}
+            </Typography>
+          </Box>
+
+          <Box>
+            <Typography sx={{ fontSize: 12, color: '#8A96A3' }}>Документы</Typography>
+            <Typography
+              sx={{
+                fontSize: 14,
+                fontWeight: 700,
+                color: openDocs > 0 ? '#C45A12' : '#0B1F35',
+                mt: 0.25,
+              }}
+            >
+              {openDocs > 0 ? `Ожидаем ответы: ${openDocs}` : 'Открытых запросов нет'}
+            </Typography>
+          </Box>
+
+          {app.amount > 0 && (
+            <Box>
+              <Typography sx={{ fontSize: 12, color: '#8A96A3' }}>Запрос клиента</Typography>
+              <Typography sx={{ fontSize: 14, fontWeight: 700, color: '#0B1F35', mt: 0.25 }}>
+                {formatCompactMoney(app.amount)} · {app.termMonths || '—'} мес
+              </Typography>
             </Box>
-          </Typography>
+          )}
+        </Stack>
+
+        <Stack spacing={1}>
+          {openDocs > 0 && (
+            <Button
+              fullWidth
+              variant="outlined"
+              sx={outlineBtn}
+              onClick={() => navigate(`${base}/documents`)}
+            >
+              К документам
+            </Button>
+          )}
+          {(cs.warnings > 0 || cs.failed > 0) && (
+            <Button
+              fullWidth
+              variant="outlined"
+              sx={outlineBtn}
+              onClick={() => navigate(`${base}/checks`)}
+            >
+              К проверкам
+            </Button>
+          )}
+          <Button
+            fullWidth
+            variant="outlined"
+            sx={outlineBtn}
+            onClick={() => navigate(`${base}/chat`)}
+          >
+            Чат с клиентом
+          </Button>
         </Stack>
       </Box>
     </Box>
