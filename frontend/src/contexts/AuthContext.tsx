@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -13,6 +14,7 @@ import {
   loginEmailRequest,
   logoutRequest,
 } from '@/api/auth'
+import { listCompanies } from '@/api/companies'
 import { ACTIVE_COMPANY_KEY } from '@/api/client'
 import axios from 'axios'
 
@@ -44,6 +46,9 @@ function toErrorMessage(err: unknown, fallback: string): string {
 function withActiveCompany(u: User): User {
   const active = localStorage.getItem(ACTIVE_COMPANY_KEY) || undefined
   if (active) return { ...u, companyId: active }
+  if (u.companyId) {
+    localStorage.setItem(ACTIVE_COMPANY_KEY, u.companyId)
+  }
   return u
 }
 
@@ -57,8 +62,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const session = await loginEmailRequest(email, password)
       localStorage.removeItem(ACTIVE_COMPANY_KEY)
-      setUser(session.user)
-      return session.user
+      const next = withActiveCompany(session.user)
+      localStorage.setItem('alfa_user', JSON.stringify(next))
+      setUser(next)
+      return next
     } catch (err) {
       throw new Error(toErrorMessage(err, 'Ошибка входа'))
     }
@@ -96,6 +103,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return next
     })
   }, [])
+
+  // If session has no companyId but memberships exist — pick first / active key
+  useEffect(() => {
+    if (!user) return
+    if (user.companyId) return
+    if (user.role === 'manager' || user.role === 'risk_analyst') return
+    let cancelled = false
+    void (async () => {
+      try {
+        const list = await listCompanies()
+        if (cancelled || list.length === 0) return
+        const preferred =
+          localStorage.getItem(ACTIVE_COMPANY_KEY) ||
+          list.find((c) => c.membershipRole === 'OWNER')?.id ||
+          list[0]!.id
+        if (!cancelled) selectCompany(preferred)
+      } catch {
+        /* interceptor handles 401 */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user, selectCompany])
 
   const value = useMemo(
     () => ({
