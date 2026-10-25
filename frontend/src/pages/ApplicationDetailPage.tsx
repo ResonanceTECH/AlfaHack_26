@@ -384,24 +384,51 @@ export function ApplicationDetailPage() {
   }
 
   const code = appCode(app.id)
-  const activeOffers = (offersQ.data ?? []).filter((o) => o.status.toUpperCase() === 'ACTIVE')
+  const activeOffers = (offersQ.data ?? []).filter((o) => isLiveOffer(o))
   const bankOffer = activeOffers[0]
   const decision = decisionQ.data as PublicDecision | null | undefined
   const openDocReqs = (docReqsQ.data ?? []).filter((r) =>
     ['OPEN', 'PENDING', 'REQUESTED'].includes(r.status.toUpperCase()),
   )
-  const offerAmount = bankOffer?.amount ?? app.amount
-  const offerRate = bankOffer?.rate ?? app.rate ?? 17.9
-  const offerTerm = bankOffer?.termMonths ?? app.termMonths
-  const monthly =
-    bankOffer?.monthlyPayment ||
-    estimateMonthly(offerAmount || app.amount, offerTerm, offerRate)
+  const requestedAmount = app.amount
+  const offerAmount = bankOffer?.amount
+  const offerRate = bankOffer?.rate
+  const offerTerm = bankOffer?.termMonths
+  const monthly = bankOffer
+    ? bankOffer.monthlyPayment ||
+      estimateMonthly(bankOffer.amount, bankOffer.termMonths, bankOffer.rate || 0)
+    : 0
   const step = pipelineStep(app.status)
   const statusChip = APP_STATUS_CHIP[app.status] ?? APP_STATUS_CHIP.submitted
   const statusLabel = statusLabels[app.status] ?? String(app.status)
   const blockMsg = !docsReady
     ? `Нужны ещё: ${missingTitles.slice(0, 2).join(' и ')}${missingTitles.length > 2 ? '…' : ''}`
     : null
+  const decisionReady = Boolean(
+    decision ||
+      activeOffers.length > 0 ||
+      ['approved', 'counteroffered', 'rejected', 'in_review', 'docs_requested'].includes(app.status),
+  )
+
+  async function loadExplanation() {
+    if (!id || explanationLoading) return
+    setExplanationLoading(true)
+    setExplanationError(null)
+    try {
+      const res = await fetchApplicationExplanation(id)
+      setExplanation(res)
+    } catch (e) {
+      setExplanation(null)
+      setExplanationError(
+        (e as { response?: { data?: { error?: { message?: string }; detail?: string } } })?.response
+          ?.data?.error?.message ||
+          (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+          (e instanceof Error ? e.message : 'Не удалось загрузить объяснение'),
+      )
+    } finally {
+      setExplanationLoading(false)
+    }
+  }
 
   return (
     <Box sx={{ maxWidth: 1180, mx: 'auto', pb: 3 }}>
@@ -562,24 +589,36 @@ export function ApplicationDetailPage() {
                 display: 'grid',
                 gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(4, 1fr)' },
                 gap: 1.5,
-                mb: 2.25,
+                mb: 1.5,
               }}
             >
-              <Meta label="Запрошено" value={shortMoney(app.amount)} />
-              <Meta label="Срок" value={`${app.termMonths} мес.`} />
+              <Meta label="Запрошено" value={shortMoney(requestedAmount)} />
+              <Meta label="Срок запроса" value={`${app.termMonths} мес.`} />
               <Meta
-                label="Предложение банка"
+                label="Предложено"
                 value={
-                  bankOffer
-                    ? `${shortMoney(offerAmount)} · ${offerRate.toFixed(1)}%`
+                  bankOffer && offerAmount != null
+                    ? shortMoney(offerAmount)
                     : decision
                       ? String(decision.decision)
                       : 'Ожидает решения'
                 }
                 accent={Boolean(bankOffer)}
               />
-              <Meta label="Ежемес. платёж" value={monthly ? `≈ ${shortMoney(monthly)}` : '—'} />
+              <Meta
+                label="Условия оффера"
+                value={
+                  bankOffer
+                    ? `${offerTerm ?? '—'} мес · ${(offerRate ?? 0).toFixed(1)}% · ≈ ${shortMoney(monthly)}`
+                    : '—'
+                }
+              />
             </Box>
+            {bankOffer && offerAmount != null && offerAmount !== requestedAmount && (
+              <Typography sx={{ fontSize: 13, color: '#C45A12', fontWeight: 650, mb: 1.5 }}>
+                Запрошено {shortMoney(requestedAmount)}, предложено {shortMoney(offerAmount)}
+              </Typography>
+            )}
             <Pipeline current={step} status={app.status} />
           </Box>
 
