@@ -40,7 +40,6 @@ import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import ViewListRoundedIcon from '@mui/icons-material/ViewListRounded'
 import FolderSharedRoundedIcon from '@mui/icons-material/FolderSharedRounded'
-import NotificationImportantRoundedIcon from '@mui/icons-material/NotificationImportantRounded'
 import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded'
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded'
 import BarChartRoundedIcon from '@mui/icons-material/BarChartRounded'
@@ -727,19 +726,6 @@ export function AppLayout() {
           >
             {headerTitle}
           </Typography>
-
-          {isAnalystRole(user?.role) && (
-            <IconButton
-              size="small"
-              onClick={() => navigate('/app/analyst/attention')}
-              sx={{
-                color: location.pathname === '/app/analyst/attention' ? '#EF3124' : '#5A6B7D',
-              }}
-              aria-label="Требуют внимания"
-            >
-              <NotificationImportantRoundedIcon />
-            </IconButton>
-          )}
 
           <IconButton
             size="small"
