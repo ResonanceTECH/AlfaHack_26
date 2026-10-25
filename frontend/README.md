@@ -4,6 +4,12 @@ React / TypeScript / Vite / MUI клиент. Данные только с FastA
 
 Эндпоинты, которые использует фронт: **[docs/ENDPOINTS.md](./docs/ENDPOINTS.md)** (пока логин и забыли пароль).
 
+## Версии
+
+Node **22** (`.nvmrc` / `.node-version`), npm ≥10. Lock: `package-lock.json`. В Docker/CI — только `npm ci`.
+
+См. [VERSIONS.md](../VERSIONS.md).
+
 ## Quick start
 
 **Весь стек через Docker** (из корня репо):
@@ -26,19 +32,21 @@ python -m scripts.seed   # или см. backend/README.md
 
 # 2. Frontend
 cd ../frontend
-npm install
+nvm use                 # Node 22
+npm ci                  # по package-lock.json
 npm run dev
 ```
 
 Откройте http://localhost:5173 — прокси Vite: `/api` → `localhost:8000`.
 
-Seed-аккаунты бэкенда (если прогнали `scripts/seed.py`):
+Seed-аккаунты (пароль `demo1234`; детали — [README §9](../README.md#9-синтетические-тестовые-данные-и-учётные-записи)):
 
-| Роль | Email | Пароль |
-|------|-------|--------|
-| Предприниматель | `ip@demo.alfa` | `demo1234` |
-| Менеджер | `manager@demo.alfa` | `demo1234` |
-| Бухгалтер | `buh@demo.alfa` | `demo1234` |
+| Роль | Email |
+|------|-------|
+| Предприниматель | `ip@demo.alfa` |
+| Другой тенант | `ooo@demo.alfa` |
+| Аналитик | `analyst@demo.alfa` |
+| Админ | `admin@demo.alfa` |
 
 ## Стек
 
