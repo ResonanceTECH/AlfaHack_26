@@ -27,6 +27,7 @@ import {
   lookupCompanyByInn,
 } from '@/api/companies'
 import { useAuth } from '@/contexts/AuthContext'
+import { LogoutConfirmDialog } from '@/components/common/LogoutConfirmDialog'
 import type { CompanyListItem, MemberRole, RegistryCompany } from '@/types'
 import { formatDate } from '@/utils/format'
 
@@ -76,6 +77,7 @@ export function SelectCompanyPage() {
   const [inn, setInn] = useState('')
   const [lookupError, setLookupError] = useState<string | null>(null)
   const [found, setFound] = useState<RegistryCompany | null>(null)
+  const [logoutOpen, setLogoutOpen] = useState(false)
 
   const companiesQ = useQuery({
     queryKey: ['companies'],
@@ -190,6 +192,11 @@ export function SelectCompanyPage() {
   }
 
   function onLogout() {
+    setLogoutOpen(true)
+  }
+
+  function confirmLogout() {
+    setLogoutOpen(false)
     logout()
     navigate('/login')
   }
@@ -568,6 +575,12 @@ export function SelectCompanyPage() {
           />
         )}
       </Drawer>
+
+      <LogoutConfirmDialog
+        open={logoutOpen}
+        onClose={() => setLogoutOpen(false)}
+        onConfirm={confirmLogout}
+      />
     </Box>
   )
 }
