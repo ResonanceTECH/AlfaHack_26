@@ -179,15 +179,17 @@ export function AnalystQueuePage() {
                   <StatusChip status={c.status} />
                 </Stack>
                 <Typography sx={{ mt: 0.5, fontSize: 13, color: '#7A8795' }}>
-                  {c.product} · {formatMoney(c.amount)} · {c.nextStep}
-                  {c.slaUrgent ? (
-                    <Box component="span" sx={{ color: '#EF3124', fontWeight: 700 }}>
-                      {' '}
-                      · {c.slaLabel}
-                    </Box>
-                  ) : (
-                    ` · ${c.slaLabel}`
-                  )}
+                  {[c.product, formatMoney(c.amount), c.nextStep].filter(Boolean).join(' · ')}
+                  {c.slaLabel ? (
+                    c.slaUrgent ? (
+                      <Box component="span" sx={{ color: '#EF3124', fontWeight: 700 }}>
+                        {' '}
+                        · {c.slaLabel}
+                      </Box>
+                    ) : (
+                      ` · ${c.slaLabel}`
+                    )
+                  ) : null}
                 </Typography>
               </Box>
               <Button
