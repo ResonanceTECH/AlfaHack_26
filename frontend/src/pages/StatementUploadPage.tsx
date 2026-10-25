@@ -9,7 +9,7 @@ import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded'
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined'
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef, useState, type DragEvent } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { importStatement } from '@/api/statements'
@@ -232,7 +232,7 @@ export function StatementUploadPage() {
     for (const f of arr) void processFile(f)
   }
 
-  function onDrop(e: React.DragEvent) {
+  function onDrop(e: DragEvent) {
     e.preventDefault()
     setDragging(false)
     if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files)
@@ -250,7 +250,7 @@ export function StatementUploadPage() {
     )
     await new Promise((r) => setTimeout(r, 700))
     setAnalyzing(false)
-    navigate('/app/statements')
+    navigate('/app/statements/analysis')
   }
 
   const realCount = items.length
@@ -489,34 +489,37 @@ export function StatementUploadPage() {
           </Box>
 
           <Stack
-            direction={{ xs: 'column', sm: 'row' }}
-            spacing={1.25}
-            alignItems={{ sm: 'center' }}
-            justifyContent="space-between"
+            direction="row"
+            spacing={1.5}
+            alignItems="center"
+            flexWrap="wrap"
+            useFlexGap
           >
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
-              <Button
-                variant="contained"
-                color="primary"
-                disabled={analyzing || !items.some((x) => x.status === 'done')}
-                onClick={() => void runAnalysis()}
-                sx={{
-                  borderRadius: 2,
-                  fontWeight: 700,
-                  textTransform: 'none',
-                  boxShadow: 'none',
-                  px: 2.5,
-                  py: 1.15,
-                  '&:hover': { boxShadow: 'none' },
-                }}
-              >
-                {analyzing ? 'Анализ…' : 'Запустить анализ'}
-              </Button>
-              <Button variant="outlined" onClick={() => navigate('/app/statements')} sx={outlineBtn}>
-                Отмена
-              </Button>
-            </Stack>
-            <Typography sx={{ fontSize: 12.5, color: '#9AA5B1' }}>
+            <Button
+              variant="contained"
+              color="primary"
+              disabled={analyzing || !items.some((x) => x.status === 'done')}
+              onClick={() => void runAnalysis()}
+              sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+            >
+              {analyzing ? 'Анализ…' : 'Запустить анализ'}
+            </Button>
+            <Button
+              variant="outlined"
+              color="secondary"
+              onClick={() => navigate('/app/statements')}
+              sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+            >
+              Отмена
+            </Button>
+            <Typography
+              sx={{
+                fontSize: 12.5,
+                color: '#9AA5B1',
+                whiteSpace: 'nowrap',
+                lineHeight: 1.4,
+              }}
+            >
               Анализ займёт ≈ 1 минуту · данные шифруются и удаляются после обработки
             </Typography>
           </Stack>

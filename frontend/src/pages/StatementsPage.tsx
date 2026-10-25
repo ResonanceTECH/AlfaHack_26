@@ -8,7 +8,8 @@ import {
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord'
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   CartesianGrid,
   Cell,
@@ -21,9 +22,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '@/hooks/useAppStore'
-import { importStatement } from '@/api/statements'
 import { formatMoney } from '@/utils/format'
 
 const tileSx = {
@@ -155,11 +154,8 @@ function KpiCard({
 }
 
 export function StatementsPage() {
-  const { financials, companyId, refetchAll } = useAppStore()
-  const qc = useQueryClient()
-  const fileRef = useRef<HTMLInputElement>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const navigate = useNavigate()
+  const { financials, refetchAll } = useAppStore()
   const [flash, setFlash] = useState<string | null>(null)
 
   const baseRev = financials.avgMonthlyRevenue || 1_533_000
@@ -214,26 +210,6 @@ export function StatementsPage() {
 
   const tableRows = useMemo(() => [...series].reverse().slice(0, 5), [series])
 
-  async function onFile(file: File | undefined) {
-    if (!file || !companyId) {
-      setError(!companyId ? 'Нет компании' : 'Выберите файл')
-      return
-    }
-    setLoading(true)
-    setError(null)
-    try {
-      await importStatement(companyId, file)
-      await qc.invalidateQueries({ queryKey: ['transactions', companyId] })
-      await qc.invalidateQueries({ queryKey: ['financials', companyId] })
-      setFlash('Выписка загружена — KPI обновлены')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ошибка импорта')
-    } finally {
-      setLoading(false)
-      if (fileRef.current) fileRef.current.value = ''
-    }
-  }
-
   return (
     <Box sx={{ maxWidth: 1180, mx: 'auto', pb: 2 }}>
       <Stack
@@ -274,8 +250,7 @@ export function StatementsPage() {
           <Button
             variant="contained"
             color="primary"
-            disabled={loading || !companyId}
-            onClick={() => fileRef.current?.click()}
+            onClick={() => navigate('/app/statements/upload')}
             sx={{
               borderRadius: 2,
               fontWeight: 700,
@@ -285,23 +260,11 @@ export function StatementsPage() {
               '&:hover': { boxShadow: 'none' },
             }}
           >
-            {loading ? 'Обработка…' : 'Загрузить выписку'}
+            Загрузить выписку
           </Button>
-          <input
-            ref={fileRef}
-            hidden
-            type="file"
-            accept=".csv,.xlsx,.xls"
-            onChange={(e) => void onFile(e.target.files?.[0])}
-          />
         </Stack>
       </Stack>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2, borderRadius: 2.5 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
       {flash && (
         <Alert severity="success" sx={{ mb: 2, borderRadius: 2.5 }} onClose={() => setFlash(null)}>
           {flash}

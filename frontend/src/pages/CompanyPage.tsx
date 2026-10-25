@@ -225,7 +225,16 @@ function CompletenessRing({ value }: { value: number }) {
 export function CompanyPage() {
   const { user, selectCompany } = useAuth()
   const navigate = useNavigate()
-  const { company, companyId, isLoading, isError, error: storeError, refetchAll } = useAppStore()
+  const {
+    company,
+    companyId,
+    transactions,
+    isLoading,
+    isError,
+    error: storeError,
+    refetchAll,
+  } = useAppStore()
+  const hasStatements = transactions.length > 0
   const qc = useQueryClient()
 
   const companiesQ = useQuery({
@@ -246,21 +255,21 @@ export function CompanyPage() {
   const [editOgrn, setEditOgrn] = useState('')
   const [editRegDate, setEditRegDate] = useState('')
 
-  // 6 разделов профиля; «счёт в другом банке» всегда незакрыт → 5/6
+  // 6 разделов; без выписки → 5/6 (86%)
   const completeness = useMemo(() => {
     if (!company) return { filled: 0, total: 6, percent: 0 }
     const sections = [
       Boolean(company.name && company.inn), // реквизиты
       true, // руководство
       Boolean(company.region), // адреса
-      true, // счёт в Альфа-Банке
+      true, // банковский счёт
       true, // контакты
-      false, // счёт в другом банке
+      hasStatements, // выписка
     ]
     const filled = sections.filter(Boolean).length
     const total = sections.length
     return { filled, total, percent: Math.round((filled / total) * 100) }
-  }, [company])
+  }, [company, hasStatements])
 
   function openEdit() {
     if (!company) return
@@ -684,63 +693,282 @@ export function CompanyPage() {
           )}
 
           {tab === 'accounts' && (
-            <Box sx={tileSx}>
-              <Typography
-                sx={{
-                  fontFamily: 'Manrope, sans-serif',
-                  fontWeight: 800,
-                  fontSize: 16,
-                  color: '#0B1F35',
-                  mb: 1.5,
-                }}
-              >
-                Банковские счета
-              </Typography>
-              <Stack
-                direction="row"
-                spacing={1.5}
-                alignItems="center"
-                sx={{
-                  p: 1.75,
-                  borderRadius: 2,
-                  bgcolor: '#F7F8FA',
-                  border: '1px solid rgba(11,31,53,0.06)',
-                }}
-              >
+            <Stack spacing={2}>
+              <Box sx={tileSx}>
+                <Stack
+                  direction={{ xs: 'column', sm: 'row' }}
+                  justifyContent="space-between"
+                  alignItems={{ xs: 'stretch', sm: 'flex-start' }}
+                  spacing={1.5}
+                  sx={{ mb: 2 }}
+                >
+                  <Box>
+                    <Stack direction="row" spacing={1} alignItems="baseline" flexWrap="wrap">
+                      <Typography
+                        sx={{
+                          fontFamily: 'Manrope, sans-serif',
+                          fontWeight: 800,
+                          fontSize: 16,
+                          color: '#0B1F35',
+                        }}
+                      >
+                        Банковские счета
+                      </Typography>
+                      <Typography sx={{ fontSize: 13, color: '#9AA5B1', fontWeight: 600 }}>
+                        1 расчётный счёт
+                      </Typography>
+                    </Stack>
+                    <Typography sx={{ fontSize: 13, color: '#7A8795', mt: 0.5, lineHeight: 1.45 }}>
+                      Управляйте реквизитами и выписками для анализа и кредита
+                    </Typography>
+                  </Box>
+                  <Button
+                    variant="text"
+                    onClick={() => setFlash('Добавление счёта — скоро')}
+                    sx={{
+                      color: '#EF3124',
+                      fontWeight: 700,
+                      textTransform: 'none',
+                      alignSelf: { xs: 'flex-start', sm: 'center' },
+                      px: 0.5,
+                      '&:hover': { bgcolor: 'transparent', color: '#C6281C' },
+                    }}
+                  >
+                    + Добавить счёт
+                  </Button>
+                </Stack>
+
                 <Box
                   sx={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 2,
-                    bgcolor: '#EF3124',
-                    color: '#fff',
-                    display: 'grid',
-                    placeItems: 'center',
-                    fontWeight: 800,
-                    fontSize: 14,
+                    p: { xs: 1.75, md: 2 },
+                    borderRadius: 2.5,
+                    border: '1px solid rgba(11,31,53,0.08)',
+                    bgcolor: '#FAFBFC',
                   }}
                 >
-                  А
+                  <Stack
+                    direction="row"
+                    spacing={1.25}
+                    alignItems="flex-start"
+                    justifyContent="space-between"
+                    sx={{ mb: 2 }}
+                  >
+                    <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
+                      <Box
+                        sx={{
+                          width: 40,
+                          height: 40,
+                          borderRadius: 2,
+                          bgcolor: 'rgba(239,49,36,0.1)',
+                          color: '#EF3124',
+                          display: 'grid',
+                          placeItems: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <BusinessRoundedIcon sx={{ fontSize: 22 }} />
+                      </Box>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography sx={{ fontSize: 14.5, fontWeight: 750, color: '#0B1F35' }}>
+                          Основной расчётный счёт
+                        </Typography>
+                        <Typography sx={{ fontSize: 12.5, color: '#7A8795', mt: 0.2 }}>
+                          АО «Демо Банк» · Российский рубль
+                        </Typography>
+                      </Box>
+                    </Stack>
+                    <Box
+                      sx={{
+                        px: 1.1,
+                        py: 0.35,
+                        borderRadius: 999,
+                        bgcolor: '#FDE8E6',
+                        color: '#EF3124',
+                        fontSize: 11.5,
+                        fontWeight: 750,
+                        flexShrink: 0,
+                      }}
+                    >
+                      Основной
+                    </Box>
+                  </Stack>
+
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gap: 1.75,
+                      gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                      mb: 1.75,
+                    }}
+                  >
+                    <Field label="Банк" value="АО «Демо Банк»" />
+                    <Field label="БИК" value="044525999" />
+                    <Field label="Валюта" value="RUB" />
+                    <Field
+                      label="Расчётный счёт"
+                      value={`40702 •••• •••• ${company?.inn?.slice(-4) || '1234'}`}
+                    />
+                    <Field label="Корр. счёт" value="30101 •••• •••• 0001" />
+                    <Field label="Тип" value="Расчётный" />
+                  </Box>
+
+                  <Box sx={{ mb: 1.75 }}>
+                    <Box
+                      sx={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        px: 1,
+                        py: 0.35,
+                        borderRadius: 999,
+                        bgcolor: '#E8F6EE',
+                        color: '#1B8A5A',
+                        fontSize: 12,
+                        fontWeight: 700,
+                      }}
+                    >
+                      <CheckCircleRoundedIcon sx={{ fontSize: 14 }} />
+                      Данные указаны
+                    </Box>
+                  </Box>
+
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} flexWrap="wrap">
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      onClick={() => navigate('/app/statements/upload')}
+                      sx={{
+                        borderRadius: 2,
+                        fontWeight: 700,
+                        textTransform: 'none',
+                        boxShadow: 'none',
+                        px: 2,
+                        '&:hover': { boxShadow: 'none' },
+                      }}
+                    >
+                      Загрузить выписку
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      sx={outlineBtn}
+                      onClick={() =>
+                        setFlash('Реквизиты счёта: 40702 · БИК 044525999 · АО «Демо Банк»')
+                      }
+                    >
+                      Посмотреть реквизиты
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      sx={outlineBtn}
+                      onClick={() => setFlash('Редактирование счёта — скоро')}
+                    >
+                      Редактировать
+                    </Button>
+                  </Stack>
                 </Box>
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography sx={{ fontSize: 14, fontWeight: 700, color: '#0B1F35' }}>
-                    Альфа-Банк · расчётный
+              </Box>
+
+              {!hasStatements && (
+                <Box
+                  sx={{
+                    ...tileSx,
+                    bgcolor: '#FFF5F4',
+                    border: '1px solid rgba(239,49,36,0.12)',
+                  }}
+                >
+                  <Typography
+                    sx={{
+                      fontFamily: 'Manrope, sans-serif',
+                      fontWeight: 800,
+                      fontSize: 15,
+                      color: '#0B1F35',
+                      mb: 0.5,
+                    }}
+                  >
+                    Нет банковской выписки
                   </Typography>
-                  <Typography sx={{ fontSize: 12.5, color: '#9AA5B1', mt: 0.25 }}>
-                    40702 ···· ···· 4821 · основной
+                  <Typography sx={{ fontSize: 13.5, color: '#5A6B7D', lineHeight: 1.45, mb: 1.5 }}>
+                    Загрузите выписку, чтобы проанализировать поступления, расходы и денежный поток.
                   </Typography>
+                  <Button
+                    variant="contained"
+                    onClick={() => navigate('/app/statements/upload')}
+                    sx={{
+                      borderRadius: 2,
+                      fontWeight: 700,
+                      textTransform: 'none',
+                      boxShadow: 'none',
+                      bgcolor: '#F7B4AE',
+                      color: '#8B1A12',
+                      '&:hover': { bgcolor: '#F29A92', boxShadow: 'none' },
+                    }}
+                  >
+                    Загрузить выписку
+                  </Button>
                 </Box>
-                <StatusPill ok label="Активен" />
-              </Stack>
-              <Button
-                fullWidth
-                variant="outlined"
-                sx={{ ...outlineBtn, mt: 1.75, py: 1 }}
-                onClick={() => setFlash('Добавление счёта другого банка — в следующей версии')}
-              >
-                + Добавить счёт в другом банке
-              </Button>
-            </Box>
+              )}
+
+              <Box sx={tileSx}>
+                <Typography
+                  sx={{
+                    fontFamily: 'Manrope, sans-serif',
+                    fontWeight: 800,
+                    fontSize: 15,
+                    color: '#0B1F35',
+                    mb: 1.5,
+                  }}
+                >
+                  Загруженные выписки
+                </Typography>
+                {hasStatements ? (
+                  <Stack spacing={1}>
+                    <Stack
+                      direction="row"
+                      spacing={1.25}
+                      alignItems="center"
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 2,
+                        bgcolor: '#F7F8FA',
+                        border: '1px solid rgba(11,31,53,0.06)',
+                      }}
+                    >
+                      <CheckCircleRoundedIcon sx={{ fontSize: 20, color: '#1B8A5A' }} />
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: '#0B1F35' }}>
+                          Выписка · {transactions.length} операций
+                        </Typography>
+                        <Typography sx={{ fontSize: 12.5, color: '#9AA5B1' }}>
+                          Готово к анализу
+                        </Typography>
+                      </Box>
+                      <Button
+                        size="small"
+                        onClick={() => navigate('/app/statements/analysis')}
+                        sx={{ color: '#EF3124', fontWeight: 700, textTransform: 'none' }}
+                      >
+                        Открыть
+                      </Button>
+                    </Stack>
+                  </Stack>
+                ) : (
+                  <Box
+                    sx={{
+                      py: 3.5,
+                      px: 2,
+                      textAlign: 'center',
+                      borderRadius: 2,
+                      bgcolor: '#F7F8FA',
+                      border: '1px dashed rgba(11,31,53,0.1)',
+                    }}
+                  >
+                    <Typography sx={{ fontSize: 13.5, color: '#9AA5B1', lineHeight: 1.5, maxWidth: 360, mx: 'auto' }}>
+                      Выписки ещё не загружены. После загрузки здесь появится история обработки
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+            </Stack>
           )}
         </Stack>
 
@@ -758,23 +986,19 @@ export function CompanyPage() {
             >
               Полнота профиля
             </Typography>
-            <Stack direction="row" spacing={1.75} alignItems="center" sx={{ mb: 1.75 }}>
+            <Stack direction="row" spacing={1.75} alignItems="center">
               <CompletenessRing value={completeness.percent} />
-              <Typography sx={{ fontSize: 13.5, color: '#5A6B7D', lineHeight: 1.45 }}>
-                {completeness.filled} из {completeness.total} разделов.
-                {completeness.filled < completeness.total
-                  ? ' Добавьте счёт в другом банке — это ускорит проверку заявки.'
-                  : ' Профиль заполнен.'}
-              </Typography>
+              <Box>
+                <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: '#0B1F35', mb: 0.35 }}>
+                  {completeness.filled} из {completeness.total} разделов
+                </Typography>
+                <Typography sx={{ fontSize: 12.5, color: '#7A8795', lineHeight: 1.45 }}>
+                  {hasStatements
+                    ? 'Профиль заполнен.'
+                    : 'Загрузите выписку для финансового анализа'}
+                </Typography>
+              </Box>
             </Stack>
-            <Button
-              fullWidth
-              variant="outlined"
-              sx={{ ...outlineBtn, py: 1.05 }}
-              onClick={() => setTab('accounts')}
-            >
-              Дополнить профиль
-            </Button>
           </Box>
 
           <Box sx={tileSx}>
