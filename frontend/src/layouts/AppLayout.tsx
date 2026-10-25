@@ -53,6 +53,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { fetchAnalystQueue } from '@/api/analyst'
 import { listCompanies } from '@/api/companies'
+import { listNotifications } from '@/api/notifications'
 import { useAuth } from '@/contexts/AuthContext'
 import { AlfaMark } from '@/components/landing/AlfaLogo'
 import {
@@ -326,6 +327,15 @@ export function AppLayout() {
     enabled: Boolean(user) && isAnalystRole(user?.role),
     staleTime: 60_000,
   })
+
+  const notifBadgeQ = useQuery({
+    queryKey: ['notifications', 'badge'],
+    queryFn: () => listNotifications({ unread: true, limit: 1 }),
+    enabled: Boolean(user),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  })
+  const unreadNotifs = notifBadgeQ.data?.unreadCount ?? 0
 
   const analystCaseId = useMemo(() => {
     const m = location.pathname.match(/\/app\/analyst\/cases\/([^/]+)/)
@@ -659,7 +669,7 @@ export function AppLayout() {
             aria-label="Уведомления"
           >
             <Badge
-              badgeContent={user?.role === 'admin' ? 5 : isAnalystRole(user?.role) ? 5 : 4}
+              badgeContent={unreadNotifs > 0 ? unreadNotifs : undefined}
               color="error"
               overlap="circular"
             >
