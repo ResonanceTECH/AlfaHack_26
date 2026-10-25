@@ -1200,6 +1200,8 @@ def populate(db, *, now: datetime | None = None) -> None:
     _seed_applications(db, now)
     db.flush()
     _seed_scenarios_and_notifications(db, now)
+    from scripts.seed_scoring import seed_scoring
+    seed_scoring(db)
 
 
 def seed(*, force: bool = False) -> None:
@@ -1208,6 +1210,9 @@ def seed(*, force: bool = False) -> None:
     try:
         existing = db.get(User, USER_ENT_01)
         if existing and not force:
+            from scripts.seed_scoring import seed_scoring
+            seed_scoring(db)
+            db.commit()
             print(f"Seed уже применён (seed_version={SEED_VERSION}) — пропуск")
             print("  force: python -m scripts.seed --force  или POST /admin/demo/reset")
             return

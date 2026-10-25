@@ -187,6 +187,8 @@ export function ApplicationEditPage() {
   }
   const current = app
 
+  const current = app
+
   function resetForm() {
     setAmount(current.editAmount)
     setTerm(current.editTerm)

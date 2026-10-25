@@ -49,6 +49,14 @@ class Settings(BaseSettings):
     ml_service_enabled: bool = Field(default=False, validation_alias="ML_SERVICE_ENABLED")
     ml_service_timeout: float = Field(default=8.0, validation_alias="ML_SERVICE_TIMEOUT")
 
+    llm_enabled: bool = False
+    llm_base_url: str = "http://127.0.0.1:8081/v1"
+    llm_main: str = "Qwen3-4B-Instruct-2507"
+    llm_light: str = "Qwen3-4B-Instruct-2507"
+    llm_timeout_seconds: float = Field(default=20, gt=0, le=120)
+    llm_max_tokens: int = Field(default=900, ge=128, le=2048)
+    llm_api_key: str = ""
+
     rate_limit_per_minute: int = 120
 
     demo_mode: bool = Field(default=True, validation_alias="DEMO_MODE")

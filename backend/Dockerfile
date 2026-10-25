@@ -11,10 +11,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Prefer full lock (transitive pins); fall back to requirements.txt
-COPY requirements.lock requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.lock
+COPY backend/requirements.lock backend/requirements.txt ./
+RUN pip install --no-cache-dir --timeout 120 --retries 5 -r requirements.lock
 
-COPY . .
+COPY scoring /opt/scoring
+RUN pip install --no-cache-dir /opt/scoring
+
+COPY backend .
 
 RUN mkdir -p /app/uploads
 

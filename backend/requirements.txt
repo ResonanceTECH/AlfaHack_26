@@ -23,3 +23,6 @@ pytest==8.3.4
 pytest-asyncio==0.25.0
 factory-boy==3.3.1
 eval_type_backport==0.4.0
+
+# Scoring YAML
+PyYAML==6.0.3

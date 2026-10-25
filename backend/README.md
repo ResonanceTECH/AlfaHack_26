@@ -39,6 +39,7 @@ python -m venv .venv
 .venv\Scripts\activate   # Windows
 # source .venv/bin/activate  # macOS/Linux
 pip install -r requirements.lock
+pip install -e ../scoring  # ядро экспертного скоринга
 cp .env.example .env
 
 alembic upgrade head
@@ -93,3 +94,11 @@ backend/
 ```
 
 Рекомендации, прогноз и readiness — демо-инструменты, не официальное решение банка.
+
+## Агент разъяснений
+
+Новый модуль `app/services/credit_agent` подключён к чату; поддерживает
+объяснение заявки и сводку аналитика, вопросы по заявке и подбор продукта.
+По умолчанию `LLM_ENABLED=false`, включён шаблонный резерв.
+CLI, переменные окружения, новые HTTP-ручки и запуск локальной модели:
+[единый README модуля](../scoring/README.md).

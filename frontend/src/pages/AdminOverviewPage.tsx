@@ -367,7 +367,7 @@ export function AdminOverviewPage() {
                       border: `1px solid ${color.semantic.divider}`,
                       fontSize: 13,
                     }}
-                    formatter={(v) => [v ?? 0, 'Заявки']}
+                    formatter={(v) => [Number(v ?? 0), 'Заявки']}
                     labelFormatter={(l) => `Неделя ${l}`}
                   />
                   <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={36}>
@@ -475,7 +475,7 @@ export function AdminOverviewPage() {
                       fontSize: 13,
                     }}
                     formatter={(v, name) => [
-                      name === 'share' ? `${v ?? 0}%` : `${v ?? 0} млрд`,
+                      name === 'share' ? `${Number(v ?? 0)}%` : `${Number(v ?? 0)} млрд`,
                       name === 'share' ? 'Доля' : 'Объём',
                     ]}
                   />

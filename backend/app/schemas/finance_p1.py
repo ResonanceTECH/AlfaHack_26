@@ -175,6 +175,7 @@ class AssistantConversationCreate(APIModel):
 
 class AssistantMessageIn(APIModel):
     content: str = Field(min_length=1, max_length=4000)
+    application_id: str | None = None
 
 
 class AssistantMessageOut(APIModel):

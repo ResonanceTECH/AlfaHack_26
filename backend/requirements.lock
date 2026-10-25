@@ -64,3 +64,5 @@ vine==5.1.0
 watchfiles==1.1.1
 wcwidth==0.9.4
 websockets==15.0.1
+
+PyYAML==6.0.3
