@@ -1,0 +1,164 @@
+# Экспертная скоркарта и кредитная политика (черновик, веса подбираются экспертно).
+# Все пороги и баллы меняются здесь, без правок кода. Валидация при загрузке: config.py
+version: "2026.2-draft"
+base_score: 500
+
+# Коррелирующие факторы: общий штраф кредитной истории не ниже -60.
+factor_groups:
+  - id: credit_history
+    factors: [overdue_count, max_overdue_days]
+    min_points: -60
+
+# Уровни риска: сверху вниз, первый подходящий. Последний - без нижнего порога.
+risk_bands:
+  - {band: A, min_score: 600}
+  - {band: B, min_score: 520}
+  - {band: C, min_score: 440}
+  - {band: D, min_score: null}
+
+# Слой 1. Стоп-правила: reject - отказ, manual_review - ручное рассмотрение.
+# op: eq | ne | lt | lte | gt | gte. Если признака нет (None), правило не срабатывает.
+stop_rules:
+  - {id: egrul_not_active, description: "Компания не действует по данным ЕГРЮЛ", feature: egrul_status, op: ne, value: active, action: reject}
+  - {id: min_company_age, description: "Возраст бизнеса меньше 3 месяцев", feature: company_age_months, op: lt, value: 3, action: reject}
+  - {id: overdue_now, description: "Текущая просрочка по данным БКИ", feature: bki_overdue_now, op: eq, value: true, action: reject}
+  - {id: tax_debt, description: "Налоговая задолженность по данным ФНС", feature: fns_tax_debt, op: eq, value: true, action: manual_review}
+  - {id: unreliable_info, description: "Недостоверные сведения о компании по данным ФНС", feature: fns_unreliable_info, op: eq, value: true, action: manual_review}
+  - {id: bki_unavailable, description: "Данные БКИ недоступны", feature: bki_available, op: eq, value: false, action: manual_review}
+  - {id: fns_unavailable, description: "Данные ФНС недоступны", feature: fns_available, op: eq, value: false, action: manual_review}
+
+# Группы отрасли по первым двум знакам ОКВЭД.
+sector_risk:
+  default: medium
+  groups:
+    low: ["01", "10", "62", "63", "69", "70", "86"]
+    high: ["41", "42", "43", "55", "56", "90", "93"]
+
+# Слой 2. Факторы скоркарты.
+# numeric: bins проверяются сверху вниз, первый с value < lt; последний бин без lt.
+# direction задаёт монотонность: баллы не должны противоречить смыслу признака (проверяется при загрузке).
+factors:
+  - id: company_age
+    label: "Возраст бизнеса, мес."
+    feature: company_age_months
+    type: numeric
+    direction: higher_is_better
+    bins:
+      - {lt: 12, points: -40}
+      - {lt: 24, points: -10}
+      - {lt: 60, points: 15}
+      - {points: 30}
+  - id: revenue_growth
+    label: "Динамика выручки за год"
+    feature: revenue_growth
+    type: numeric
+    direction: higher_is_better
+    bins:
+      - {lt: -0.2, points: -40}
+      - {lt: 0.0, points: -15}
+      - {lt: 0.1, points: 0}
+      - {lt: 0.3, points: 15}
+      - {points: 25}
+  - id: profit_margin
+    label: "Операционная маржа"
+    feature: profit_margin
+    type: numeric
+    direction: higher_is_better
+    bins:
+      - {lt: 0.0, points: -50}
+      - {lt: 0.05, points: -15}
+      - {lt: 0.15, points: 10}
+      - {points: 30}
+  - id: debt_burden
+    label: "Долговая нагрузка (платежи / выручка в мес.)"
+    feature: debt_burden
+    type: numeric
+    direction: lower_is_better
+    bins:
+      - {lt: 0.1, points: 30}
+      - {lt: 0.25, points: 10}
+      - {lt: 0.4, points: -20}
+      - {points: -50}
+  - id: amount_to_revenue
+    label: "Сумма заявки / выручка в мес."
+    feature: amount_to_monthly_revenue
+    type: numeric
+    direction: lower_is_better
+    bins:
+      - {lt: 1, points: 25}
+      - {lt: 3, points: 5}
+      - {lt: 6, points: -20}
+      - {points: -45}
+  - id: overdue_count
+    label: "Просрочки за 12 мес., шт."
+    feature: overdue_count_12m
+    type: numeric
+    direction: lower_is_better
+    bins:
+      - {lt: 1, points: 30}
+      - {lt: 3, points: -20}
+      - {points: -60}
+  - id: max_overdue_days
+    label: "Максимальная просрочка за 12 мес., дн."
+    feature: max_overdue_days_12m
+    type: numeric
+    direction: lower_is_better
+    bins:
+      - {lt: 1, points: 0}
+      - {lt: 30, points: -15}
+      - {points: -50}
+  - id: sector
+    label: "Отрасль (группа риска)"
+    feature: sector_risk
+    type: categorical
+    map: {low: 15, medium: 0, high: -25}
+    default: 0
+
+# Слой 3. Кредитная политика: продукт x уровень риска.
+# Уровня риска нет в bands продукта - отказ. auto_approve: false - решает аналитик.
+# Лимит суммы = min(max_amount уровня, max_amount продукта, max_revenue_multiple * выручка в мес.)
+products:
+  working_capital:
+    title: "Оборотный кредит"
+    min_amount: 300000
+    max_amount: 20000000
+    min_term_months: 3
+    max_term_months: 36
+    min_company_age_months: 6
+    bands:
+      A: {max_revenue_multiple: 6, max_amount: 20000000, max_term_months: 36, annual_rate: 0.16, auto_approve: true}
+      B: {max_revenue_multiple: 4, max_amount: 10000000, max_term_months: 24, annual_rate: 0.19, auto_approve: true}
+      C: {max_revenue_multiple: 2, max_amount: 3000000, max_term_months: 12, annual_rate: 0.23, auto_approve: false}
+  overdraft:
+    title: "Овердрафт"
+    min_amount: 100000
+    max_amount: 5000000
+    min_term_months: 1
+    max_term_months: 12
+    min_company_age_months: 6
+    bands:
+      A: {max_revenue_multiple: 2, max_amount: 5000000, max_term_months: 12, annual_rate: 0.19, auto_approve: true}
+      B: {max_revenue_multiple: 1.5, max_amount: 3000000, max_term_months: 12, annual_rate: 0.22, auto_approve: true}
+      C: {max_revenue_multiple: 1, max_amount: 1000000, max_term_months: 6, annual_rate: 0.26, auto_approve: true}
+  equipment:
+    title: "Кредит на оборудование"
+    min_amount: 500000
+    max_amount: 30000000
+    min_term_months: 6
+    max_term_months: 60
+    min_company_age_months: 12
+    bands:
+      A: {max_revenue_multiple: 8, max_amount: 30000000, max_term_months: 60, annual_rate: 0.14, auto_approve: true}
+      B: {max_revenue_multiple: 5, max_amount: 12000000, max_term_months: 48, annual_rate: 0.17, auto_approve: true}
+      C: {max_revenue_multiple: 3, max_amount: 4000000, max_term_months: 24, annual_rate: 0.21, auto_approve: false}
+  express:
+    title: "Экспресс-кредит"
+    min_amount: 100000
+    max_amount: 3000000
+    min_term_months: 3
+    max_term_months: 24
+    min_company_age_months: 6
+    bands:
+      A: {max_revenue_multiple: 3, max_amount: 3000000, max_term_months: 24, annual_rate: 0.22, auto_approve: true}
+      B: {max_revenue_multiple: 2, max_amount: 2000000, max_term_months: 18, annual_rate: 0.25, auto_approve: true}
+      C: {max_revenue_multiple: 1, max_amount: 500000, max_term_months: 12, annual_rate: 0.29, auto_approve: false}

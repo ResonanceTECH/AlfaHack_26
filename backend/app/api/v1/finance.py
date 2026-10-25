@@ -34,10 +34,9 @@ from app.schemas.finance_p1 import (
     TransactionsAnalyticsOut,
 )
 from app.services.access import require_company_access
-from app.services.ai_consultant import generate_reply
+from app.services.agent_service import conversation_reply, agent_status
 from app.services.audit import write_audit
 from app.services.company_finance import (
-    assistant_status,
     build_credit_passport,
     company_readiness,
     confirm_statement,
@@ -433,7 +432,7 @@ def company_credit_readiness(
 @router.get("/assistant/status", response_model=AssistantStatusOut)
 def get_assistant_status(db: DbDep, user: CurrentUser) -> AssistantStatusOut:
     _ = user
-    return AssistantStatusOut(**assistant_status(db))
+    return AssistantStatusOut(**agent_status())
 
 
 @router.get(
@@ -500,15 +499,11 @@ def assistant_post_message(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Диалог не найден")
 
     db.add(AiMessage(conversation_id=conv.id, role="user", content=body.content))
-    products = list(
-        db.scalars(select(CreditProduct).where(CreditProduct.is_active.is_(True))).all()
-    )
-    company = _company(db, company_id)
-    reply = generate_reply(
-        message=body.content,
-        products=products,
-        company_name=company.name,
-    )
+    history = list_messages(db, conv.id)
+    previous = next((m for m in reversed(history) if m.role == "assistant"), None)
+    prior_prefill = ((previous.meta or {}).get("agent", {}).get("prefill", {}) if previous else {})
+    reply = conversation_reply(db, user, company_id, question=body.content,
+                               application_id=body.application_id, prior_prefill=prior_prefill)
     assistant = AiMessage(
         conversation_id=conv.id,
         role="assistant",
@@ -516,6 +511,7 @@ def assistant_post_message(
         meta={
             "sources": reply.get("sources") or [],
             "suggested_actions": reply.get("suggested_actions") or [],
+            "agent": reply["agent"],
         },
     )
     db.add(assistant)

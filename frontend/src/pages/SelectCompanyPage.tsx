@@ -403,14 +403,7 @@ export function SelectCompanyPage() {
               pb: 0.5,
             }}
           >
-            {companiesQ.isError && (
-              <Alert severity="error" sx={{ borderRadius: 2.5 }}>
-                {apiError(companiesQ.error, 'Не удалось загрузить компании')}
-              </Alert>
-            )}
-
-            {!companiesQ.isError &&
-              filtered.map((item) => (
+            {filtered.map((item) => (
                 <CompanyCard
                   key={item.id}
                   item={item}

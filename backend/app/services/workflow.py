@@ -206,7 +206,7 @@ def run_automated_validation(
     actor: User | None,
     workflow: ApplicationWorkflow | None = None,
 ) -> list[ApplicationCheck]:
-    """Синхронный mock-конвейер: SUBMITTED → VALIDATING → IN_REVIEW + checks."""
+    """Синхронный конвейер: валидация → экспертный скоринг → решение."""
     wf = workflow or active_workflow(app)
     wf_id = wf.id if wf else None
 
@@ -315,28 +315,11 @@ def run_automated_validation(
 
     db.flush()
 
-    hard_fail = any(c.status == "FAILED" and c.audience == CheckAudience.PUBLIC.value for c in checks)
-    if hard_fail:
-        # Оставляем на ручной разбор, не auto-reject в демо
-        target = ApplicationStatus.IN_REVIEW
-        comment = "Автопроверка завершена с ошибками — передано аналитику"
-    else:
-        target = ApplicationStatus.IN_REVIEW
-        comment = "Автопроверка пройдена"
+    from app.services.scoring import process_scoring
 
-    transition_application(
-        db,
-        app,
-        target,
-        actor=actor,
-        comment=comment,
-        bump_version=False,
-    )
+    process_scoring(db, app, workflow=wf)
     if wf is not None:
-        wf.current_step = "ANALYST_REVIEW"
-        ctx = dict(wf.context or {})
-        ctx["auto_checks"] = [c.check_key for c in checks]
-        wf.context = ctx
+        wf.context = {**(wf.context or {}), 'auto_checks': [c.check_key for c in checks]}
 
     db.flush()
     return checks

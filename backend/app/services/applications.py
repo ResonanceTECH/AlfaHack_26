@@ -154,7 +154,7 @@ def validate_application(db: Session, app: CreditApplication) -> dict[str, Any]:
         .order_by(FinancialSnapshot.updated_at.desc())
     )
     if snap is None:
-        errors.append(
+        warnings.append(
             {
                 "field": "financials",
                 "code": "MISSING",
@@ -340,7 +340,7 @@ def submit_draft(
             comment="Отправка заявки",
         )
         wf = create_workflow(db, app, actor=user)
-        # Демо: сразу прогоняем auto-validation → IN_REVIEW
+        # Валидация и экспертный скоринг в одной транзакции
         run_automated_validation(db, app, actor=user, workflow=wf)
     elif app.status == ApplicationStatus.DOCS_REQUESTED:
         wf = active_workflow(app) or create_workflow(db, app, actor=user)
