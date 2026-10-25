@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:16.6-alpine
     environment:
       POSTGRES_USER: alfa
       POSTGRES_PASSWORD: alfa
@@ -16,7 +16,7 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4-alpine
     ports:
       - "6379:6379"
     healthcheck:
@@ -47,6 +47,13 @@ services:
       sh -c "alembic upgrade head &&
              python -m scripts.seed &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  web:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
 
 volumes:
   pgdata:
