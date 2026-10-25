@@ -475,6 +475,67 @@ Draft: localStorage `alfa_selection_draft:{companyId}` (`features/selection/`).
 
 ---
 
+## Карточка заявки — `/app/applications/:id`
+
+Код: `ApplicationDetailPage.tsx` · `api/applications.ts` · `features/applications/appDocuments.ts` · `localApps.ts`.
+
+Одна страница кабинета: **условия + пайплайн + чек-лист документов + история**.  
+Старый URL `/app/applications/:id/documents` редиректит сюда (`#documents`).
+
+| Method | Path | Блок UI |
+|--------|------|---------|
+| `GET` | `/applications/{id}` | шапка, условия, статус, история, комментарии |
+| `POST` | `/applications/{id}/documents` | загрузка файла в слот чек-листа (multipart) |
+| `POST` | `/applications/{id}/submit` | после комплекта документов (wizard / следующий шаг) |
+| `PATCH` | `/applications/{id}/status` | менеджер (не предприниматель) |
+
+Fallback: если `GET` 404 — заявка из `alfa_local_applications`.  
+Чек-лист слотов (выписка, паспорт, договор/КП, УСН, БКИ, залог) — `localStorage` `alfa_app_documents:{applicationId}`; при успешном `POST …/documents` ещё invalidate `['application']` / `['applications']`.
+
+### `GET /applications/{id}`
+
+```json
+{
+  "id": "39a6437e-2ebf-4e50-b7b8-8bf20bef01c3",
+  "companyId": "company_001",
+  "productId": "prod_invest",
+  "productName": "Инвестиционный кредит «Рост»",
+  "status": "in_review",
+  "amount": 14200000,
+  "termMonths": 48,
+  "rate": 18.75,
+  "purpose": "Закупка оборудования",
+  "readinessScore": 75,
+  "documents": [
+    {
+      "id": "doc_1",
+      "type": "statement",
+      "name": "выписка_40702.pdf",
+      "size": 2400000,
+      "uploadedAt": "2026-10-25T15:42:00Z",
+      "status": "uploaded"
+    }
+  ],
+  "comments": [],
+  "statusHistory": [
+    { "status": "submitted", "at": "2026-10-24T10:00:00Z", "by": "self" },
+    { "status": "in_review", "at": "2026-10-25T09:00:00Z", "by": "manager" }
+  ],
+  "createdAt": "2026-10-24T10:00:00Z",
+  "updatedAt": "2026-10-25T15:42:00Z"
+}
+```
+
+### `POST /applications/{id}/documents`
+
+`multipart/form-data` · поле `file`.  
+Код: `uploadApplicationDocument(id, file)`.  
+UI: drag&drop / «Загрузить» / «Заменить» в блоке «Документы по заявке». Демо без бэка — только локальный чек-лист.
+
+Кнопка «К проверке перед отправкой» активна, когда все **обязательные** слоты в статусе `uploaded` | `review`.
+
+---
+
 ## Помощь и вопросы — `/app/help`
 
 Код: `HelpPage.tsx`.
