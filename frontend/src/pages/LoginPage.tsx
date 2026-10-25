@@ -42,8 +42,12 @@ export function LoginPage() {
     }
     if (user.role === 'admin') {
       navigate('/app/admin')
-    } else if (user.role === 'manager' || user.role === 'risk_analyst') {
-      navigate('/app/manager')
+    } else if (
+      user.role === 'analyst' ||
+      user.role === 'manager' ||
+      user.role === 'risk_analyst'
+    ) {
+      navigate('/app/analyst')
     } else if (user.companyId) {
       navigate('/app')
     } else {
