@@ -186,7 +186,8 @@ UI превью: name / region / `membershipRole` из list item; KPI — `appli
 | `PATCH` | `/companies/{companyId}` | «Редактировать» → сохранить |
 | `POST` | `/companies/{companyId}/registry/verify` | подтверждение на `/app/company/inn-check` |
 
-Владельцы / согласия / банковские счета — UI demo поверх реальных реквизитов. Финансы — на `/app/statements`.
+Владельцы / согласия — UI demo поверх реальных реквизитов.  
+Вкладка «Банковские счета»: демо-реквизиты счёта; «Загрузить выписку» → `/app/statements/upload`; история — по `transactions` из store. Полнота 5/6 без выписки.
 
 «Проверить ИНН» → `/app/company/inn-check` (`CompanyInnCheckPage.tsx`):
 
@@ -358,8 +359,10 @@ PATCH:
 |--------|------|--------|
 | `GET` | `/companies/{id}/financials` | Mount (store) — масштаб KPI |
 | `GET` | `/companies/{id}/transactions` | (store) после импорта |
-| `POST` | `/statements/import` (multipart) | «Загрузить выписку» |
+| `POST` | `/statements/import` (multipart) | загрузка на `/app/statements/upload` |
 
+«Загрузить выписку» → `/app/statements/upload` (`StatementUploadPage.tsx`).  
+«Запустить анализ» → `/app/statements/analysis` (`StatementAnalysisPage.tsx`, KPI/графики из `financials` + демо).  
 «Обновить данные» — `refetchAll()` store.
 
 ---
