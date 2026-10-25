@@ -2,9 +2,9 @@
 
 Эндпоинты API, которые дергает фронт. Базовый префикс: `/api/v1` (прокси Vite → backend).
 
-Экраны: **логин**, **забыли пароль**, **выбор / добавление компании**, **профиль компании**, **финансовый профиль**, **календарь**, **профиль пользователя**, **команда**, **помощь**, **AI-консультант**.
+Экраны: **логин**, **забыли пароль**, **выбор / добавление компании**, **главная**, **профиль компании**, **финансовый профиль**, **календарь**, **профиль пользователя**, **команда**, **помощь**, **AI-консультант**.
 
-Данные только с бэка — без mock UI и без `?empty=1`.
+Данные только с бэка — без mock UI и без `?empty=1` (на главной заявки ещё подмешиваются из локального кэша после демо-отправки).
 
 ## Логин — `/login`
 
@@ -404,6 +404,74 @@ Draft: localStorage `alfa_selection_draft:{companyId}` (`features/selection/`).
 
 Стартовый диалог в UI — демо-тред (как в макете); дальше — ответы бэка. При ошибке сети — локальный fallback.  
 «+ Новый диалог» — пустой тред (welcome) + новый `conversationId` на первом сообщении; список тредов в localStorage `alfa_ai_threads:{companyId}`.
+
+---
+
+## Главная — `/app`
+
+Код: `DashboardPage.tsx` · `useAppStore()` + `api/applications.ts` · `api/credit.ts` (readiness).
+
+| Method | Path | Блок UI |
+|--------|------|---------|
+| `GET` | `/applications?companyId=` | «Мои заявки» + карточка активной заявки |
+| `GET` | `/applications/{id}` | переход «Посмотреть условия» / «Трекер» |
+| `POST` | `/applications` | новая заявка (`ApplicationWizardPage`) |
+| `POST` | `/applications/{id}/submit` | отправка черновика → статус `submitted` |
+| `POST` | `/credit/readiness` | «Профиль заполнен на N%» (пустая активная карточка) |
+| `GET` | `/companies` | чипы компаний в шапке |
+| `GET` | `/companies/{companyId}/financials` | плитка финансов |
+| `GET` | `/obligations?companyId=` | «Ближайшие задачи» |
+
+### Активная заявка
+
+`pickActiveApp`: первый из `submitted` / `in_review` / `docs_requested` / `approved`, иначе `draft`, иначе любая.
+
+Поля карточки: `amount`, `termMonths`, `rate`, `purpose` / `productName`, `status` → пайплайн этапов.
+
+### `GET /applications?companyId=`
+
+```json
+[
+  {
+    "id": "ABC-2026-1042",
+    "companyId": "company_001",
+    "productId": "prod_turnover",
+    "productName": "Бизнес-Оборот",
+    "status": "in_review",
+    "amount": 5000000,
+    "termMonths": 24,
+    "rate": 17.9,
+    "purpose": "Пополнение оборотных средств",
+    "readinessScore": 78,
+    "documents": [],
+    "comments": [],
+    "statusHistory": [{ "status": "submitted", "at": "2026-10-21T10:00:00Z", "by": "self" }],
+    "createdAt": "2026-10-21T10:00:00Z",
+    "updatedAt": "2026-10-23T09:15:00Z"
+  }
+]
+```
+
+Код: `listApplications(companyId)` → `useAppStore().apps`. На главной: `mergeApplications(api, localStorage)`.
+
+### `POST /applications` + `POST /applications/{id}/submit`
+
+Экран: `/app/applications/new`.
+
+```json
+{
+  "companyId": "company_001",
+  "productId": "prod_turnover",
+  "amount": 5000000,
+  "termMonths": 24,
+  "rate": 17.9,
+  "purpose": "…"
+}
+```
+
+После успеха — invalidate `['applications']` → главная показывает заявку в «Мои заявки» и в блоке активной.
+
+Если продукт только демо (нет id в API) — заявка пишется в `localStorage` (`alfa_local_applications`) тем же shape, чтобы главная всё равно отрисовала.
 
 ---
 
