@@ -392,7 +392,19 @@ def submit_company_application(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Заявка не найдена")
     require_application_access(db, user, app, write=True)
 
-    if app.status not in (ApplicationStatus.DRAFT, ApplicationStatus.DOCS_REQUESTED, ApplicationStatus.SUBMITTED):
+    # Идемпотентный повтор (тот же Idempotency-Key) допускается из любого
+    # пост-submit статуса — логика в submit_draft. Первичная отправка — только из черновика / docs.
+    form = dict(app.form_data or {})
+    is_idempotent_replay = bool(
+        idempotency_key and form.get("submit_idempotency_key") == idempotency_key
+    )
+    if not is_idempotent_replay and app.status not in (
+        ApplicationStatus.DRAFT,
+        ApplicationStatus.DOCS_REQUESTED,
+        ApplicationStatus.SUBMITTED,
+        ApplicationStatus.VALIDATING,
+        ApplicationStatus.IN_REVIEW,
+    ):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Заявку нельзя отправить из текущего статуса")
 
     try:
