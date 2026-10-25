@@ -100,6 +100,7 @@ export function SelectionResultsPage() {
       return recQ.data.recommendations.map((r, i) => {
         const demo = DEMO[i] ?? DEMO[2]!
         return {
+          ...demo,
           ...r,
           tag: productTypeLabels[r.productType] ?? 'Кредит',
           badge:

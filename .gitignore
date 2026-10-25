@@ -1,0 +1,17 @@
+.venv-scoring/
+.venv/
+.venv-*/
+venv/
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+*.log
+*.gguf
+*.safetensors
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/

@@ -1,0 +1,312 @@
+[
+  {
+    "id": "ideal",
+    "title": "Идеальный клиент: 6 лет, рост, низкая нагрузка",
+    "expected_decision": "approved",
+    "input": {
+      "company": {
+        "inn": "7700000001",
+        "name": "ООО «Ромашка-Софт»",
+        "org_type": "ООО"
+      },
+      "application": {
+        "product": "working_capital",
+        "amount": 3000000,
+        "term_months": 24,
+        "purpose": "Пополнение оборотных средств"
+      },
+      "egrul": {
+        "status": "active",
+        "registration_date": "2020-10-25",
+        "okved_main": "62.01"
+      },
+      "financials": {
+        "revenue_12m": 24000000,
+        "revenue_prev_12m": 20000000,
+        "expenses_12m": 19680000
+      },
+      "fns": {
+        "tax_debt": false,
+        "unreliable_info": false
+      },
+      "bki": {
+        "active_loans": 1,
+        "monthly_payments": 150000,
+        "overdue_now": false,
+        "overdue_count_12m": 0,
+        "max_overdue_days_12m": 0
+      },
+      "as_of": "2026-10-25"
+    }
+  },
+  {
+    "id": "ambitious",
+    "title": "Хороший клиент просит больше лимита",
+    "expected_decision": "counter_offer",
+    "input": {
+      "company": {
+        "inn": "7700000002",
+        "name": "ООО «Вектор-Торг»",
+        "org_type": "ООО"
+      },
+      "application": {
+        "product": "working_capital",
+        "amount": 9000000,
+        "term_months": 36,
+        "purpose": ""
+      },
+      "egrul": {
+        "status": "active",
+        "registration_date": "2022-10-25",
+        "okved_main": "47.11"
+      },
+      "financials": {
+        "revenue_12m": 12000000,
+        "revenue_prev_12m": 10500000,
+        "expenses_12m": 10400400
+      },
+      "fns": {
+        "tax_debt": false,
+        "unreliable_info": false
+      },
+      "bki": {
+        "active_loans": 1,
+        "monthly_payments": 80000,
+        "overdue_now": false,
+        "overdue_count_12m": 0,
+        "max_overdue_days_12m": 0
+      },
+      "as_of": "2026-10-25"
+    }
+  },
+  {
+    "id": "controversial",
+    "title": "Спорный: налоговая задолженность",
+    "expected_decision": "manual_review",
+    "input": {
+      "company": {
+        "inn": "7700000003",
+        "name": "ООО «Меридиан-Строй»",
+        "org_type": "ООО"
+      },
+      "application": {
+        "product": "working_capital",
+        "amount": 3000000,
+        "term_months": 24,
+        "purpose": ""
+      },
+      "egrul": {
+        "status": "active",
+        "registration_date": "2020-10-25",
+        "okved_main": "43.21"
+      },
+      "financials": {
+        "revenue_12m": 24000000,
+        "revenue_prev_12m": 20000000,
+        "expenses_12m": 19680000
+      },
+      "fns": {
+        "tax_debt": true,
+        "unreliable_info": false
+      },
+      "bki": {
+        "active_loans": 1,
+        "monthly_payments": 150000,
+        "overdue_now": false,
+        "overdue_count_12m": 0,
+        "max_overdue_days_12m": 0
+      },
+      "as_of": "2026-10-25"
+    }
+  },
+  {
+    "id": "overdue",
+    "title": "Текущая просрочка в БКИ",
+    "expected_decision": "rejected",
+    "input": {
+      "company": {
+        "inn": "7700000004",
+        "name": "ИП Петров А.А.",
+        "org_type": "ИП"
+      },
+      "application": {
+        "product": "working_capital",
+        "amount": 3000000,
+        "term_months": 24,
+        "purpose": ""
+      },
+      "egrul": {
+        "status": "active",
+        "registration_date": "2020-10-25",
+        "okved_main": "49.41"
+      },
+      "financials": {
+        "revenue_12m": 24000000,
+        "revenue_prev_12m": 20000000,
+        "expenses_12m": 19680000
+      },
+      "fns": {
+        "tax_debt": false,
+        "unreliable_info": false
+      },
+      "bki": {
+        "active_loans": 1,
+        "monthly_payments": 150000,
+        "overdue_now": true,
+        "overdue_count_12m": 2,
+        "max_overdue_days_12m": 45
+      },
+      "as_of": "2026-10-25"
+    }
+  },
+  {
+    "id": "young",
+    "title": "Молодая компания просит больше лимита",
+    "expected_decision": "counter_offer",
+    "input": {
+      "company": {
+        "inn": "7700000005",
+        "name": "ООО «Старт-Пищепром»",
+        "org_type": "ООО"
+      },
+      "application": {
+        "product": "express",
+        "amount": 1000000,
+        "term_months": 12,
+        "purpose": ""
+      },
+      "egrul": {
+        "status": "active",
+        "registration_date": "2026-02-25",
+        "okved_main": "10.71"
+      },
+      "financials": {
+        "revenue_12m": 4000000,
+        "revenue_prev_12m": 0,
+        "expenses_12m": 3500000
+      },
+      "fns": {
+        "tax_debt": false,
+        "unreliable_info": false
+      },
+      "bki": {
+        "active_loans": 0,
+        "monthly_payments": 0,
+        "overdue_now": false,
+        "overdue_count_12m": 0,
+        "max_overdue_days_12m": 0
+      },
+      "as_of": "2026-10-25"
+    }
+  },
+  {
+    "id": "liquidating",
+    "title": "Компания в стадии ликвидации",
+    "expected_decision": "rejected",
+    "input": {
+      "company": {
+        "inn": "7700000006",
+        "name": "ООО «Горизонт-Трейд»",
+        "org_type": "ООО"
+      },
+      "application": {
+        "product": "working_capital",
+        "amount": 3000000,
+        "term_months": 24,
+        "purpose": ""
+      },
+      "egrul": {
+        "status": "liquidating",
+        "registration_date": "2020-10-25",
+        "okved_main": "62.01"
+      },
+      "financials": {
+        "revenue_12m": 24000000,
+        "revenue_prev_12m": 20000000,
+        "expenses_12m": 19680000
+      },
+      "fns": {
+        "tax_debt": false,
+        "unreliable_info": false
+      },
+      "bki": {
+        "active_loans": 1,
+        "monthly_payments": 150000,
+        "overdue_now": false,
+        "overdue_count_12m": 0,
+        "max_overdue_days_12m": 0
+      },
+      "as_of": "2026-10-25"
+    }
+  },
+  {
+    "id": "incomplete",
+    "title": "Нет финансовых показателей",
+    "expected_decision": "request_data",
+    "input": {
+      "company": {
+        "inn": "7700000007",
+        "name": "ООО «Орбита-Сервис»",
+        "org_type": "ООО"
+      },
+      "application": {
+        "product": "working_capital",
+        "amount": 3000000,
+        "term_months": 24,
+        "purpose": ""
+      },
+      "egrul": {
+        "status": "active",
+        "registration_date": "2020-10-25",
+        "okved_main": "62.01"
+      },
+      "financials": null,
+      "fns": {
+        "tax_debt": false,
+        "unreliable_info": false
+      },
+      "bki": {
+        "active_loans": 1,
+        "monthly_payments": 150000,
+        "overdue_now": false,
+        "overdue_count_12m": 0,
+        "max_overdue_days_12m": 0
+      },
+      "as_of": "2026-10-25"
+    }
+  },
+  {
+    "id": "bki_down",
+    "title": "Источник БКИ недоступен",
+    "expected_decision": "manual_review",
+    "input": {
+      "company": {
+        "inn": "7700000008",
+        "name": "ООО «Эталон-Логистика»",
+        "org_type": "ООО"
+      },
+      "application": {
+        "product": "working_capital",
+        "amount": 3000000,
+        "term_months": 24,
+        "purpose": ""
+      },
+      "egrul": {
+        "status": "active",
+        "registration_date": "2020-10-25",
+        "okved_main": "62.01"
+      },
+      "financials": {
+        "revenue_12m": 24000000,
+        "revenue_prev_12m": 20000000,
+        "expenses_12m": 19680000
+      },
+      "fns": {
+        "tax_debt": false,
+        "unreliable_info": false
+      },
+      "bki": null,
+      "as_of": "2026-10-25"
+    }
+  }
+]

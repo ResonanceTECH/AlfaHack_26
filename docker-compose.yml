@@ -26,7 +26,9 @@ services:
       retries: 10
 
   api:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     ports:
       - "8000:8000"
     environment:
@@ -34,6 +36,13 @@ services:
       DATABASE_URL: postgresql+psycopg://alfa:alfa@db:5432/alfa_credit
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET_KEY: docker-demo-secret-change-me
+      LLM_ENABLED: ${LLM_ENABLED:-false}
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:8081/v1}
+      LLM_MAIN: ${LLM_MAIN:-Qwen3-4B-Instruct-2507}
+      LLM_LIGHT: ${LLM_LIGHT:-Qwen3-4B-Instruct-2507}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-20}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-900}
+      LLM_API_KEY: ${LLM_API_KEY:-}
       FRONTEND_URL: http://localhost:8080
       BACKEND_URL: http://localhost:8000
       CORS_ORIGINS: http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173,http://127.0.0.1:5173

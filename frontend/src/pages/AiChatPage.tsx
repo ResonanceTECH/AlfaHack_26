@@ -223,7 +223,6 @@ export function AiChatPage() {
 
   const activeThread = threads.find((t) => t.id === activeId) ?? threads[0]
   const messages = activeThread?.messages ?? []
-  const conversationId = activeThread?.conversationId
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
