@@ -70,81 +70,6 @@ const STATUS_META: Record<
   need_upload: { label: 'Нужно загрузить', bg: '#FDE8E6', color: '#C41E14' },
 }
 
-const DEMO_DOCS: DocItem[] = [
-  {
-    id: 'd1',
-    title: 'Устав ООО «Кофе Плюс»',
-    category: 'Учредительные',
-    file: 'ustav_kofeplus.pdf · 1,2 МБ',
-    uploadedAt: '20.10.2026',
-    status: 'accepted',
-  },
-  {
-    id: 'd2',
-    title: 'Бух. отчётность 2025',
-    category: 'Финансовые',
-    file: 'otchet_2025.xlsx · 860 КБ',
-    uploadedAt: '18.10.2026',
-    status: 'accepted_remark',
-  },
-  {
-    id: 'd3',
-    title: 'Выписка по расчётному счёту',
-    category: 'Финансовые',
-    file: 'extract_sep2026.pdf · 2,4 МБ',
-    uploadedAt: '21.10.2026',
-    status: 'pending',
-  },
-  {
-    id: 'd4',
-    title: 'Договор аренды помещения',
-    category: 'Имущество',
-    file: null,
-    uploadedAt: null,
-    status: 'need_upload',
-  },
-  {
-    id: 'd5',
-    title: 'Паспорт владельца',
-    category: 'Владельцы',
-    file: 'passport_scan.pdf · 540 КБ',
-    uploadedAt: '15.10.2026',
-    status: 'accepted',
-  },
-  {
-    id: 'd6',
-    title: 'Согласие на обработку ПДн',
-    category: 'Согласия',
-    file: 'consent_pd.pdf · 120 КБ',
-    uploadedAt: '15.10.2026',
-    status: 'accepted',
-  },
-  {
-    id: 'd7',
-    title: 'Справка об отсутствии задолженности',
-    category: 'Финансовые',
-    file: null,
-    uploadedAt: null,
-    status: 'need_upload',
-  },
-  {
-    id: 'd8',
-    title: 'Выписка из ЕГРЮЛ',
-    category: 'Учредительные',
-    file: 'egrul_kofeplus.pdf · 310 КБ',
-    uploadedAt: '12.10.2026',
-    status: 'accepted',
-  },
-  {
-    id: 'contract',
-    title: 'Кредитный договор DEMO-ABC-1042',
-    category: 'Финансовые',
-    file: 'dogovor_demo.pdf · 420 КБ',
-    uploadedAt: '23.10.2026',
-    status: 'accepted',
-  },
-]
-
 function StatusChip({ status }: { status: DocStatus }) {
   const m = STATUS_META[status]
   return (
@@ -175,15 +100,34 @@ function matchesTab(doc: DocItem, tab: TabKey) {
 }
 
 export function DocumentsPage() {
-  const navigate = useNavigate()
+  const { user } = useAuth()
+  const { companyId: storeCompanyId, company } = useAppStore()
+  const qc = useQueryClient()
+  const companyId = storeCompanyId || user?.companyId
   const fileRef = useRef<HTMLInputElement | null>(null)
-  const [docs, setDocs] = useState(DEMO_DOCS)
   const [tab, setTab] = useState<TabKey>('all')
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState<'all' | DocCategory>('all')
   const [period, setPeriod] = useState('12')
   const [uploadTarget, setUploadTarget] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  const docsQ = useQuery({
+    queryKey: [
+      'company-documents',
+      companyId,
+      category !== 'all' ? category : undefined,
+      search.trim() || undefined,
+    ],
+    queryFn: () =>
+      listCompanyDocuments(companyId!, {
+        category: category !== 'all' ? category : undefined,
+        q: search.trim() || undefined,
+      }),
+    enabled: Boolean(companyId),
+  })
+  const docs = docsQ.data ?? []
 
   const stats = useMemo(() => {
     const accepted = docs.filter(
@@ -216,44 +160,52 @@ export function DocumentsPage() {
     fileRef.current?.click()
   }
 
+  const uploadM = useMutation({
+    mutationFn: async ({ file, targetId }: { file: File; targetId: string | null }) => {
+      if (!companyId) throw new Error('Нет компании')
+      const existing = targetId ? docs.find((d) => d.id === targetId) : undefined
+      return uploadCompanyDocument(companyId, {
+        file,
+        title: existing?.title || file.name.replace(/\.[^.]+$/, '') || 'Новый документ',
+        category: existing?.category || (category !== 'all' ? category : 'Финансовые'),
+      })
+    },
+    onSuccess: async (_doc, vars) => {
+      await qc.invalidateQueries({ queryKey: ['company-documents'] })
+      setActionError(null)
+      flashMsg(vars.targetId ? 'Документ отправлен на проверку' : 'Документ загружен')
+    },
+    onError: (err) => setActionError(apiError(err, 'Не удалось загрузить документ')),
+  })
+
+  const deleteM = useMutation({
+    mutationFn: async (docId: string) => {
+      if (!companyId) throw new Error('Нет компании')
+      await deleteCompanyDocument(companyId, docId)
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['company-documents'] })
+      setActionError(null)
+      flashMsg('Документ удалён')
+    },
+    onError: (err) => setActionError(apiError(err, 'Не удалось удалить документ')),
+  })
+
   function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
-
-    const sizeKb = Math.max(1, Math.round(file.size / 1024))
-    const sizeLabel =
-      sizeKb >= 1024 ? `${(sizeKb / 1024).toFixed(1).replace('.', ',')} МБ` : `${sizeKb} КБ`
-    const fileLabel = `${file.name} · ${sizeLabel}`
-    const today = new Date()
-    const uploadedAt = `${String(today.getDate()).padStart(2, '0')}.${String(
-      today.getMonth() + 1,
-    ).padStart(2, '0')}.${today.getFullYear()}`
-
-    if (uploadTarget) {
-      setDocs((list) =>
-        list.map((d) =>
-          d.id === uploadTarget
-            ? { ...d, file: fileLabel, uploadedAt, status: 'pending' as const }
-            : d,
-        ),
-      )
-      flashMsg('Документ отправлен на проверку')
-    } else {
-      setDocs((list) => [
-        {
-          id: `d_${Date.now()}`,
-          title: file.name.replace(/\.[^.]+$/, '') || 'Новый документ',
-          category: 'Финансовые',
-          file: fileLabel,
-          uploadedAt,
-          status: 'pending',
-        },
-        ...list,
-      ])
-      flashMsg('Документ загружен')
-    }
+    uploadM.mutate({ file, targetId: uploadTarget })
     setUploadTarget(null)
+  }
+
+  async function openDoc(d: DocItem) {
+    if (!companyId) return
+    try {
+      await downloadCompanyDocument(companyId, d.id, d.fileName || undefined)
+    } catch (err) {
+      setActionError(apiError(err, 'Не удалось скачать документ'))
+    }
   }
 
   const tabs: { key: TabKey; label: string; badge?: number }[] = [
@@ -277,7 +229,7 @@ export function DocumentsPage() {
     {
       label: 'Всего документов',
       value: stats.total,
-      caption: `по заявке ${APP_REF}`,
+      caption: company?.name || 'в хранилище',
       captionColor: '#9AA5B1',
     },
     {
@@ -331,7 +283,7 @@ export function DocumentsPage() {
             Документы
           </Typography>
           <Typography sx={{ color: '#7A8795', fontSize: 14, mt: 0.6 }}>
-            По заявке {APP_REF} и профилю компании
+            {company?.name ? `${company.name} · хранилище документов` : 'Хранилище документов компании'}
           </Typography>
         </Box>
         <Stack direction="row" spacing={1.25} flexWrap="wrap" useFlexGap>

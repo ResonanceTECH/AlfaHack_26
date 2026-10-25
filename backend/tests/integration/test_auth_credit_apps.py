@@ -91,3 +91,14 @@ def test_empty_statement_should_not_500(client: httpx.Client, ip_token: str) -> 
         body = r.json()
         status_val = body.get("processingStatus") or body.get("processing_status")
         assert str(status_val).upper() == "FAILED"
+
+
+def test_unsupported_statement_extension_422(client: httpx.Client, ip_token: str) -> None:
+    """BUG-005: .exe rejected early with 422, no FAILED entity."""
+    files = {"file": ("malware.exe", b"MZ\x90\x00", "application/octet-stream")}
+    r = client.post(
+        "/companies/company_001/statements",
+        headers={"Authorization": f"Bearer {ip_token}"},
+        files=files,
+    )
+    assert r.status_code == 422, r.text
