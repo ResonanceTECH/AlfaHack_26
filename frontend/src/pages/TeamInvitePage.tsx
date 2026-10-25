@@ -27,7 +27,7 @@ import {
 } from '@/api/team'
 import { useAuth } from '@/contexts/AuthContext'
 import { useAppStore } from '@/hooks/useAppStore'
-import { ROLE_LABEL as TEAM_ROLE_LABEL, type TeamRole } from '@/features/team/store'
+import type { TeamRole } from '@/features/team/store'
 
 const tileSx = {
   bgcolor: '#fff',
