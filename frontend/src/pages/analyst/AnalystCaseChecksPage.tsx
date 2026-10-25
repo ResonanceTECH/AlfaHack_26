@@ -14,7 +14,7 @@ const icon = {
 export function AnalystCaseChecksPage() {
   const pass = AUTOCHECKS.filter((c) => c.result === 'pass').length
   const warn = AUTOCHECKS.filter((c) => c.result === 'warn').length
-  const fail = AUTOCHECKS.filter((c) => c.result === 'fail').length
+  const fail = AUTOCHECKS.filter((c) => (c.result as string) === 'fail').length
 
   return (
     <Box>
