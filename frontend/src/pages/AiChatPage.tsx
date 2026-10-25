@@ -79,12 +79,73 @@ const SUGGEST_CHIPS = [
   'Что такое аннуитет?',
 ]
 
+const AI_THREADS_KEY = 'alfa_ai_threads'
+
+type ChatThread = {
+  id: string
+  title: string
+  messages: AiChatMessage[]
+  conversationId?: string
+  updatedAt: string
+}
+
 function moneyShort(n: number) {
   if (n >= 1_000_000) {
     const v = n / 1_000_000
     return `${v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)} млн ₽`
   }
   return formatMoney(n)
+}
+
+function threadsKey(companyId: string) {
+  return `${AI_THREADS_KEY}:${companyId}`
+}
+
+function welcomeMessage(): AiChatMessage {
+  return {
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content:
+      'Здравствуйте! Я AI-консультант Альфа. Спросите про ставку, залог, платёж или документы по заявке — отвечу по контексту компании.',
+    createdAt: new Date().toISOString(),
+  }
+}
+
+function titleFromMessages(messages: AiChatMessage[]): string {
+  const firstUser = messages.find((m) => m.role === 'user')
+  if (!firstUser) return 'Новый диалог'
+  const t = firstUser.content.trim().replace(/\s+/g, ' ')
+  return t.length > 42 ? `${t.slice(0, 42)}…` : t
+}
+
+function loadThreads(companyId: string): { threads: ChatThread[]; activeId: string } {
+  try {
+    const raw = localStorage.getItem(threadsKey(companyId))
+    if (raw) {
+      const parsed = JSON.parse(raw) as { threads: ChatThread[]; activeId: string }
+      if (Array.isArray(parsed.threads) && parsed.threads.length > 0) {
+        return {
+          threads: parsed.threads,
+          activeId: parsed.threads.some((t) => t.id === parsed.activeId)
+            ? parsed.activeId
+            : parsed.threads[0]!.id,
+        }
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  const demo: ChatThread = {
+    id: 'demo',
+    title: titleFromMessages(DEMO_THREAD),
+    messages: DEMO_THREAD,
+    updatedAt: new Date().toISOString(),
+  }
+  return { threads: [demo], activeId: demo.id }
+}
+
+function persistThreads(companyId: string, threads: ChatThread[], activeId: string) {
+  localStorage.setItem(threadsKey(companyId), JSON.stringify({ threads, activeId }))
 }
 
 export function AiChatPage() {
@@ -123,20 +184,60 @@ export function AiChatPage() {
     ? financials.avgMonthlyRevenue * 12
     : 18_400_000
 
-  const [conversationId, setConversationId] = useState<string | undefined>()
-  const [messages, setMessages] = useState<AiChatMessage[]>(DEMO_THREAD)
+  const [threads, setThreads] = useState<ChatThread[]>([])
+  const [activeId, setActiveId] = useState<string>('')
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, loading])
+    if (!companyId) {
+      setThreads([])
+      setActiveId('')
+      return
+    }
+    const loaded = loadThreads(companyId)
+    setThreads(loaded.threads)
+    setActiveId(loaded.activeId)
+  }, [companyId])
 
-  function resetDialog() {
-    setConversationId(undefined)
-    setMessages(DEMO_THREAD)
+  useEffect(() => {
+    if (!companyId || threads.length === 0 || !activeId) return
+    persistThreads(companyId, threads, activeId)
+  }, [companyId, threads, activeId])
+
+  const activeThread = threads.find((t) => t.id === activeId) ?? threads[0]
+  const messages = activeThread?.messages ?? []
+  const conversationId = activeThread?.conversationId
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, loading, activeId])
+
+  function patchThread(threadId: string, patch: Partial<ChatThread>) {
+    setThreads((prev) =>
+      prev.map((t) =>
+        t.id === threadId ? { ...t, ...patch, updatedAt: new Date().toISOString() } : t,
+      ),
+    )
+  }
+
+  function startNewDialog() {
+    const thread: ChatThread = {
+      id: crypto.randomUUID(),
+      title: 'Новый диалог',
+      messages: [welcomeMessage()],
+      updatedAt: new Date().toISOString(),
+    }
+    setThreads((prev) => [thread, ...prev])
+    setActiveId(thread.id)
+    setInput('')
+    setError(null)
+  }
+
+  function selectThread(id: string) {
+    setActiveId(id)
     setInput('')
     setError(null)
   }
@@ -148,22 +249,41 @@ export function AiChatPage() {
       setError('Нет компании для контекста чата')
       return
     }
+    const thread = activeThread
+    if (!thread) {
+      startNewDialog()
+      return
+    }
+    const threadId = thread.id
+    const prevConversationId = thread.conversationId
     const userMsg: AiChatMessage = {
       id: crypto.randomUUID(),
       role: 'user',
       content,
       createdAt: new Date().toISOString(),
     }
-    setMessages((m) => [...m, userMsg])
+    const nextMessages = [...thread.messages, userMsg]
+    patchThread(threadId, {
+      messages: nextMessages,
+      title:
+        thread.title === 'Новый диалог' || thread.id === 'demo'
+          ? titleFromMessages(nextMessages)
+          : thread.title,
+    })
     setInput('')
     setLoading(true)
     setError(null)
     try {
-      const res = await aiChat({ companyId, message: content, conversationId })
-      setConversationId(res.conversationId)
-      setMessages((m) => [...m, res.message])
+      const res = await aiChat({
+        companyId,
+        message: content,
+        conversationId: prevConversationId,
+      })
+      patchThread(threadId, {
+        conversationId: res.conversationId,
+        messages: [...nextMessages, res.message],
+      })
     } catch (e) {
-      // demo fallback if AI backend is down
       const fallback: AiChatMessage = {
         id: crypto.randomUUID(),
         role: 'assistant',
@@ -180,7 +300,7 @@ export function AiChatPage() {
         ],
       }
       if (!(e instanceof Error) || /404|Network|Failed|500|502|503/i.test(e.message)) {
-        setMessages((m) => [...m, fallback])
+        patchThread(threadId, { messages: [...nextMessages, fallback] })
       } else {
         setError(e.message)
       }
@@ -223,24 +343,46 @@ export function AiChatPage() {
             Объясняет условия и помогает выбрать продукт · решения принимает банк
           </Typography>
         </Box>
-        <Button
-          variant="outlined"
-          onClick={resetDialog}
-          sx={{
-            borderRadius: 2,
-            borderColor: 'rgba(11,31,53,0.14)',
-            color: '#0B1F35',
-            fontWeight: 600,
-            textTransform: 'none',
-            bgcolor: '#fff',
-            alignSelf: 'flex-start',
-            px: 2,
-            '&:hover': { bgcolor: '#fff', borderColor: 'rgba(11,31,53,0.28)' },
-          }}
-        >
-          Новый диалог
+        <Button variant="contained" color="primary" onClick={startNewDialog} sx={{ alignSelf: 'flex-start' }}>
+          + Новый диалог
         </Button>
       </Stack>
+
+      {threads.length > 1 && (
+        <Stack
+          direction="row"
+          spacing={1}
+          flexWrap="wrap"
+          useFlexGap
+          sx={{ mb: 2 }}
+        >
+          {threads.map((t) => {
+            const active = t.id === activeId
+            return (
+              <Button
+                key={t.id}
+                size="small"
+                variant={active ? 'contained' : 'outlined'}
+                color={active ? 'secondary' : 'inherit'}
+                onClick={() => selectThread(t.id)}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 650,
+                  fontSize: 12.5,
+                  maxWidth: 220,
+                  borderColor: active ? undefined : 'rgba(11,31,53,0.14)',
+                  bgcolor: active ? undefined : '#fff',
+                  color: active ? undefined : '#0B1F35',
+                }}
+              >
+                <Typography noWrap sx={{ fontSize: 'inherit', fontWeight: 'inherit' }}>
+                  {t.title}
+                </Typography>
+              </Button>
+            )
+          })}
+        </Stack>
+      )}
 
       {error && (
         <Alert severity="error" sx={{ mb: 2, borderRadius: 2.5 }} onClose={() => setError(null)}>
