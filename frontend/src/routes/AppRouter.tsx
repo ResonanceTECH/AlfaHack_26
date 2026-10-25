@@ -8,6 +8,7 @@ import { AdminAnalyticsPage } from '@/pages/AdminAnalyticsPage'
 import { AdminProductsPage } from '@/pages/AdminProductsPage'
 import { AdminPolicyPage } from '@/pages/AdminPolicyPage'
 import { AdminAuditPage } from '@/pages/AdminAuditPage'
+import { AdminNotificationsPage } from '@/pages/AdminNotificationsPage'
 import { DesignSystemPage } from '@/pages/DesignSystemPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { VerifyEmailPage } from '@/pages/VerifyEmailPage'
@@ -196,6 +197,14 @@ export function AppRouter() {
           element={
             <Protected roles={['admin']}>
               <AdminAuditPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="admin/notifications"
+          element={
+            <Protected roles={['admin']}>
+              <AdminNotificationsPage />
             </Protected>
           }
         />

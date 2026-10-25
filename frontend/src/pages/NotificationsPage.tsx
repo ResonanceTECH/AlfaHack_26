@@ -128,10 +128,6 @@ export function NotificationsPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const [items, setItems] = useState(INITIAL)
-
-  if (user?.role === 'admin') {
-    return <Navigate to="/app/admin/notifications" replace />
-  }
   const [tab, setTab] = useState<TabKey>('all')
   const [channels, setChannels] = useState({
     push: true,
@@ -158,6 +154,10 @@ export function NotificationsPage() {
     { key: 'payments', label: 'Платежи' },
     { key: 'system', label: 'Система' },
   ]
+
+  if (user?.role === 'admin') {
+    return <Navigate to="/app/admin/notifications" replace />
+  }
 
   function markAllRead() {
     setItems((list) => list.map((i) => ({ ...i, unread: false })))
