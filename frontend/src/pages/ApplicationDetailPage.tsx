@@ -222,6 +222,52 @@ export function ApplicationDetailPage() {
     })
   }, [app])
 
+  function showFlash(msg: string) {
+    setFlash(msg)
+    window.setTimeout(() => setFlash(null), 2200)
+  }
+
+  // hooks must stay above early returns (React #310)
+  const acceptM = useMutation({
+    mutationFn: (offer: CreditOffer) =>
+      acceptApplicationOffer(companyId!, id!, offer.id, offer.offerVersion),
+    onSuccess: async () => {
+      showFlash('Предложение банка принято')
+      await qc.invalidateQueries({ queryKey: ['application', id] })
+      await qc.invalidateQueries({ queryKey: ['application', id, 'offers'] })
+      await qc.invalidateQueries({ queryKey: ['application', id, 'decision'] })
+      await qc.invalidateQueries({ queryKey: ['applications'] })
+    },
+    onError: (e: unknown) => {
+      setError(
+        (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
+          ?.message || 'Не удалось принять предложение',
+      )
+    },
+  })
+
+  const declineM = useMutation({
+    mutationFn: (offer: CreditOffer) =>
+      declineApplicationOffer(companyId!, id!, offer.id, 'Отклонено клиентом'),
+    onSuccess: async () => {
+      showFlash('Предложение отклонено')
+      await qc.invalidateQueries({ queryKey: ['application', id, 'offers'] })
+      await qc.invalidateQueries({ queryKey: ['application', id] })
+    },
+    onError: () => setError('Не удалось отклонить предложение'),
+  })
+
+  const chatM = useMutation({
+    mutationFn: () => postApplicationComment(companyId!, id!, chatText.trim()),
+    onSuccess: async () => {
+      setChatText('')
+      showFlash('Сообщение отправлено банку')
+      await qc.invalidateQueries({ queryKey: ['application', id, 'comments'] })
+      await qc.invalidateQueries({ queryKey: ['application', id] })
+    },
+    onError: () => setError('Не удалось отправить сообщение'),
+  })
+
   const required = slots.filter((s) => s.required)
   const doneRequired = required.filter(
     (s) => s.status === 'uploaded' || s.status === 'review',
@@ -263,11 +309,6 @@ export function ApplicationDetailPage() {
   function persist(next: AppDocSlot[]) {
     setSlots(next)
     if (id) saveAppDocuments(id, next)
-  }
-
-  function showFlash(msg: string) {
-    setFlash(msg)
-    window.setTimeout(() => setFlash(null), 2200)
   }
 
   async function attachFile(slotId: string, file: File) {
@@ -328,46 +369,6 @@ export function ApplicationDetailPage() {
       setActiveDocReq(null)
     }
   }
-
-  const acceptM = useMutation({
-    mutationFn: (offer: CreditOffer) =>
-      acceptApplicationOffer(companyId!, id!, offer.id, offer.offerVersion),
-    onSuccess: async () => {
-      showFlash('Предложение банка принято')
-      await qc.invalidateQueries({ queryKey: ['application', id] })
-      await qc.invalidateQueries({ queryKey: ['application', id, 'offers'] })
-      await qc.invalidateQueries({ queryKey: ['application', id, 'decision'] })
-      await qc.invalidateQueries({ queryKey: ['applications'] })
-    },
-    onError: (e: unknown) => {
-      setError(
-        (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
-          ?.message || 'Не удалось принять предложение',
-      )
-    },
-  })
-
-  const declineM = useMutation({
-    mutationFn: (offer: CreditOffer) =>
-      declineApplicationOffer(companyId!, id!, offer.id, 'Отклонено клиентом'),
-    onSuccess: async () => {
-      showFlash('Предложение отклонено')
-      await qc.invalidateQueries({ queryKey: ['application', id, 'offers'] })
-      await qc.invalidateQueries({ queryKey: ['application', id] })
-    },
-    onError: () => setError('Не удалось отклонить предложение'),
-  })
-
-  const chatM = useMutation({
-    mutationFn: () => postApplicationComment(companyId!, id!, chatText.trim()),
-    onSuccess: async () => {
-      setChatText('')
-      showFlash('Сообщение отправлено банку')
-      await qc.invalidateQueries({ queryKey: ['application', id, 'comments'] })
-      await qc.invalidateQueries({ queryKey: ['application', id] })
-    },
-    onError: () => setError('Не удалось отправить сообщение'),
-  })
 
   function onPick(slotId: string, files: FileList | null) {
     const file = files?.[0]
