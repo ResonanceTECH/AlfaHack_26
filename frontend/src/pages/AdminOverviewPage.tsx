@@ -128,16 +128,6 @@ const alertChipSx: Record<AlertLevel, { label: string; bgcolor: string; color: s
   },
 }
 
-function envStamp(): string {
-  return new Intl.DateTimeFormat('ru-RU', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date())
-}
-
 function KpiCard({
   label,
   value,
@@ -209,7 +199,6 @@ export function AdminOverviewPage() {
     <Box>
       <PageHeader
         title="Обзор системы"
-        subtitle={`Линия решения · demo environment · ${envStamp()}`}
         actions={
           <>
             <Button
