@@ -6,14 +6,6 @@ const copy: Record<string, { title: string; body: string }> = {
     title: 'Документы',
     body: 'Здесь появятся документы по заявкам и проверкам реестра.',
   },
-  '/app/team': {
-    title: 'Команда',
-    body: 'Участники с доступом к компании и их роли.',
-  },
-  '/app/help': {
-    title: 'Помощь',
-    body: 'Связь с менеджером и ответы по продукту.',
-  },
 }
 
 export function StubSectionPage() {

@@ -114,20 +114,11 @@ export function useAppStore(): AppStore {
   })
 
   const isLoading =
-    (enabled &&
-      (companyQ.isLoading ||
-        finQ.isLoading ||
-        goalsQ.isLoading ||
-        appsQ.isLoading ||
-        productsQ.isLoading)) ||
+    (enabled && companyQ.isLoading && !companyQ.data) ||
     (managerEnabled && !companyId && appsQ.isLoading)
 
-  const err =
-    (companyQ.error as Error | null) ??
-    (finQ.error as Error | null) ??
-    (goalsQ.error as Error | null) ??
-    (appsQ.error as Error | null) ??
-    null
+  // Only company fetch blocks the company profile — side queries must not
+  const err = (companyQ.error as Error | null) ?? null
 
   return {
     companyId,

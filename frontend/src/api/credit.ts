@@ -150,7 +150,7 @@ export async function fetchReadiness(input: {
 }
 
 export async function listScenarios(companyId: string): Promise<CreditScenarioResult[]> {
-  const { data } = await api.get('/credit/scenarios', { params: { companyId } })
+  const { data } = await api.get('/credit/scenarios', { params: { company_id: companyId } })
   return (data as Record<string, unknown>[]).map(mapScenario)
 }
 

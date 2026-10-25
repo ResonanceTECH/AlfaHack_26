@@ -1,338 +1,1011 @@
-import Grid from '@mui/material/Grid2'
 import {
   Alert,
   Box,
   Button,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   MenuItem,
-  Paper,
   Stack,
+  Tab,
+  Tabs,
   TextField,
   Typography,
 } from '@mui/material'
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
+import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded'
 import { Link as RouterLink } from 'react-router-dom'
-import { useForm, Controller } from 'react-hook-form'
-import { z } from 'zod'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { useEffect, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
-import { PageHeader } from '@/components/common/PageHeader'
-import { StatBlock } from '@/components/common/StatBlock'
+import { useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  listCompanies,
+  updateCompany,
+  verifyCompanyRegistry,
+} from '@/api/companies'
+import { useAuth } from '@/contexts/AuthContext'
 import { useAppStore } from '@/hooks/useAppStore'
-import { updateCompany, updateFinancials } from '@/api/companies'
 import { industries, regions } from '@/data/labels'
-import { formatMoney, formatDateTime } from '@/utils/format'
+import { formatDate, formatMoney } from '@/utils/format'
+import type { Company } from '@/types'
 
-const companySchema = z.object({
-  name: z.string().min(3, 'Укажите название'),
-  inn: z.string().regex(/^\d{10}(\d{2})?$/, 'ИНН: 10 или 12 цифр'),
-  ogrn: z.string().min(13, 'ОГРН/ОГРНИП'),
-  legalForm: z.enum(['IP', 'OOO']),
-  industry: z.string().min(1),
-  registrationDate: z.string().min(1),
-  region: z.string().min(1),
-  employeesCount: z.coerce.number().int().min(1).max(5000),
-})
+const tileSx = {
+  bgcolor: '#fff',
+  borderRadius: 3,
+  border: '1px solid rgba(11,31,53,0.06)',
+  boxShadow: '0 1px 8px rgba(11,31,53,0.04)',
+  p: { xs: 2, md: 2.25 },
+} as const
 
-const finSchema = z.object({
-  avgMonthlyRevenue: z.coerce.number().min(0),
-  operatingExpenses: z.coerce.number().min(0),
-  cashBalance: z.coerce.number().min(0),
-  liabilities: z.coerce.number().min(0),
-  activeCredits: z.coerce.number().min(0),
-  period: z.string().min(1),
-})
+const outlineBtn = {
+  borderRadius: 2,
+  borderColor: 'rgba(11,31,53,0.14)',
+  color: '#0B1F35',
+  fontWeight: 600,
+  textTransform: 'none' as const,
+  bgcolor: '#fff',
+  '&:hover': { bgcolor: '#fff', borderColor: 'rgba(11,31,53,0.28)' },
+}
 
-type CompanyForm = z.infer<typeof companySchema>
-type FinForm = z.infer<typeof finSchema>
+type TabKey = 'requisites' | 'owners' | 'addresses' | 'accounts' | 'contacts'
+
+const OWNERS = [
+  {
+    name: 'Миронов Сергей Павлович',
+    role: 'Генеральный директор',
+    share: '60%',
+    ok: true,
+    badge: 'Подтверждён',
+  },
+  {
+    name: 'Лебедева Ирина Олеговна',
+    role: 'Участник / бенефициар',
+    share: '30%',
+    ok: true,
+    badge: 'Подтверждён',
+  },
+  {
+    name: 'Громов Артём Викторович',
+    role: 'Участник',
+    share: '10%',
+    ok: false,
+    badge: 'Нужен паспорт',
+  },
+]
+
+function yearsInBusiness(iso: string): number {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return 0
+  const now = new Date()
+  let y = now.getFullYear() - d.getFullYear()
+  const m = now.getMonth() - d.getMonth()
+  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) y -= 1
+  return Math.max(0, y)
+}
+
+function fullLegalName(c: Company): string {
+  if (c.legalForm === 'IP') {
+    const bare = c.name.replace(/^ИП\s+/i, '')
+    return `Индивидуальный предприниматель ${bare}`
+  }
+  if (/^ООО/i.test(c.name) || /общество/i.test(c.name)) return c.name
+  return `Общество с ограниченной ответственностью «${c.name.replace(/^ООО\s*[«"]?|[»"]$/gi, '')}»`
+}
+
+function shortName(c: Company): string {
+  if (c.legalForm === 'IP') return c.name.startsWith('ИП') ? c.name : `ИП ${c.name}`
+  if (/^ООО/i.test(c.name)) return c.name
+  return `ООО «${c.name.replace(/[«»"]/g, '')}»`
+}
+
+function kppFromInn(inn: string): string {
+  if (inn.length === 10) return `${inn.slice(0, 4)}01001`
+  return '—'
+}
+
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <Box>
+      <Typography sx={{ fontSize: 12, color: '#9AA5B1', mb: 0.35 }}>{label}</Typography>
+      <Typography sx={{ fontSize: 14, fontWeight: 650, color: '#0B1F35', lineHeight: 1.4 }}>
+        {value}
+      </Typography>
+    </Box>
+  )
+}
+
+function StatusPill({
+  ok,
+  label,
+}: {
+  ok: boolean
+  label: string
+}) {
+  return (
+    <Box
+      component="span"
+      sx={{
+        display: 'inline-flex',
+        px: 1,
+        py: 0.3,
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 700,
+        bgcolor: ok ? '#E6F5EE' : '#FFF0E0',
+        color: ok ? '#1B8A5A' : '#C45A12',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {label}
+    </Box>
+  )
+}
+
+function CompletenessRing({ value }: { value: number }) {
+  const size = 104
+  const stroke = 7
+  const r = (size - stroke) / 2
+  const c = 2 * Math.PI * r
+  const clamped = Math.min(100, Math.max(0, value))
+  const offset = c * (1 - clamped / 100)
+  return (
+    <Box
+      sx={{
+        position: 'relative',
+        width: size,
+        height: size,
+        flexShrink: 0,
+      }}
+    >
+      <Box
+        component="svg"
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        sx={{ display: 'block' }}
+      >
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke="#E8EBEE"
+          strokeWidth={stroke}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke="#EF3124"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={c}
+          strokeDashoffset={offset}
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
+      </Box>
+      <Box
+        sx={{
+          position: 'absolute',
+          // keep label inside the ring hole (stroke eats ~7px each side)
+          inset: stroke + 6,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          textAlign: 'center',
+          pointerEvents: 'none',
+        }}
+      >
+        <Typography
+          sx={{
+            fontSize: 17,
+            fontWeight: 800,
+            color: '#0B1F35',
+            lineHeight: 1,
+            letterSpacing: '-0.02em',
+          }}
+        >
+          {clamped}%
+        </Typography>
+        <Typography
+          sx={{
+            fontSize: 9,
+            color: '#9AA5B1',
+            fontWeight: 600,
+            lineHeight: 1.2,
+            mt: 0.35,
+          }}
+        >
+          заполнено
+        </Typography>
+      </Box>
+    </Box>
+  )
+}
 
 export function CompanyPage() {
-  const { company, financials, companyId, isLoading } = useAppStore()
+  const { user, selectCompany } = useAuth()
+  const { company, companyId, isLoading, isError, error: storeError, refetchAll } = useAppStore()
   const qc = useQueryClient()
-  const [saved, setSaved] = useState<string | null>(null)
+
+  const companiesQ = useQuery({
+    queryKey: ['companies'],
+    queryFn: listCompanies,
+    enabled: Boolean(user),
+  })
+
+  const [tab, setTab] = useState<TabKey>('requisites')
+  const [editOpen, setEditOpen] = useState(false)
+  const [verifying, setVerifying] = useState(false)
+  const [flash, setFlash] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const companyForm = useForm<CompanyForm>({
-    resolver: zodResolver(companySchema),
-    defaultValues: {
-      name: '',
-      inn: '',
-      ogrn: '',
-      legalForm: 'IP',
-      industry: '',
-      registrationDate: '',
-      region: '',
-      employeesCount: 1,
-    },
-  })
+  const [editName, setEditName] = useState('')
+  const [editIndustry, setEditIndustry] = useState('')
+  const [editRegion, setEditRegion] = useState('')
+  const [editEmployees, setEditEmployees] = useState(1)
+  const [editOgrn, setEditOgrn] = useState('')
+  const [editRegDate, setEditRegDate] = useState('')
 
-  const finForm = useForm<FinForm>({
-    resolver: zodResolver(finSchema),
-    defaultValues: {
-      avgMonthlyRevenue: 0,
-      operatingExpenses: 0,
-      cashBalance: 0,
-      liabilities: 0,
-      activeCredits: 0,
-      period: new Date().toISOString().slice(0, 7),
-    },
-  })
+  // 6 разделов профиля; «счёт в другом банке» всегда незакрыт → 5/6
+  const completeness = useMemo(() => {
+    if (!company) return { filled: 0, total: 6, percent: 0 }
+    const sections = [
+      Boolean(company.name && company.inn), // реквизиты
+      true, // руководство
+      Boolean(company.region), // адреса
+      true, // счёт в Альфа-Банке
+      true, // контакты
+      false, // счёт в другом банке
+    ]
+    const filled = sections.filter(Boolean).length
+    const total = sections.length
+    return { filled, total, percent: Math.round((filled / total) * 100) }
+  }, [company])
 
-  useEffect(() => {
+  function openEdit() {
     if (!company) return
-    companyForm.reset({
-      name: company.name,
-      inn: company.inn,
-      ogrn: company.ogrn,
-      legalForm: company.legalForm,
-      industry: company.industry,
-      registrationDate: company.registrationDate,
-      region: company.region,
-      employeesCount: company.employeesCount,
-    })
-  }, [company, companyForm])
+    setEditName(company.name)
+    setEditIndustry(company.industry)
+    setEditRegion(company.region)
+    setEditEmployees(company.employeesCount)
+    setEditOgrn(company.ogrn)
+    setEditRegDate(company.registrationDate)
+    setEditOpen(true)
+  }
 
-  useEffect(() => {
-    finForm.reset({
-      avgMonthlyRevenue: financials.avgMonthlyRevenue,
-      operatingExpenses: financials.operatingExpenses,
-      cashBalance: financials.cashBalance,
-      liabilities: financials.liabilities,
-      activeCredits: financials.activeCredits,
-      period: financials.period,
-    })
-  }, [financials, finForm])
-
-  async function onSaveCompany(values: CompanyForm) {
+  async function saveEdit() {
     if (!companyId) return
     setError(null)
     try {
       await updateCompany(companyId, {
-        name: values.name,
-        industry: values.industry,
-        region: values.region,
-        employeesCount: values.employeesCount,
-        ogrn: values.ogrn,
-        registrationDate: values.registrationDate,
+        name: editName.trim(),
+        industry: editIndustry,
+        region: editRegion,
+        employeesCount: editEmployees,
+        ogrn: editOgrn,
+        registrationDate: editRegDate,
       })
       await qc.invalidateQueries({ queryKey: ['company', companyId] })
-      setSaved('Профиль компании сохранён')
+      await qc.invalidateQueries({ queryKey: ['companies'] })
+      setEditOpen(false)
+      setFlash('Профиль компании сохранён')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка сохранения')
     }
   }
 
-  async function onSaveFin(values: FinForm) {
+  async function onVerify() {
     if (!companyId) return
+    setVerifying(true)
     setError(null)
     try {
-      await updateFinancials(companyId, { ...values, source: 'manual', confirmed: true })
-      await qc.invalidateQueries({ queryKey: ['financials', companyId] })
-      finForm.reset(values)
-      setSaved('Финансовые показатели обновлены')
+      const res = await verifyCompanyRegistry(companyId)
+      await qc.invalidateQueries({ queryKey: ['company', companyId] })
+      setFlash(
+        res.found
+          ? `ИНН проверен · статус ${res.registryStatus ?? 'ACTIVE'}`
+          : 'Компания не найдена в реестре',
+      )
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ошибка сохранения')
+      setError(e instanceof Error ? e.message : 'Ошибка проверки ИНН')
+    } finally {
+      setVerifying(false)
     }
   }
 
   if (isLoading) {
     return (
       <Box sx={{ display: 'grid', placeItems: 'center', minHeight: 240 }}>
-        <CircularProgress />
+        <CircularProgress sx={{ color: '#EF3124' }} />
       </Box>
     )
   }
 
-  if (!company || !companyId) {
+  if (!companyId) {
     return (
       <Box>
-        <PageHeader title="Профиль компании" />
-        <Alert severity="warning">Нет компании для этого аккаунта.</Alert>
+        <Typography sx={{ fontFamily: 'Manrope, sans-serif', fontWeight: 800, fontSize: 28, mb: 2 }}>
+          Профиль компании
+        </Typography>
+        <Alert
+          severity="warning"
+          action={
+            <Button color="inherit" size="small" component={RouterLink} to="/select-company">
+              Выбрать компанию
+            </Button>
+          }
+        >
+          Компания не выбрана — добавьте или выберите организацию.
+        </Alert>
       </Box>
     )
   }
 
-  const freeCash = financials.avgMonthlyRevenue - financials.operatingExpenses
+  if (!company) {
+    return (
+      <Box>
+        <Typography sx={{ fontFamily: 'Manrope, sans-serif', fontWeight: 800, fontSize: 28, mb: 2 }}>
+          Профиль компании
+        </Typography>
+        <Alert
+          severity={isError ? 'error' : 'warning'}
+          action={
+            <Button color="inherit" size="small" onClick={() => refetchAll()}>
+              Повторить
+            </Button>
+          }
+        >
+          {storeError?.message || 'Не удалось загрузить компанию.'}
+        </Alert>
+      </Box>
+    )
+  }
+
+  const years = yearsInBusiness(company.registrationDate)
+  const list = companiesQ.data ?? []
+  const updatedLabel = formatDate(new Date().toISOString())
 
   return (
-    <Box>
-      <PageHeader
-        title="Профиль компании"
-        subtitle="Карточка ИП/ООО, финансы и обязательства. Данные уходят в подбор и индекс готовности."
-        crumbs={[{ label: 'Кабинет', to: '/app' }, { label: 'Профиль' }]}
-      />
-      {saved && (
-        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSaved(null)}>
-          {saved}
+    <Box sx={{ maxWidth: 1180, mx: 'auto', pb: 2 }}>
+      <Typography sx={{ fontSize: 12, color: '#9AA5B1', mb: 1.25 }}>
+        Компания{' '}
+        <Box component="span" sx={{ color: '#C5CCD3' }}>
+          /
+        </Box>{' '}
+        <Box component="span" sx={{ color: '#5A6B7D', fontWeight: 600 }}>
+          Профиль ИП/ООО
+        </Box>
+      </Typography>
+
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        justifyContent="space-between"
+        alignItems={{ xs: 'stretch', sm: 'flex-start' }}
+        spacing={2}
+        sx={{ mb: 2 }}
+      >
+        <Box>
+          <Typography
+            sx={{
+              fontFamily: 'Manrope, sans-serif',
+              fontWeight: 800,
+              fontSize: { xs: 26, md: 28 },
+              letterSpacing: '-0.03em',
+              color: '#0B1F35',
+              lineHeight: 1.2,
+            }}
+          >
+            Профиль компании
+          </Typography>
+          <Typography sx={{ color: '#7A8795', fontSize: 14, mt: 0.55 }}>
+            {shortName(company)} · обновлено {updatedLabel}
+          </Typography>
+        </Box>
+        <Stack direction="row" spacing={1.25} flexShrink={0}>
+          <Button variant="outlined" onClick={openEdit} sx={outlineBtn}>
+            Редактировать
+          </Button>
+          <Button
+            variant="contained"
+            color="primary"
+            disabled={verifying}
+            onClick={() => void onVerify()}
+            sx={{
+              borderRadius: 2,
+              fontWeight: 700,
+              textTransform: 'none',
+              boxShadow: 'none',
+              px: 2,
+              '&:hover': { boxShadow: 'none' },
+            }}
+          >
+            {verifying ? 'Проверяем…' : 'Проверить ИНН'}
+          </Button>
+        </Stack>
+      </Stack>
+
+      {flash && (
+        <Alert severity="success" sx={{ mb: 2, borderRadius: 2.5 }} onClose={() => setFlash(null)}>
+          {flash}
         </Alert>
       )}
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+        <Alert severity="error" sx={{ mb: 2, borderRadius: 2.5 }} onClose={() => setError(null)}>
           {error}
         </Alert>
       )}
 
-      <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid size={{ xs: 12, sm: 4 }}>
-          <StatBlock label="Чистый денежный поток / мес." value={formatMoney(freeCash)} accent />
-        </Grid>
-        <Grid size={{ xs: 12, sm: 4 }}>
-          <StatBlock label="Остаток на счетах" value={formatMoney(financials.cashBalance)} />
-        </Grid>
-        <Grid size={{ xs: 12, sm: 4 }}>
-          <StatBlock
-            label="Источник / обновлено"
-            value={financials.source === 'statement' ? 'Выписка' : 'Вручную'}
-            hint={financials.updatedAt ? formatDateTime(financials.updatedAt) : undefined}
-          />
-        </Grid>
-      </Grid>
+      <Tabs
+        value={tab}
+        onChange={(_, v: TabKey) => setTab(v)}
+        variant="scrollable"
+        scrollButtons="auto"
+        sx={{
+          mb: 2.25,
+          minHeight: 40,
+          '& .MuiTab-root': {
+            textTransform: 'none',
+            fontWeight: 650,
+            fontSize: 14,
+            color: '#7A8795',
+            minHeight: 40,
+            px: 1.5,
+          },
+          '& .Mui-selected': { color: '#0B1F35 !important' },
+          '& .MuiTabs-indicator': { bgcolor: '#EF3124', height: 2.5, borderRadius: 2 },
+        }}
+      >
+        <Tab value="requisites" label="Реквизиты" />
+        <Tab value="owners" label="Руководство и владельцы" />
+        <Tab value="addresses" label="Адреса" />
+        <Tab value="accounts" label="Банковские счета · 1" />
+        <Tab value="contacts" label="Контакты" />
+      </Tabs>
 
-      <Grid container spacing={2}>
-        <Grid size={{ xs: 12, md: 6 }}>
-          <Paper sx={{ p: 2.5 }} elevation={1}>
-            <Typography variant="h6" gutterBottom>
-              Компания
-            </Typography>
-            <form onSubmit={companyForm.handleSubmit(onSaveCompany)}>
-              <Stack spacing={2}>
-                <TextField
-                  label="Название"
-                  fullWidth
-                  {...companyForm.register('name')}
-                  error={!!companyForm.formState.errors.name}
-                  helperText={companyForm.formState.errors.name?.message}
-                />
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                  <TextField
-                    label="ИНН"
-                    fullWidth
-                    {...companyForm.register('inn')}
-                    error={!!companyForm.formState.errors.inn}
-                    helperText={companyForm.formState.errors.inn?.message}
-                    InputProps={{ readOnly: true }}
-                  />
-                  <TextField
-                    label="ОГРН / ОГРНИП"
-                    fullWidth
-                    {...companyForm.register('ogrn')}
-                    error={!!companyForm.formState.errors.ogrn}
-                    helperText={companyForm.formState.errors.ogrn?.message}
-                  />
-                </Stack>
-                <Controller
-                  name="legalForm"
-                  control={companyForm.control}
-                  render={({ field }) => (
-                    <TextField select label="Форма" fullWidth {...field} disabled>
-                      <MenuItem value="IP">ИП</MenuItem>
-                      <MenuItem value="OOO">ООО</MenuItem>
-                    </TextField>
-                  )}
-                />
-                <Controller
-                  name="industry"
-                  control={companyForm.control}
-                  render={({ field }) => (
-                    <TextField select label="Отрасль" fullWidth {...field}>
-                      {industries.map((i) => (
-                        <MenuItem key={i} value={i}>
-                          {i}
-                        </MenuItem>
-                      ))}
-                    </TextField>
-                  )}
-                />
-                <Controller
-                  name="region"
-                  control={companyForm.control}
-                  render={({ field }) => (
-                    <TextField select label="Регион" fullWidth {...field}>
-                      {regions.map((r) => (
-                        <MenuItem key={r} value={r}>
-                          {r}
-                        </MenuItem>
-                      ))}
-                    </TextField>
-                  )}
-                />
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                  <TextField
-                    label="Дата регистрации"
-                    type="date"
-                    fullWidth
-                    InputLabelProps={{ shrink: true }}
-                    {...companyForm.register('registrationDate')}
-                  />
-                  <TextField
-                    label="Сотрудники"
-                    type="number"
-                    fullWidth
-                    {...companyForm.register('employeesCount')}
-                  />
-                </Stack>
-                <Button type="submit" variant="contained">
-                  Сохранить компанию
-                </Button>
-              </Stack>
-            </form>
-          </Paper>
-        </Grid>
+      <Box
+        sx={{
+          display: 'grid',
+          gap: 2,
+          gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1.55fr) minmax(280px, 0.85fr)' },
+          alignItems: 'start',
+        }}
+      >
+        <Stack spacing={2}>
+          {(tab === 'requisites' || tab === 'owners' || tab === 'contacts') && (
+            <>
+              {(tab === 'requisites' || tab === 'owners') && (
+                <Box sx={tileSx}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+                    <Typography
+                      sx={{
+                        fontFamily: 'Manrope, sans-serif',
+                        fontWeight: 800,
+                        fontSize: 16,
+                        color: '#0B1F35',
+                      }}
+                    >
+                      Реквизиты
+                    </Typography>
+                    <StatusPill
+                      ok={company.registryStatus !== 'LIQUIDATED'}
+                      label={
+                        company.registryStatus === 'ACTIVE' || !company.registryStatus
+                          ? 'Проверено в демо-реестре'
+                          : String(company.registryStatus)
+                      }
+                    />
+                  </Stack>
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gap: 2,
+                      gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                    }}
+                  >
+                    <Field label="Полное наименование" value={fullLegalName(company)} />
+                    <Field label="Краткое наименование" value={shortName(company)} />
+                    <Field
+                      label="ИНН / КПП"
+                      value={`${company.inn} / ${kppFromInn(company.inn)}`}
+                    />
+                    <Field label="ОГРН" value={company.ogrn || '—'} />
+                    <Field
+                      label="Дата регистрации"
+                      value={`${formatDate(company.registrationDate)}${
+                        years ? ` · ${years} ${years === 1 ? 'год' : years < 5 ? 'года' : 'лет'} в бизнесе` : ''
+                      }`}
+                    />
+                    <Field
+                      label="Система налогообложения"
+                      value={company.legalForm === 'IP' ? 'УСН «доходы»' : 'УСН «доходы минус расходы»'}
+                    />
+                    <Field
+                      label="Основной ОКВЭД"
+                      value={
+                        company.industry?.toLowerCase().includes('торгов')
+                          ? '47.11 — Розничная торговля'
+                          : company.industry || '—'
+                      }
+                    />
+                    <Field
+                      label="Численность"
+                      value={`${company.employeesCount} ${
+                        company.employeesCount % 10 === 1 && company.employeesCount % 100 !== 11
+                          ? 'сотрудник'
+                          : company.employeesCount % 10 >= 2 &&
+                              company.employeesCount % 10 <= 4 &&
+                              (company.employeesCount % 100 < 10 || company.employeesCount % 100 >= 20)
+                            ? 'сотрудника'
+                            : 'сотрудников'
+                      }`}
+                    />
+                    <Field
+                      label="Уставный капитал"
+                      value={company.legalForm === 'OOO' ? formatMoney(10_000) : '—'}
+                    />
+                    <Field
+                      label="Юридический адрес"
+                      value={`${company.region || 'Москва'}, юр. адрес по ЕГРЮЛ`}
+                    />
+                  </Box>
+                </Box>
+              )}
 
-        <Grid size={{ xs: 12, md: 6 }}>
-          <Paper sx={{ p: 2.5 }} elevation={1}>
-            <Typography variant="h6" gutterBottom>
-              Финансы
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Период: {financials.period}. Можно заполнить вручную или импортировать из выписки.
-            </Typography>
-            <form onSubmit={finForm.handleSubmit(onSaveFin)}>
+              {(tab === 'owners' || tab === 'requisites') && (
+                <Box sx={tileSx}>
+                  <Typography
+                    sx={{
+                      fontFamily: 'Manrope, sans-serif',
+                      fontWeight: 800,
+                      fontSize: 16,
+                      color: '#0B1F35',
+                      mb: 1.5,
+                    }}
+                  >
+                    Руководство и владельцы
+                  </Typography>
+                  <Box sx={{ overflow: 'auto' }}>
+                    <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
+                      <Box component="thead">
+                        <Box component="tr">
+                          {['ФИО', 'Роль', 'Доля', 'Проверка'].map((h) => (
+                            <Box
+                              component="th"
+                              key={h}
+                              sx={{
+                                textAlign: 'left',
+                                fontSize: 12,
+                                fontWeight: 700,
+                                color: '#9AA5B1',
+                                pb: 1.1,
+                                pr: 1.5,
+                                borderBottom: '1px solid rgba(11,31,53,0.08)',
+                              }}
+                            >
+                              {h}
+                            </Box>
+                          ))}
+                        </Box>
+                      </Box>
+                      <Box component="tbody">
+                        {(company.legalForm === 'IP'
+                          ? [
+                              {
+                                name: company.name.replace(/^ИП\s+/i, '') || user?.fullName || 'Владелец',
+                                role: 'Индивидуальный предприниматель',
+                                share: '100%',
+                                ok: true,
+                                badge: 'Подтверждён',
+                              },
+                            ]
+                          : OWNERS
+                        ).map((row) => (
+                          <Box
+                            component="tr"
+                            key={row.name}
+                            sx={{
+                              '& td': {
+                                py: 1.35,
+                                pr: 1.5,
+                                borderBottom: '1px solid rgba(11,31,53,0.06)',
+                                verticalAlign: 'middle',
+                              },
+                            }}
+                          >
+                            <Box component="td">
+                              <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: '#0B1F35' }}>
+                                {row.name}
+                              </Typography>
+                            </Box>
+                            <Box component="td">
+                              <Typography sx={{ fontSize: 13, color: '#5A6B7D' }}>{row.role}</Typography>
+                            </Box>
+                            <Box component="td">
+                              <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: '#0B1F35' }}>
+                                {row.share}
+                              </Typography>
+                            </Box>
+                            <Box component="td">
+                              <StatusPill ok={row.ok} label={row.badge} />
+                            </Box>
+                          </Box>
+                        ))}
+                      </Box>
+                    </Box>
+                  </Box>
+                </Box>
+              )}
+
+              {(tab === 'contacts' || tab === 'requisites') && (
+                <Box sx={tileSx}>
+                  <Typography
+                    sx={{
+                      fontFamily: 'Manrope, sans-serif',
+                      fontWeight: 800,
+                      fontSize: 16,
+                      color: '#0B1F35',
+                      mb: 1.5,
+                    }}
+                  >
+                    Контактные лица
+                  </Typography>
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gap: 1.75,
+                      gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                    }}
+                  >
+                    <Field
+                      label="Основной контакт"
+                      value={`${user?.fullName || 'Миронов С.П.'} · ${user?.phone || '+7 (916) 482-14-20'}`}
+                    />
+                    <Field label="Бухгалтер" value="Лебедева И.О. · buh@kofeplus.demo" />
+                    <Field
+                      label="E-mail для уведомлений"
+                      value={user?.email || 'sergey.mironov@kofeplus.demo'}
+                    />
+                    <Field label="Предпочтительный канал" value="Push + e-mail" />
+                  </Box>
+                </Box>
+              )}
+            </>
+          )}
+
+          {tab === 'addresses' && (
+            <Box sx={tileSx}>
+              <Typography
+                sx={{
+                  fontFamily: 'Manrope, sans-serif',
+                  fontWeight: 800,
+                  fontSize: 16,
+                  color: '#0B1F35',
+                  mb: 1.5,
+                }}
+              >
+                Адреса
+              </Typography>
               <Stack spacing={2}>
-                <TextField label="Период (YYYY-MM)" fullWidth {...finForm.register('period')} />
-                <TextField
-                  label="Среднемесячная выручка, ₽"
-                  type="number"
-                  fullWidth
-                  {...finForm.register('avgMonthlyRevenue')}
+                <Field
+                  label="Юридический адрес"
+                  value={`${company.region || 'Москва'}, юр. адрес по ЕГРЮЛ / ЕГРИП`}
                 />
-                <TextField
-                  label="Операционные расходы, ₽"
-                  type="number"
-                  fullWidth
-                  {...finForm.register('operatingExpenses')}
+                <Field
+                  label="Фактический адрес"
+                  value={`${company.region || 'Москва'}, совпадает с юридическим`}
                 />
-                <TextField
-                  label="Остатки на счетах, ₽"
-                  type="number"
-                  fullWidth
-                  {...finForm.register('cashBalance')}
-                />
-                <TextField
-                  label="Обязательства, ₽"
-                  type="number"
-                  fullWidth
-                  {...finForm.register('liabilities')}
-                />
-                <TextField
-                  label="Действующие кредиты (остаток), ₽"
-                  type="number"
-                  fullWidth
-                  {...finForm.register('activeCredits')}
-                />
-                <Stack direction="row" spacing={1}>
-                  <Button type="submit" variant="contained">
-                    Сохранить финансы
-                  </Button>
-                  <Button component={RouterLink} to="/app/statements" variant="outlined">
-                    Загрузить выписку
-                  </Button>
-                </Stack>
+                <Field label="Почтовый адрес" value="Совпадает с юридическим" />
               </Stack>
-            </form>
-          </Paper>
-        </Grid>
-      </Grid>
+            </Box>
+          )}
+
+          {tab === 'accounts' && (
+            <Box sx={tileSx}>
+              <Typography
+                sx={{
+                  fontFamily: 'Manrope, sans-serif',
+                  fontWeight: 800,
+                  fontSize: 16,
+                  color: '#0B1F35',
+                  mb: 1.5,
+                }}
+              >
+                Банковские счета
+              </Typography>
+              <Stack
+                direction="row"
+                spacing={1.5}
+                alignItems="center"
+                sx={{
+                  p: 1.75,
+                  borderRadius: 2,
+                  bgcolor: '#F7F8FA',
+                  border: '1px solid rgba(11,31,53,0.06)',
+                }}
+              >
+                <Box
+                  sx={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 2,
+                    bgcolor: '#EF3124',
+                    color: '#fff',
+                    display: 'grid',
+                    placeItems: 'center',
+                    fontWeight: 800,
+                    fontSize: 14,
+                  }}
+                >
+                  А
+                </Box>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography sx={{ fontSize: 14, fontWeight: 700, color: '#0B1F35' }}>
+                    Альфа-Банк · расчётный
+                  </Typography>
+                  <Typography sx={{ fontSize: 12.5, color: '#9AA5B1', mt: 0.25 }}>
+                    40702 ···· ···· 4821 · основной
+                  </Typography>
+                </Box>
+                <StatusPill ok label="Активен" />
+              </Stack>
+              <Button
+                fullWidth
+                variant="outlined"
+                sx={{ ...outlineBtn, mt: 1.75, py: 1 }}
+                onClick={() => setFlash('Добавление счёта другого банка — в следующей версии')}
+              >
+                + Добавить счёт в другом банке
+              </Button>
+            </Box>
+          )}
+        </Stack>
+
+        {/* Right sidebar */}
+        <Stack spacing={2}>
+          <Box sx={tileSx}>
+            <Typography
+              sx={{
+                fontFamily: 'Manrope, sans-serif',
+                fontWeight: 800,
+                fontSize: 15,
+                color: '#0B1F35',
+                mb: 1.5,
+              }}
+            >
+              Полнота профиля
+            </Typography>
+            <Stack direction="row" spacing={1.75} alignItems="center" sx={{ mb: 1.75 }}>
+              <CompletenessRing value={completeness.percent} />
+              <Typography sx={{ fontSize: 13.5, color: '#5A6B7D', lineHeight: 1.45 }}>
+                {completeness.filled} из {completeness.total} разделов.
+                {completeness.filled < completeness.total
+                  ? ' Добавьте счёт в другом банке — это ускорит проверку заявки.'
+                  : ' Профиль заполнен.'}
+              </Typography>
+            </Stack>
+            <Button
+              fullWidth
+              variant="outlined"
+              sx={{ ...outlineBtn, py: 1.05 }}
+              onClick={() => setTab('accounts')}
+            >
+              Дополнить профиль
+            </Button>
+          </Box>
+
+          <Box sx={tileSx}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.25 }}>
+              <Typography
+                sx={{
+                  fontFamily: 'Manrope, sans-serif',
+                  fontWeight: 800,
+                  fontSize: 15,
+                  color: '#0B1F35',
+                }}
+              >
+                Мои компании
+              </Typography>
+              <Button
+                component={RouterLink}
+                to="/select-company"
+                size="small"
+                sx={{
+                  color: '#EF3124',
+                  fontWeight: 700,
+                  textTransform: 'none',
+                  fontSize: 13,
+                  minWidth: 0,
+                  px: 0.5,
+                }}
+              >
+                Управлять →
+              </Button>
+            </Stack>
+            <Stack spacing={0}>
+              {list.map((c) => {
+                const current = c.id === companyId
+                return (
+                  <Stack
+                    key={c.id}
+                    direction="row"
+                    alignItems="center"
+                    spacing={1.25}
+                    sx={{
+                      py: 1.15,
+                      borderBottom: '1px solid rgba(11,31,53,0.06)',
+                    }}
+                  >
+                    {current ? (
+                      <CheckCircleRoundedIcon sx={{ fontSize: 22, color: '#1B8A5A' }} />
+                    ) : (
+                      <BusinessRoundedIcon sx={{ fontSize: 22, color: '#9AA5B1' }} />
+                    )}
+                    <Typography
+                      sx={{
+                        flex: 1,
+                        fontSize: 13.5,
+                        fontWeight: 700,
+                        color: '#0B1F35',
+                        minWidth: 0,
+                      }}
+                      noWrap
+                    >
+                      {c.name}
+                    </Typography>
+                    {current ? (
+                      <StatusPill ok label="Текущая" />
+                    ) : (
+                      <Button
+                        size="small"
+                        onClick={() => {
+                          selectCompany(c.id)
+                          void qc.invalidateQueries({ queryKey: ['company', c.id] })
+                        }}
+                        sx={{
+                          color: '#EF3124',
+                          fontWeight: 700,
+                          textTransform: 'none',
+                          fontSize: 12.5,
+                          minWidth: 0,
+                          px: 0.5,
+                        }}
+                      >
+                        Выбрать
+                      </Button>
+                    )}
+                  </Stack>
+                )
+              })}
+            </Stack>
+            <Button
+              component={RouterLink}
+              to="/select-company"
+              fullWidth
+              sx={{
+                mt: 1.25,
+                color: '#EF3124',
+                fontWeight: 700,
+                textTransform: 'none',
+                justifyContent: 'flex-start',
+                px: 0.25,
+              }}
+            >
+              + Добавить компанию по ИНН
+            </Button>
+          </Box>
+
+          <Box sx={tileSx}>
+            <Typography
+              sx={{
+                fontFamily: 'Manrope, sans-serif',
+                fontWeight: 800,
+                fontSize: 15,
+                color: '#0B1F35',
+                mb: 1.25,
+              }}
+            >
+              Проверки и согласия
+            </Typography>
+            <Stack spacing={1.25}>
+              <Stack direction="row" justifyContent="space-between" alignItems="center">
+                <Typography sx={{ fontSize: 13.5, color: '#5A6B7D', pr: 1 }}>
+                  Согласие на обработку ПДн
+                </Typography>
+                <StatusPill ok label="Дано" />
+              </Stack>
+              <Stack direction="row" justifyContent="space-between" alignItems="center">
+                <Typography sx={{ fontSize: 13.5, color: '#5A6B7D', pr: 1 }}>
+                  Согласие на запрос БКИ
+                </Typography>
+                <StatusPill ok={false} label="Ожидает" />
+              </Stack>
+            </Stack>
+          </Box>
+        </Stack>
+      </Box>
+
+      <Dialog open={editOpen} onClose={() => setEditOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle sx={{ fontFamily: 'Manrope, sans-serif', fontWeight: 800 }}>
+          Редактировать компанию
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ pt: 0.5 }}>
+            <TextField
+              label="Название"
+              fullWidth
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+            />
+            <TextField label="ИНН" fullWidth value={company.inn} InputProps={{ readOnly: true }} />
+            <TextField
+              label="ОГРН / ОГРНИП"
+              fullWidth
+              value={editOgrn}
+              onChange={(e) => setEditOgrn(e.target.value)}
+            />
+            <TextField
+              select
+              label="Отрасль"
+              fullWidth
+              value={editIndustry}
+              onChange={(e) => setEditIndustry(e.target.value)}
+            >
+              {industries.map((i) => (
+                <MenuItem key={i} value={i}>
+                  {i}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              label="Регион"
+              fullWidth
+              value={editRegion}
+              onChange={(e) => setEditRegion(e.target.value)}
+            >
+              {regions.map((r) => (
+                <MenuItem key={r} value={r}>
+                  {r}
+                </MenuItem>
+              ))}
+            </TextField>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <TextField
+                label="Дата регистрации"
+                type="date"
+                fullWidth
+                InputLabelProps={{ shrink: true }}
+                value={editRegDate}
+                onChange={(e) => setEditRegDate(e.target.value)}
+              />
+              <TextField
+                label="Сотрудники"
+                type="number"
+                fullWidth
+                value={editEmployees}
+                onChange={(e) => setEditEmployees(Number(e.target.value))}
+              />
+            </Stack>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => setEditOpen(false)} sx={{ fontWeight: 600, color: '#5A6B7D' }}>
+            Отмена
+          </Button>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={() => void saveEdit()}
+            sx={{ fontWeight: 700, borderRadius: 2 }}
+          >
+            Сохранить
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }

@@ -2,7 +2,7 @@
 
 Эндпоинты API, которые дергает фронт. Базовый префикс: `/api/v1` (прокси Vite → backend).
 
-Экраны: **логин**, **забыли пароль**, **выбор / добавление компании**.
+Экраны: **логин**, **забыли пароль**, **выбор / добавление компании**, **профиль компании**, **календарь**, **профиль пользователя**, **команда**, **помощь**, **AI-консультант**.
 
 Данные только с бэка — без mock UI и без `?empty=1`.
 
@@ -11,6 +11,7 @@
 | Method | Path | Когда |
 |--------|------|--------|
 | `POST` | `/auth/login` | Сабмит формы |
+| `POST` | `/auth/refresh` | Авто при 401 (axios interceptor в `api/client.ts`) |
 | `POST` | `/auth/logout` | Выход (если есть refresh) |
 | `GET` | `/auth/me` | Профиль после сессии |
 
@@ -171,3 +172,203 @@ UI превью: name / region / `membershipRole` из list item; KPI — `appli
 | `selectCompany(id)` | `alfa_active_company_id` + `user.companyId` |
 | «Продолжить» | `selectCompany` + `/app` |
 | «Очистить» (first visit) | сброс ИНН / found / error в state |
+
+---
+
+## Профиль компании — `/app/company`
+
+Код: `CompanyPage.tsx` · макет (реквизиты / владельцы / счета / контакты + сайдбар) · `useAppStore()` + `api/companies.ts`.
+
+| Method | Path | Когда |
+|--------|------|--------|
+| `GET` | `/companies/{companyId}` | Mount через store |
+| `GET` | `/companies` | блок «Мои компании» |
+| `PATCH` | `/companies/{companyId}` | «Редактировать» → сохранить |
+| `POST` | `/companies/{companyId}/registry/verify` | «Проверить ИНН» |
+
+Владельцы / согласия / банковские счета — UI demo поверх реальных реквизитов. Финансы — на `/app/statements`.
+
+### `GET /companies/{companyId}`
+
+```json
+{
+  "id": "company_001",
+  "inn": "770123456703",
+  "name": "ИП Петров Иван Сергеевич",
+  "legalForm": "IP",
+  "ogrn": "304770100012345",
+  "industry": "Розничная торговля",
+  "registrationDate": "2019-03-15",
+  "region": "Москва",
+  "employeesCount": 8,
+  "registryStatus": "ACTIVE",
+  "version": 1,
+  "membershipRole": "OWNER"
+}
+```
+
+Код: `getCompany(companyId)`.
+
+ИНН в форме read-only; `legalForm` disabled.
+
+### `PATCH /companies/{companyId}`
+
+Тело (частичное):
+
+```json
+{
+  "name": "…",
+  "industry": "…",
+  "region": "…",
+  "employeesCount": 8
+}
+```
+
+После успеха: invalidate `['company', companyId]`.
+
+Код: `updateCompany(companyId, patch)`.
+
+> На бэке в `CompanyUpdate` нет `ogrn` / `registrationDate` — UI может показывать поля, но патч уходит только по поддерживаемым ключам (как в `updateCompany`).
+
+### `GET` / `PATCH /companies/{companyId}/financials`
+
+KPI: выручка, расходы, остаток, обязательства, действующие кредиты, `period`.
+
+PATCH:
+
+```json
+{
+  "period": "2026-09",
+  "avgMonthlyRevenue": 900000,
+  "operatingExpenses": 650000,
+  "cashBalance": 420000,
+  "liabilities": 180000,
+  "activeCredits": 150000,
+  "source": "manual",
+  "confirmed": true
+}
+```
+
+Код: `getFinancials` / `updateFinancials` · invalidate `['financials', companyId]`.
+
+---
+
+## Финансовый календарь — `/app/calendar`
+
+Код: `CalendarPage.tsx` · `useAppStore()` (obligations, financials, goal, apps) + `api/companies.ts`.
+
+| Method | Path | Когда |
+|--------|------|--------|
+| `GET` | `/obligations?companyId=` | Mount через store → сетка / ближайшие |
+| `POST` | `/obligations` | «Добавить событие» |
+| `GET` | `/companies/{companyId}/financials` | Доля от выручки в блоке «Платежи за месяц» |
+| `GET` | `/companies/{companyId}/funding-needs` | (store) цели / график кредита → события |
+| `GET` | `/companies/{companyId}/applications` | (store) сроки по заявкам в «Ближайшие» |
+
+Экспорт `.ics` — клиентский файл, без HTTP.
+
+### `GET /obligations?companyId=`
+
+Элемент:
+
+```json
+{
+  "id": "ob_1",
+  "companyId": "company_001",
+  "type": "rent",
+  "title": "Аренда склада",
+  "amount": 120000,
+  "dueDate": "2026-11-05",
+  "recurring": true,
+  "status": "planned"
+}
+```
+
+Код: `listObligations(companyId)`.
+
+Типы → цвет чипа в сетке: `tax` оранжевый, `loan` зелёный, остальное серый.
+
+### `POST /obligations`
+
+```json
+{
+  "companyId": "company_001",
+  "type": "supplier",
+  "title": "…",
+  "amount": 50000,
+  "dueDate": "2026-11-20",
+  "recurring": false,
+  "status": "planned"
+}
+```
+
+Код: `createObligation(…)` · invalidate `['obligations', companyId]`.
+
+### Производные события (без отдельных эндпоинтов)
+
+| Источник | UI |
+|----------|-----|
+| `buildPaymentSchedule(goal)` | зелёные «Платёж …» в сетке / итог «По кредитам» |
+| активные `apps` | «Загрузить документы» / «Ответ банку» в ближайших |
+
+---
+
+## Профиль пользователя — `/app/profile`
+
+Код: `ProfilePage.tsx` · `useAuth()` + `GET /companies` (название компании в подзаголовке).
+
+| Method | Path | Когда |
+|--------|------|--------|
+| `GET` | `/auth/me` | (сессия) ФИО / email / phone |
+| `GET` | `/companies` | подзаголовок «владелец …» |
+| `POST` | `/auth/logout` | «Выйти» / «Выйти на всех устройствах» |
+
+**Нет на бэке (UI-only / localStorage):** сохранение ФИО/телефона/языка/должности, 2FA/биометрия-тогглы, список сеансов, «Завершить» сеанс, аватар.
+
+«Сменить пароль» → `/forgot-password` (`POST /auth/password/forgot`).
+
+«Сохранить» пишет обновлённый `user` в `localStorage` (`alfa_user`), без `PATCH /auth/me`.
+
+---
+
+## Команда компании — `/app/team`
+
+Код: `TeamPage.tsx` · `GET /companies` (название в подзаголовке).
+
+| Method | Path | Когда |
+|--------|------|--------|
+| `GET` | `/companies` | Mount: имя активной компании |
+
+**Нет на бэке (UI demo):** список участников, фильтры, матрица ролей, приглашение по e-mail, «Отозвать доступ». Приглашение добавляет строку локально в state.
+
+---
+
+## AI-консультант — `/app/ai`
+
+Код: `AiChatPage.tsx` · `POST /ai/chat` (`api/statements.ts` → `aiChat`).
+
+| Method | Path | Когда |
+|--------|------|--------|
+| `POST` | `/ai/chat` | Отправка сообщения / быстрый вопрос |
+| store | company / financials / goals / apps | блок «Контекст, который учитывает AI» |
+
+```json
+{ "companyId": "company_001", "message": "…", "conversationId": null }
+```
+
+Стартовый диалог в UI — демо-тред (как в макете); дальше — ответы бэка. При ошибке сети — локальный fallback.
+
+---
+
+## Помощь и вопросы — `/app/help`
+
+Код: `HelpPage.tsx`.
+
+HTTP к бэку нет — FAQ, категории, документы и контакты менеджера — статический UI.
+
+| UI | Поведение |
+|----|-----------|
+| «Найти» | клиентский фильтр FAQ |
+| «Написать в чат» | переход на `/app/ai` |
+| «Заказать звонок» | `tel:88000000000` |
+| PDF-ссылки | UI-only (файлов нет) |

@@ -70,6 +70,9 @@ export interface Company {
   registrationDate: string
   region: string
   employeesCount: number
+  registryStatus?: string
+  version?: number
+  membershipRole?: MemberRole
 }
 
 export interface CompanyListItem {
