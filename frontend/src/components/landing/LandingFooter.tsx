@@ -16,8 +16,13 @@ const COLUMNS = [
     links: [{ label: 'Очередь', to: '/app/manager' }],
   },
   {
-    title: 'Админ',
-    links: [{ label: 'Политики', to: '/login' }],
+    title: 'Разработчикам',
+    links: [
+      { label: 'Design System', to: '/design-system' },
+      { label: 'Обзор на лендинге', to: '/#design-system' },
+      { label: 'Токены и код', to: '/design-system#theme-code' },
+      { label: 'Компоненты', to: '/design-system#blocks' },
+    ],
   },
 ]
 
@@ -44,7 +49,7 @@ export function LandingFooter() {
           <Box>
             <AlfaLogo compact />
             <Typography sx={{ mt: 1.5, fontSize: 13, lineHeight: 1.45, maxWidth: 260 }}>
-              Кредитный кабинет для ИП и малого бизнеса
+              Линия решения — кредитный кабинет для ИП и малого бизнеса
             </Typography>
           </Box>
 
