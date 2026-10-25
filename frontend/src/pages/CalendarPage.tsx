@@ -251,14 +251,14 @@ function downloadIcs(events: CalEvent[], filename: string) {
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Alfa Credit//Calendar//RU',
+    'PRODID:-//Liniya Resheniya//Calendar//RU',
     'CALSCALE:GREGORIAN',
   ]
   for (const e of events.filter((x) => !x.upcomingOnly)) {
     const d = e.date.replace(/-/g, '')
     lines.push(
       'BEGIN:VEVENT',
-      `UID:${e.id}@alfa-credit`,
+      `UID:${e.id}@liniya-resheniya`,
       `DTSTART;VALUE=DATE:${d}`,
       `SUMMARY:${e.title.replace(/,/g, '\\,')}`,
       e.amount != null ? `DESCRIPTION:${money(e.amount)}` : 'DESCRIPTION:',

@@ -106,7 +106,7 @@ function welcomeMessage(): AiChatMessage {
     id: crypto.randomUUID(),
     role: 'assistant',
     content:
-      'Здравствуйте! Я AI-консультант Альфа. Спросите про ставку, залог, платёж или документы по заявке — отвечу по контексту компании.',
+      'Здравствуйте! Я AI-консультант Линии решения. Спросите про ставку, залог, платёж или документы по заявке — отвечу по контексту компании.',
     createdAt: new Date().toISOString(),
   }
 }
@@ -433,7 +433,7 @@ export function AiChatPage() {
             </Box>
             <Box sx={{ flex: 1, minWidth: 0 }}>
               <Typography sx={{ fontSize: 14, fontWeight: 750, color: '#0B1F35', lineHeight: 1.25 }}>
-                AI-консультант Альфа
+                AI-консультант Линии решения
               </Typography>
               <Typography sx={{ fontSize: 12, color: '#9AA5B1', mt: 0.2 }} noWrap>
                 Контекст: {appCode} · {companyName}

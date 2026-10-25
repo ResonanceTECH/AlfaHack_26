@@ -72,7 +72,7 @@ export function LoginPage() {
   }
 
   return (
-    <AuthShell title="Вход в Alfa Credit">
+    <AuthShell title="Вход в личный кабинет">
       <form onSubmit={onSubmit} autoComplete="on">
         <Stack spacing={2.25}>
           {error ? <Alert severity="error">{error}</Alert> : null}
