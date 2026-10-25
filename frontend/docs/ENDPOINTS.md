@@ -11,6 +11,7 @@
 | Method | Path | Когда |
 |--------|------|--------|
 | `POST` | `/auth/login` | Сабмит формы |
+| `POST` | `/auth/refresh` | Авто при 401 (axios interceptor в `api/client.ts`) |
 | `POST` | `/auth/logout` | Выход (если есть refresh) |
 | `GET` | `/auth/me` | Профиль после сессии |
 
@@ -261,7 +262,7 @@ PATCH:
 | `GET` | `/obligations?companyId=` | Mount через store → сетка / ближайшие |
 | `POST` | `/obligations` | «Добавить событие» |
 | `GET` | `/companies/{companyId}/financials` | Доля от выручки в блоке «Платежи за месяц» |
-| `GET` | `/companies/{companyId}/business-goals` | (store) график кредита → события |
+| `GET` | `/companies/{companyId}/funding-needs` | (store) цели / график кредита → события |
 | `GET` | `/companies/{companyId}/applications` | (store) сроки по заявкам в «Ближайшие» |
 
 Экспорт `.ics` — клиентский файл, без HTTP.
