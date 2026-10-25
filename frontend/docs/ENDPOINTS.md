@@ -177,16 +177,16 @@ UI превью: name / region / `membershipRole` из list item; KPI — `appli
 
 ## Профиль компании — `/app/company`
 
-Код: `CompanyPage.tsx` · данные: `useAppStore()` + `api/companies.ts`.
+Код: `CompanyPage.tsx` · макет (реквизиты / владельцы / счета / контакты + сайдбар) · `useAppStore()` + `api/companies.ts`.
 
 | Method | Path | Когда |
 |--------|------|--------|
-| `GET` | `/companies/{companyId}` | Mount через `useAppStore` → форма «Компания» |
-| `GET` | `/companies/{companyId}/financials` | Mount → блок финансов (404 → пустой снимок) |
-| `PATCH` | `/companies/{companyId}` | «Сохранить компанию» |
-| `PATCH` | `/companies/{companyId}/financials` | «Сохранить финансы» |
+| `GET` | `/companies/{companyId}` | Mount через store |
+| `GET` | `/companies` | блок «Мои компании» |
+| `PATCH` | `/companies/{companyId}` | «Редактировать» → сохранить |
+| `POST` | `/companies/{companyId}/registry/verify` | «Проверить ИНН» |
 
-Ссылка «Загрузить выписку» → `/app/statements` (без HTTP на этой странице).
+Владельцы / согласия / банковские счета — UI demo поверх реальных реквизитов. Финансы — на `/app/statements`.
 
 ### `GET /companies/{companyId}`
 
