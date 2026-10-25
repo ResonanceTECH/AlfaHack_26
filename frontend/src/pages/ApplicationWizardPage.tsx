@@ -14,6 +14,7 @@ import { useMemo, useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { createApplication, submitApplication } from '@/api/applications'
+import { makeLocalApplication, upsertLocalApp } from '@/features/applications/localApps'
 import { SelectionStepper } from '@/features/selection/SelectionStepper'
 import { loadSelectionDraft, saveSelectionDraft } from '@/features/selection/draft'
 import { DEMO_PRODUCTS } from '@/features/selection/demoProducts'
@@ -125,6 +126,7 @@ export function ApplicationWizardPage() {
           purpose: `${name} · ${goalTitle(draft.goalKey)}`,
         })
         app = await submitApplication(app.id)
+        upsertLocalApp(app)
         await qc.invalidateQueries({ queryKey: ['applications'] })
         setSubmitted({
           id: app.id,
@@ -135,8 +137,23 @@ export function ApplicationWizardPage() {
         return
       }
 
+      const code = `ABC-2026-${String(Math.floor(1000 + Math.random() * 9000))}`
+      const local = makeLocalApplication({
+        companyId,
+        productId: pickId,
+        productName: name,
+        amount,
+        termMonths: term,
+        rate,
+        purpose: `${name} · ${goalTitle(draft.goalKey)}`,
+        status: 'submitted',
+        code,
+      })
+      upsertLocalApp(local)
+      await qc.invalidateQueries({ queryKey: ['applications'] })
       setSubmitted({
-        code: `ABC-2026-${String(Math.floor(1000 + Math.random() * 9000))}`,
+        id: local.id,
+        code,
         productName: name,
         amount,
       })

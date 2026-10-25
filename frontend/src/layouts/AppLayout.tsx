@@ -69,7 +69,7 @@ const entrepreneurGroups: NavGroup[] = [
       { to: '/app/recommendations', label: 'Подбор', icon: <TuneRoundedIcon sx={iconSx} /> },
       {
         to: '/app/scenarios',
-        label: 'Сценарии и расчёты',
+        label: 'Сценарии и подбор',
         icon: <InsightsRoundedIcon sx={iconSx} />,
       },
     ],
@@ -129,6 +129,10 @@ function pageTitle(pathname: string): string {
     return 'Участник'
   }
   if (pathname === '/app/notifications') return 'Уведомления'
+  if (pathname === '/app/scenarios') return 'Сценарии и подбор'
+  if (pathname === '/app/calculator') return 'Кредитный калькулятор'
+  if (pathname === '/app/forecast') return 'Прогноз денежных средств'
+  if (pathname === '/app/roi') return 'Окупаемость проекта'
   if (pathname === '/app/readiness') return 'Индекс готовности'
   if (pathname.endsWith('/edit') && pathname.startsWith('/app/applications/')) {
     return 'Редактирование заявки'
