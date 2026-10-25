@@ -1,7 +1,7 @@
 import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined'
 import { Button, Link, Stack, TextField, Alert, InputAdornment } from '@mui/material'
 import { useState } from 'react'
-import { Link as RouterLink, useNavigate } from 'react-router-dom'
+import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom'
 import { AuthShell } from '@/components/auth/AuthShell'
 import { PasswordField } from '@/components/auth/PasswordField'
 import { useAuth } from '@/contexts/AuthContext'
@@ -28,14 +28,22 @@ const fieldSx = {
 export function LoginPage() {
   const { login } = useAuth()
   const navigate = useNavigate()
+  const [params] = useSearchParams()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
   function goAfterAuth(user: { role: string; companyId?: string }) {
+    const next = params.get('next')
+    if (next && next.startsWith('/') && !next.startsWith('//')) {
+      navigate(next)
+      return
+    }
     if (user.role === 'manager' || user.role === 'risk_analyst') {
       navigate('/app/manager')
+    } else if (user.companyId) {
+      navigate('/app')
     } else {
       navigate('/select-company')
     }

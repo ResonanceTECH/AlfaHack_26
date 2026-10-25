@@ -47,7 +47,8 @@ type CompanyForm = z.infer<typeof companySchema>
 type FinForm = z.infer<typeof finSchema>
 
 export function CompanyPage() {
-  const { company, financials, companyId, isLoading } = useAppStore()
+  const { company, financials, companyId, isLoading, isError, error: storeError, refetchAll } =
+    useAppStore()
   const qc = useQueryClient()
   const [saved, setSaved] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -143,11 +144,46 @@ export function CompanyPage() {
     )
   }
 
-  if (!company || !companyId) {
+  if (!companyId) {
     return (
       <Box>
         <PageHeader title="Профиль компании" />
-        <Alert severity="warning">Нет компании для этого аккаунта.</Alert>
+        <Alert
+          severity="warning"
+          action={
+            <Button color="inherit" size="small" component={RouterLink} to="/select-company">
+              Выбрать компанию
+            </Button>
+          }
+        >
+          Компания не выбрана — добавьте или выберите организацию.
+        </Alert>
+      </Box>
+    )
+  }
+
+  if (isError || !company) {
+    return (
+      <Box>
+        <PageHeader title="Профиль компании" />
+        <Alert
+          severity="error"
+          action={
+            <Button color="inherit" size="small" onClick={() => refetchAll()}>
+              Повторить
+            </Button>
+          }
+        >
+          {storeError?.message ||
+            'Не удалось загрузить компанию. Проверьте сессию или нажмите «Повторить».'}
+        </Alert>
+        <Button
+          component={RouterLink}
+          to="/select-company"
+          sx={{ mt: 2, fontWeight: 600 }}
+        >
+          К выбору компании
+        </Button>
       </Box>
     )
   }
