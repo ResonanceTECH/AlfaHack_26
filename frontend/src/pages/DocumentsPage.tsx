@@ -1,6 +1,7 @@
 import {
   Box,
   Button,
+  CircularProgress,
   InputAdornment,
   MenuItem,
   Stack,
@@ -11,8 +12,19 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded'
+import axios from 'axios'
 import { useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  deleteCompanyDocument,
+  downloadCompanyDocument,
+  listCompanyDocuments,
+  uploadCompanyDocument,
+  type CompanyDocument,
+  type VaultDocStatus,
+} from '@/api/documents'
+import { useAuth } from '@/contexts/AuthContext'
+import { useAppStore } from '@/hooks/useAppStore'
 
 const tileSx = {
   bgcolor: '#fff',
@@ -30,18 +42,20 @@ const fieldSx = {
   },
 } as const
 
-const APP_REF = 'ABC-2026-1042'
-
-type DocStatus = 'accepted' | 'accepted_remark' | 'pending' | 'need_upload'
+type DocStatus = VaultDocStatus
 type DocCategory = 'Учредительные' | 'Финансовые' | 'Имущество' | 'Владельцы' | 'Согласия'
+type DocItem = CompanyDocument
 
-type DocItem = {
-  id: string
-  title: string
-  category: DocCategory
-  file: string | null
-  uploadedAt: string | null
-  status: DocStatus
+function apiError(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err)) {
+    const detail = err.response?.data?.detail
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail)) {
+      return detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join('; ')
+    }
+  }
+  if (err instanceof Error) return err.message
+  return fallback
 }
 
 type TabKey = 'all' | 'need_upload' | 'pending' | 'accepted'

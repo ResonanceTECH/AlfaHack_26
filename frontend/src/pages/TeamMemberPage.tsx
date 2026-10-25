@@ -381,7 +381,7 @@ export function TeamMemberPage() {
           <Button
             type="button"
             fullWidth
-            disabled={revoked || base.role === 'owner'}
+            disabled={revoked || base.role === 'owner' || revokeM.isPending}
             onClick={revoke}
             sx={{
               borderRadius: 2,
@@ -492,7 +492,7 @@ export function TeamMemberPage() {
               type="button"
               variant="contained"
               color="primary"
-              disabled={!dirty || revoked}
+              disabled={!dirty || revoked || saveM.isPending}
               onClick={saveRole}
               sx={{
                 flex: 1,
@@ -504,7 +504,7 @@ export function TeamMemberPage() {
                 '&:hover': { boxShadow: 'none' },
               }}
             >
-              {savedFlash ? 'Сохранено' : 'Сохранить роль'}
+              {saveM.isPending ? 'Сохранение…' : savedFlash ? 'Сохранено' : 'Сохранить роль'}
             </Button>
             <Button
               type="button"
