@@ -45,12 +45,20 @@ export function AiAgentReply({ data, feedback = true, dense }: Props) {
     }
   }
 
+  const isTemplate = data.mode === 'template'
+
   return (
     <Stack spacing={dense ? 1.25 : 1.75}>
       {!data.scoreComplete && (
         <Alert severity="warning" sx={{ borderRadius: 2 }}>
           Оценка построена на неполных данных — решение может измениться после дозагрузки
           сведений.
+        </Alert>
+      )}
+
+      {isTemplate && (
+        <Alert severity="info" sx={{ borderRadius: 2 }}>
+          Показано резервное объяснение (режим template) — полноценный рабочий ответ без LLM.
         </Alert>
       )}
 
@@ -169,7 +177,6 @@ export function AiAgentReply({ data, feedback = true, dense }: Props) {
                   <Button
                     variant="contained"
                     color="primary"
-                    disabled={fbState === 'saving'}
                     onClick={() => void sendFeedback(helpful, comment)}
                     sx={{ borderRadius: 2, fontWeight: 700, textTransform: 'none', flexShrink: 0 }}
                   >
