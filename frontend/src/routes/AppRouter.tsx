@@ -38,8 +38,10 @@ import { ProfilePage } from '@/pages/ProfilePage'
 import { TeamPage } from '@/pages/TeamPage'
 import { TeamInvitePage } from '@/pages/TeamInvitePage'
 import { TeamMemberPage } from '@/pages/TeamMemberPage'
+import { TeamTasksPage } from '@/pages/TeamTasksPage'
 import { HelpPage } from '@/pages/HelpPage'
 import { DocumentsPage } from '@/pages/DocumentsPage'
+import { DocumentViewPage } from '@/pages/DocumentViewPage'
 import { NotificationsPage } from '@/pages/NotificationsPage'
 import type { ReactNode } from 'react'
 
@@ -129,6 +131,7 @@ export function AppRouter() {
         <Route path="applications" element={<ApplicationsPage />} />
         <Route path="applications/new" element={<ApplicationWizardPage />} />
         <Route path="applications/:id/edit" element={<ApplicationEditPage />} />
+        <Route path="applications/:id/contract" element={<DocumentViewPage />} />
         <Route path="applications/:id" element={<ApplicationDetailPage />} />
         <Route
           path="manager"
@@ -149,8 +152,10 @@ export function AppRouter() {
         <Route path="profile" element={<ProfilePage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="documents" element={<DocumentsPage />} />
+        <Route path="documents/:docId" element={<DocumentViewPage />} />
         <Route path="team" element={<TeamPage />} />
         <Route path="team/invite" element={<TeamInvitePage />} />
+        <Route path="team/tasks" element={<TeamTasksPage />} />
         <Route path="team/:memberId" element={<TeamMemberPage />} />
         <Route path="help" element={<HelpPage />} />
       </Route>
