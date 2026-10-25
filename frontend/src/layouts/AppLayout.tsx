@@ -148,6 +148,9 @@ function AlfaMark({ size = 32 }: { size?: number }) {
 
 function pageTitle(pathname: string): string {
   if (pathname === '/app/profile') return 'Профиль'
+  if (pathname === '/app/company/inn-check') return 'Проверка ИНН'
+  if (pathname === '/app/statements/upload') return 'Загрузка выписки'
+  if (pathname === '/app/statements/analysis') return 'Анализ выписки'
   const flat = [...entrepreneurGroups, ...managerGroups].flatMap((g) => g.items)
   const exact = flat.find((i) => i.to === pathname)
   if (exact) return exact.label

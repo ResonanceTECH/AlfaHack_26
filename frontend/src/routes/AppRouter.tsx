@@ -12,6 +12,7 @@ import { OnboardingFinancesPage } from '@/pages/OnboardingFinancesPage'
 import { OnboardingConfirmPage } from '@/pages/OnboardingConfirmPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { CompanyPage } from '@/pages/CompanyPage'
+import { CompanyInnCheckPage } from '@/pages/CompanyInnCheckPage'
 import { BusinessGoalPage } from '@/pages/BusinessGoalPage'
 import { AiChatPage } from '@/pages/AiChatPage'
 import { RecommendationsPage } from '@/pages/RecommendationsPage'
@@ -22,6 +23,8 @@ import { ApplicationWizardPage } from '@/pages/ApplicationWizardPage'
 import { ApplicationDetailPage } from '@/pages/ApplicationDetailPage'
 import { ManagerPage } from '@/pages/ManagerPage'
 import { StatementsPage } from '@/pages/StatementsPage'
+import { StatementUploadPage } from '@/pages/StatementUploadPage'
+import { StatementAnalysisPage } from '@/pages/StatementAnalysisPage'
 import { ForecastPage } from '@/pages/ForecastPage'
 import { ScenarioLabPage } from '@/pages/ScenarioLabPage'
 import { ReadinessPage } from '@/pages/ReadinessPage'
@@ -107,6 +110,7 @@ export function AppRouter() {
       >
         <Route index element={<DashboardPage />} />
         <Route path="company" element={<CompanyPage />} />
+        <Route path="company/inn-check" element={<CompanyInnCheckPage />} />
         <Route path="goals" element={<BusinessGoalPage />} />
         <Route path="ai" element={<AiChatPage />} />
         <Route path="recommendations" element={<RecommendationsPage />} />
@@ -124,6 +128,8 @@ export function AppRouter() {
           }
         />
         <Route path="statements" element={<StatementsPage />} />
+        <Route path="statements/upload" element={<StatementUploadPage />} />
+        <Route path="statements/analysis" element={<StatementAnalysisPage />} />
         <Route path="forecast" element={<ForecastPage />} />
         <Route path="scenarios" element={<ScenarioLabPage />} />
         <Route path="readiness" element={<ReadinessPage />} />
