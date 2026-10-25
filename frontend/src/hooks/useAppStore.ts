@@ -116,10 +116,12 @@ export function useAppStore(): AppStore {
   const isLoading =
     (enabled &&
       (companyQ.isLoading ||
+        companyQ.isFetching ||
         finQ.isLoading ||
         goalsQ.isLoading ||
         appsQ.isLoading ||
-        productsQ.isLoading)) ||
+        productsQ.isLoading) &&
+      !companyQ.data) ||
     (managerEnabled && !companyId && appsQ.isLoading)
 
   const err =
