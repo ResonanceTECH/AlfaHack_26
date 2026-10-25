@@ -61,11 +61,19 @@ export function toInviteApiRole(role: TeamRole): InviteApiRole {
 function formatLastLogin(iso?: string): string {
   if (!iso) return '—'
   const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return iso
+  if (Number.isNaN(d.getTime())) return '—'
   const now = new Date()
   const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
-  if (d.toDateString() === now.toDateString()) return `сегодня, ${time}`
-  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  if (d.toDateString() === now.toDateString()) return `Сегодня, ${time}`
+  const yest = new Date(now)
+  yest.setDate(now.getDate() - 1)
+  if (d.toDateString() === yest.toDateString()) return `Вчера, ${time}`
+  return d.toLocaleString('ru-RU', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 function toUiStatus(raw: unknown): { status: TeamStatus; statusLabel: string } {
