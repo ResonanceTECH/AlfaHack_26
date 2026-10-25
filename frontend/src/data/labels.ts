@@ -66,6 +66,7 @@ export const statusColors: Record<
 export const roleLabels: Record<UserRole, string> = {
   entrepreneur: 'Предприниматель',
   accountant: 'Бухгалтер',
+  analyst: 'Кредитный аналитик',
   manager: 'Кредитный менеджер',
   risk_analyst: 'Риск-аналитик',
   admin: 'Администратор',
