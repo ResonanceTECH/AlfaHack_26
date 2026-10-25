@@ -136,11 +136,6 @@ function buildAnalystGroups(caseId: string): NavGroup[] {
           icon: <FolderSharedRoundedIcon sx={iconSx} />,
         },
         {
-          to: '/app/analyst/attention',
-          label: 'Требуют внимания',
-          icon: <NotificationImportantRoundedIcon sx={iconSx} />,
-        },
-        {
           to: '/app/analyst/workflow',
           label: 'Рабочий процесс и SLA',
           icon: <ScheduleRoundedIcon sx={iconSx} />,
@@ -737,6 +732,19 @@ export function AppLayout() {
           >
             {headerTitle}
           </Typography>
+
+          {isAnalystRole(user?.role) && (
+            <IconButton
+              size="small"
+              onClick={() => navigate('/app/analyst/attention')}
+              sx={{
+                color: location.pathname === '/app/analyst/attention' ? '#EF3124' : '#5A6B7D',
+              }}
+              aria-label="Требуют внимания"
+            >
+              <NotificationImportantRoundedIcon />
+            </IconButton>
+          )}
 
           <IconButton
             size="small"
