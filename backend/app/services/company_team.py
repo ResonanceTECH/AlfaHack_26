@@ -278,6 +278,29 @@ def remove_member(db: Session, *, company_id: str, user_id: str) -> None:
     admin_delete_member(db, company_id=company_id, user_id=user_id)
 
 
+def decline_invite(db: Session, *, code: str, user: User) -> CompanyInvite:
+    """Invitee declines a pending invite addressed to their email."""
+    invite = db.scalar(select(CompanyInvite).where(CompanyInvite.code == code))
+    if invite is None:
+        raise AppError("NOT_FOUND", "Приглашение не найдено", status_code=http_status.HTTP_404_NOT_FOUND)
+    if invite.status != "PENDING":
+        raise AppError(
+            "INVITE_NOT_PENDING",
+            f"Приглашение уже {invite.status}",
+            status_code=http_status.HTTP_409_CONFLICT,
+        )
+    email = (user.email or "").strip().lower()
+    if not email or invite.email.strip().lower() != email:
+        raise AppError(
+            "INVITE_EMAIL_MISMATCH",
+            "Это приглашение адресовано другому email",
+            status_code=http_status.HTTP_403_FORBIDDEN,
+        )
+    invite.status = "DECLINED"
+    db.flush()
+    return invite
+
+
 def accept_invite(db: Session, *, code: str, user: User) -> CompanyMembership:
     invite = db.scalar(select(CompanyInvite).where(CompanyInvite.code == code))
     if invite is None:
