@@ -2,6 +2,13 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { AppLayout } from '@/layouts/AppLayout'
 import { LandingPage } from '@/pages/LandingPage'
+import { AdminOverviewPage } from '@/pages/AdminOverviewPage'
+import { AdminUsersPage } from '@/pages/AdminUsersPage'
+import { AdminAnalyticsPage } from '@/pages/AdminAnalyticsPage'
+import { AdminProductsPage } from '@/pages/AdminProductsPage'
+import { AdminPolicyPage } from '@/pages/AdminPolicyPage'
+import { AdminAuditPage } from '@/pages/AdminAuditPage'
+import { AdminStubPage } from '@/pages/AdminStubPage'
 import { DesignSystemPage } from '@/pages/DesignSystemPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { VerifyEmailPage } from '@/pages/VerifyEmailPage'
@@ -58,7 +65,9 @@ function Protected({
   const { user, isAuthenticated } = useAuth()
   if (!isAuthenticated || !user) return <Navigate to="/login" replace />
   if (roles && !roles.includes(user.role)) {
-    return <Navigate to={user.role === 'manager' ? '/app/manager' : '/app'} replace />
+    const fallback =
+      user.role === 'admin' ? '/app/admin' : user.role === 'manager' ? '/app/manager' : '/app'
+    return <Navigate to={fallback} replace />
   }
   const needsCompany =
     !allowWithoutCompany &&
@@ -140,6 +149,94 @@ export function AppRouter() {
           element={
             <Protected roles={['manager', 'admin']}>
               <ManagerPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="admin"
+          element={
+            <Protected roles={['admin']}>
+              <AdminOverviewPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="admin/users"
+          element={
+            <Protected roles={['admin']}>
+              <AdminUsersPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="admin/analytics"
+          element={
+            <Protected roles={['admin']}>
+              <AdminAnalyticsPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="admin/products"
+          element={
+            <Protected roles={['admin']}>
+              <AdminProductsPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="admin/policy"
+          element={
+            <Protected roles={['admin']}>
+              <AdminPolicyPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="admin/rules"
+          element={
+            <Protected roles={['admin']}>
+              <AdminStubPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="admin/models"
+          element={
+            <Protected roles={['admin']}>
+              <AdminStubPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="admin/model-quality"
+          element={
+            <Protected roles={['admin']}>
+              <AdminStubPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="admin/demo-data"
+          element={
+            <Protected roles={['admin']}>
+              <AdminStubPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="admin/audit"
+          element={
+            <Protected roles={['admin']}>
+              <AdminAuditPage />
+            </Protected>
+          }
+        />
+        <Route
+          path="admin/status"
+          element={
+            <Protected roles={['admin']}>
+              <AdminStubPage />
             </Protected>
           }
         />
