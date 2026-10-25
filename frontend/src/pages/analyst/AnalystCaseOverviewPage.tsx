@@ -1,21 +1,62 @@
-import { Box, Button, Stack, Typography } from '@mui/material'
+import { Alert, Box, Button, CircularProgress, Stack, Typography } from '@mui/material'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
 import { useNavigate, useOutletContext } from 'react-router-dom'
-import type { AnalystCase } from '@/features/analyst/demoData'
+import { assignAnalystApplication } from '@/api/analyst'
+import type { AnalystCaseOutlet } from '@/components/analyst/AnalystCaseShell'
+import { useAuth } from '@/contexts/AuthContext'
+import { formatCompactMoney } from '@/features/analyst/map'
 import { outlineBtn, primaryBtn, tileSx } from '@/features/analyst/styles'
 
 export function AnalystCaseOverviewPage() {
-  const { caseData: c } = useOutletContext<{ caseData: AnalystCase }>()
+  const { caseData: c, card, applicationId } = useOutletContext<AnalystCaseOutlet>()
+  const { user } = useAuth()
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const base = `/app/analyst/cases/${c.id}`
+  const fin = card.financials
+  const cs = card.checksSummary
+  const [flash, setFlash] = useState<string | null>(null)
+
+  const assignedToMe = card.application.assignedManagerId === user?.id
+  const canAssign = card.allowedActions.includes('ASSIGN')
+  const docsBlocked =
+    card.openDocumentRequests.length > 0 || cs.failed > 0 || cs.warnings > 0
+
+  const finLine = fin
+    ? `Выручка ${formatCompactMoney(fin.avgMonthlyRevenue)}/мес · расходы ${formatCompactMoney(fin.operatingExpenses)} · кэш ${formatCompactMoney(fin.cashBalance)}`
+    : 'Финансовый снимок не загружен'
+
+  const docsLine =
+    card.openDocumentRequests.length > 0
+      ? `Открытых запросов: ${card.openDocumentRequests.length}`
+      : `Документов в заявке: ${card.application.documents.length}`
+
+  const checksLine = `${cs.passed} Passed · ${cs.warnings} Warning · ${cs.failed} Failed`
 
   const rows = [
-    { label: 'Цель', value: c.purpose },
-    { label: 'Финансы', value: 'Выручка 4,8 млн/мес · NCF +420 тыс · DSCR 1,42' },
-    { label: 'Документы', value: '6/7 принято · 1 запрошен повторно' },
-    { label: 'Автопроверки', value: '8 Passed · 1 Warning · 0 Failed' },
-    { label: 'Риск', value: 'Категория B+ · PD proxy Low · модель v2.3' },
-    { label: 'Следующий шаг', value: 'Завершить проверку выписки → подготовить заключение' },
+    { label: 'Цель', value: c.purpose || '—' },
+    { label: 'Финансы', value: finLine },
+    { label: 'Документы', value: docsLine },
+    { label: 'Автопроверки', value: checksLine },
+    {
+      label: 'Workflow',
+      value: card.workflow
+        ? `${card.workflow.workflowType} · ${card.workflow.status} · ${card.workflow.currentStep || '—'}`
+        : '—',
+    },
+    { label: 'Следующий шаг', value: c.nextStep },
   ]
+
+  const assignM = useMutation({
+    mutationFn: () => assignAnalystApplication(applicationId),
+    onSuccess: () => {
+      setFlash('Заявка взята в работу')
+      void qc.invalidateQueries({ queryKey: ['analyst', 'card', applicationId] })
+      void qc.invalidateQueries({ queryKey: ['analyst', 'queue'] })
+    },
+    onError: () => setFlash('Не удалось назначить заявку'),
+  })
 
   return (
     <Box
@@ -30,6 +71,15 @@ export function AnalystCaseOverviewPage() {
         <Typography sx={{ fontWeight: 700, fontSize: 16, color: '#0B1F35', mb: 1.75 }}>
           Сводка заявки
         </Typography>
+        {flash && (
+          <Alert
+            severity={flash.startsWith('Не') ? 'error' : 'success'}
+            sx={{ mb: 1.5 }}
+            onClose={() => setFlash(null)}
+          >
+            {flash}
+          </Alert>
+        )}
         <Stack spacing={1.5}>
           {rows.map((r) => (
             <Stack
@@ -42,7 +92,9 @@ export function AnalystCaseOverviewPage() {
                 '&:last-child': { borderBottom: 'none' },
               }}
             >
-              <Typography sx={{ width: { sm: 140 }, flexShrink: 0, fontSize: 13, color: '#8A96A3', fontWeight: 600 }}>
+              <Typography
+                sx={{ width: { sm: 140 }, flexShrink: 0, fontSize: 13, color: '#8A96A3', fontWeight: 600 }}
+              >
                 {r.label}
               </Typography>
               <Typography sx={{ fontSize: 14, color: '#0B1F35', fontWeight: 600 }}>{r.value}</Typography>
@@ -56,33 +108,74 @@ export function AnalystCaseOverviewPage() {
           Контекстная панель
         </Typography>
         <Stack spacing={1}>
-          <Button fullWidth variant="contained" sx={primaryBtn}>
-            Назначена вам
-          </Button>
-          <Button fullWidth variant="outlined" sx={outlineBtn} onClick={() => navigate(`${base}/documents`)}>
+          {canAssign ? (
+            <Button
+              fullWidth
+              variant="contained"
+              sx={primaryBtn}
+              disabled={assignM.isPending}
+              onClick={() => assignM.mutate()}
+            >
+              {assignM.isPending ? (
+                <CircularProgress size={18} color="inherit" />
+              ) : (
+                'Взять в работу'
+              )}
+            </Button>
+          ) : (
+            <Button fullWidth variant="contained" sx={primaryBtn} disabled>
+              {assignedToMe ? 'Назначена вам' : `Аналитик: ${c.analyst}`}
+            </Button>
+          )}
+          <Button
+            fullWidth
+            variant="outlined"
+            sx={outlineBtn}
+            onClick={() => navigate(`${base}/documents`)}
+            disabled={!card.allowedActions.includes('REQUEST_DOCS')}
+          >
             Запросить документы
           </Button>
-          <Button fullWidth variant="contained" sx={primaryBtn} onClick={() => navigate(`${base}/checks`)}>
+          <Button
+            fullWidth
+            variant="contained"
+            sx={primaryBtn}
+            onClick={() => navigate(`${base}/checks`)}
+          >
             Продолжить проверку
           </Button>
-          <Button fullWidth variant="outlined" sx={outlineBtn} onClick={() => navigate(`${base}/decision`)}>
+          <Button
+            fullWidth
+            variant="outlined"
+            sx={outlineBtn}
+            onClick={() => navigate(`${base}/decision`)}
+          >
             Перейти к решению
+            {docsBlocked ? ' · есть замечания' : ''}
           </Button>
-          <Button fullWidth variant="outlined" sx={outlineBtn} onClick={() => navigate(`${base}/history`)}>
+          <Button
+            fullWidth
+            variant="outlined"
+            sx={outlineBtn}
+            onClick={() => navigate(`${base}/history`)}
+          >
             История заявки
           </Button>
-          <Button fullWidth variant="outlined" sx={outlineBtn} onClick={() => navigate(`${base}/ai`)}>
-            AI-резюме
-          </Button>
         </Stack>
+        {docsBlocked && (
+          <Typography sx={{ mt: 1.5, fontSize: 12, color: '#C45A12', lineHeight: 1.45 }}>
+            Перед APPROVE закройте warnings/open doc requests (или используйте REJECT /
+            COUNTEROFFER / NEED_INFO).
+          </Typography>
+        )}
         <Typography sx={{ mt: 2, fontSize: 11, color: '#8A96A3', lineHeight: 1.5 }}>
-          Policy ID: CP-2026.10
-          <br />
-          RBAC: ANALYST · write decision
+          Actions: {card.allowedActions.join(', ') || '—'}
         </Typography>
-        <Typography sx={{ mt: 1.5, fontSize: 12, color: '#5A6B7D', lineHeight: 1.45 }}>
-          Данных достаточно для предварительного одобрения при закрытии замечания по выписке.
-        </Typography>
+        {card.application.aiSummary && (
+          <Typography sx={{ mt: 1.5, fontSize: 12, color: '#5A6B7D', lineHeight: 1.45 }}>
+            {card.application.aiSummary}
+          </Typography>
+        )}
       </Box>
     </Box>
   )

@@ -38,7 +38,7 @@ const kpis = [
 
 export function AnalystCaseRisksPage() {
   const navigate = useNavigate()
-  const { caseId = 'ABC-2026-1042' } = useParams()
+  const { caseId = '' } = useParams()
 
   return (
     <Box>
