@@ -158,11 +158,6 @@ const adminGroups: NavGroup[] = [
         label: 'Аудит изменений',
         icon: <HistoryRoundedIcon sx={iconSx} />,
       },
-      {
-        to: '/app/manager',
-        label: 'Очередь заявок',
-        icon: <AssignmentRoundedIcon sx={iconSx} />,
-      },
     ],
   },
 ]

@@ -147,7 +147,7 @@ export function AppRouter() {
         <Route
           path="manager"
           element={
-            <Protected roles={['manager', 'admin']}>
+            <Protected roles={['manager', 'risk_analyst']}>
               <ManagerPage />
             </Protected>
           }
