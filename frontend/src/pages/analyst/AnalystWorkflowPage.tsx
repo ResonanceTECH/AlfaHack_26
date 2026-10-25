@@ -96,8 +96,8 @@ export function AnalystWorkflowPage() {
             </Typography>
             <Stack spacing={1.25}>
               {[
-                { label: 'DOCS_REQUESTED', value: String(docs), color: '#EF3124' },
-                { label: 'IN_REVIEW', value: String(inReview), color: '#E6A018' },
+                { label: 'Ожидают документы', value: String(docs), color: '#EF3124' },
+                { label: 'На проверке', value: String(inReview), color: '#E6A018' },
                 { label: 'Всего в выборке', value: String(queueQ.data?.total ?? 0), color: '#2E7D32' },
               ].map((r) => (
                 <Stack

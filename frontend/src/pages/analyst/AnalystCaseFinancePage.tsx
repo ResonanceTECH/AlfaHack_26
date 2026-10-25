@@ -16,7 +16,7 @@ export function AnalystCaseFinancePage() {
         { label: 'Обязательства', value: formatCompactMoney(fin.liabilities) },
         { label: 'Активные кредиты', value: formatCompactMoney(fin.activeCredits) },
         {
-          label: 'NCF proxy',
+          label: 'Свободный поток',
           value: formatCompactMoney(fin.avgMonthlyRevenue - fin.operatingExpenses),
         },
       ]
@@ -116,8 +116,8 @@ export function AnalystCaseFinancePage() {
             ))}
           </Box>
           <Typography sx={{ mt: 2, fontSize: 12, color: '#8A96A3' }}>
-            Красный — выручка · серый — расходы · источник: {fin.source || 'API'} · помесячный ряд
-            синтезирован от avg для визуализации (отдельного timeseries endpoint нет).
+            Красный — выручка · серый — расходы · по данным финансового снимка
+            {fin.period ? ` за ${fin.period}` : ''}
           </Typography>
         </Box>
       )}

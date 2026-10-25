@@ -152,7 +152,7 @@ export function AnalystCaseHistoryPage() {
       )}
 
       <Typography sx={{ mt: 2.5, fontSize: 12, color: '#8A96A3', lineHeight: 1.45 }}>
-        Источник: statusHistory + comments + decisions из карточки заявки
+        Журнал только для чтения
       </Typography>
     </Box>
   )

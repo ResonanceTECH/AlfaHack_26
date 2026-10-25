@@ -32,7 +32,12 @@ export function AnalystCaseOverviewPage() {
       ? `Открытых запросов: ${card.openDocumentRequests.length}`
       : `Документов в заявке: ${card.application.documents.length}`
 
-  const checksLine = `${cs.passed} Passed · ${cs.warnings} Warning · ${cs.failed} Failed`
+  const checksLine =
+    cs.failed > 0
+      ? `${cs.passed} пройдено · ${cs.warnings} замечаний · ${cs.failed} ошибок`
+      : cs.warnings > 0
+        ? `${cs.passed} пройдено · ${cs.warnings} замечаний`
+        : `${cs.passed} пройдено · замечаний нет`
 
   const rows = [
     { label: 'Цель', value: c.purpose || '—' },
@@ -151,7 +156,6 @@ export function AnalystCaseOverviewPage() {
             onClick={() => navigate(`${base}/decision`)}
           >
             Перейти к решению
-            {docsBlocked ? ' · есть замечания' : ''}
           </Button>
           <Button
             fullWidth
@@ -163,16 +167,12 @@ export function AnalystCaseOverviewPage() {
           </Button>
         </Stack>
         {docsBlocked && (
-          <Typography sx={{ mt: 1.5, fontSize: 12, color: '#C45A12', lineHeight: 1.45 }}>
-            Перед APPROVE закройте warnings/open doc requests (или используйте REJECT /
-            COUNTEROFFER / NEED_INFO).
+          <Typography sx={{ mt: 1.5, fontSize: 12.5, color: '#C45A12', lineHeight: 1.45 }}>
+            Есть незакрытые замечания по документам или проверкам — учтите перед одобрением.
           </Typography>
         )}
-        <Typography sx={{ mt: 2, fontSize: 11, color: '#8A96A3', lineHeight: 1.5 }}>
-          Actions: {card.allowedActions.join(', ') || '—'}
-        </Typography>
         {card.application.aiSummary && (
-          <Typography sx={{ mt: 1.5, fontSize: 12, color: '#5A6B7D', lineHeight: 1.45 }}>
+          <Typography sx={{ mt: 1.5, fontSize: 12.5, color: '#5A6B7D', lineHeight: 1.45 }}>
             {card.application.aiSummary}
           </Typography>
         )}

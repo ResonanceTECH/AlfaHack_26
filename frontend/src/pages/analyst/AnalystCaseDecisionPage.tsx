@@ -13,7 +13,7 @@ import { useMemo, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { proposeAnalystDecision, type AnalystProposeIn } from '@/api/analyst'
 import type { AnalystCaseOutlet } from '@/components/analyst/AnalystCaseShell'
-import { outlineBtn, primaryBtn, statusPill, tileSx } from '@/features/analyst/styles'
+import { outlineBtn, primaryBtn, tileSx } from '@/features/analyst/styles'
 import { formatMoney } from '@/utils/format'
 
 const DECISIONS: { value: AnalystProposeIn['decision']; label: string; action?: string }[] = [
@@ -48,12 +48,15 @@ export function AnalystCaseDecisionPage() {
   const gateReasons = useMemo(() => {
     const r: string[] = []
     if (card.openDocumentRequests.length > 0) {
-      r.push(`открытых запросов документов: ${card.openDocumentRequests.length}`)
+      r.push(`ожидаются документы (${card.openDocumentRequests.length})`)
     }
-    if (cs.warnings > 0) r.push(`warnings: ${cs.warnings}`)
-    if (cs.failed > 0) r.push(`failed checks: ${cs.failed}`)
+    if (cs.warnings > 0) r.push(`есть замечания по проверкам (${cs.warnings})`)
+    if (cs.failed > 0) r.push(`есть ошибки проверок (${cs.failed})`)
     return r
   }, [card.openDocumentRequests.length, cs.failed, cs.warnings])
+
+  const decisionLabel =
+    DECISIONS.find((d) => d.value === decision)?.label ?? decision
 
   const proposeM = useMutation({
     mutationFn: () =>
@@ -66,11 +69,9 @@ export function AnalystCaseDecisionPage() {
         offerRate: needsOffer ? Number(offerRate) : undefined,
         productId: app.productId || undefined,
       }),
-    onSuccess: (data) => {
+    onSuccess: () => {
       setError(null)
-      setResult(
-        `Решение ${String(data.decisionType ?? data.decision_type ?? decision)} · статус ${String(data.status)}`,
-      )
+      setResult(`Решение «${decisionLabel}» отправлено клиенту`)
       void qc.invalidateQueries({ queryKey: ['analyst', 'card', applicationId] })
       void qc.invalidateQueries({ queryKey: ['analyst', 'queue'] })
       void qc.invalidateQueries({ queryKey: ['application'] })
@@ -79,7 +80,7 @@ export function AnalystCaseDecisionPage() {
     onError: (e: unknown) => {
       const msg =
         (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
-          ?.message || 'Ошибка propose'
+          ?.message || 'Не удалось отправить решение'
       setError(msg)
       setResult(null)
     },
@@ -99,7 +100,7 @@ export function AnalystCaseDecisionPage() {
           Решение по заявке
         </Typography>
         <Typography sx={{ fontSize: 13, color: '#8A96A3', mt: 0.35, mb: 2.25 }}>
-          {c.number || c.id} · {c.company} · {formatMoney(c.amount)} · POST /analyst/…/propose
+          {c.number || c.id} · {c.company} · {formatMoney(c.amount)}
         </Typography>
 
         {(result || error) && (
@@ -116,16 +117,22 @@ export function AnalystCaseDecisionPage() {
         )}
 
         {incomplete && decision === 'APPROVED' && (
-          <Alert severity="warning" sx={{ mb: 2 }}>
-            Комплект неполный ({gateReasons.join(' · ')}). APPROVE заблокирован — закройте замечания,
-            выберите REJECT/COUNTEROFFER/NEED_INFO или подтвердите override.
-            <Button
-              size="small"
-              sx={{ ml: 1, textTransform: 'none', fontWeight: 700 }}
-              onClick={() => setForceApprove((v) => !v)}
-            >
-              {forceApprove ? 'Override выкл' : 'Override APPROVE'}
-            </Button>
+          <Alert
+            severity="warning"
+            sx={{ mb: 2 }}
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                sx={{ textTransform: 'none', fontWeight: 700, whiteSpace: 'nowrap' }}
+                onClick={() => setForceApprove((v) => !v)}
+              >
+                {forceApprove ? 'Отменить' : 'Всё равно одобрить'}
+              </Button>
+            }
+          >
+            Пока нельзя одобрить: {gateReasons.join(', ')}. Закройте замечания или выберите другое
+            решение.
           </Alert>
         )}
 
@@ -243,33 +250,30 @@ export function AnalystCaseDecisionPage() {
 
       <Box sx={tileSx}>
         <Typography sx={{ fontWeight: 700, fontSize: 14, color: '#0B1F35', mb: 1.25 }}>
-          Доступные действия
+          Сводка
         </Typography>
-        <Stack direction="row" flexWrap="wrap" useFlexGap spacing={0.75} sx={{ mb: 2 }}>
-          {allowed.length === 0 ? (
-            <Typography sx={{ fontSize: 13, color: '#8A96A3' }}>—</Typography>
-          ) : (
-            allowed.map((a) => (
-              <Box
-                key={a}
-                sx={{
-                  ...statusPill,
-                  bgcolor: 'rgba(239,49,36,0.08)',
-                  color: '#EF3124',
-                }}
-              >
-                {a}
-              </Box>
-            ))
-          )}
+        <Stack spacing={1.1}>
+          <Typography sx={{ fontSize: 13.5, color: '#5A6B7D' }}>
+            Статус:{' '}
+            <Box component="span" sx={{ fontWeight: 700, color: '#0B1F35' }}>
+              {app.statusLabel}
+            </Box>
+          </Typography>
+          <Typography sx={{ fontSize: 13.5, color: '#5A6B7D' }}>
+            Этап:{' '}
+            <Box component="span" sx={{ fontWeight: 700, color: '#0B1F35' }}>
+              {c.nextStep || '—'}
+            </Box>
+          </Typography>
+          <Typography sx={{ fontSize: 13.5, color: '#5A6B7D' }}>
+            Проверки:{' '}
+            <Box component="span" sx={{ fontWeight: 700, color: '#0B1F35' }}>
+              {cs.passed} ок
+              {cs.warnings ? ` · ${cs.warnings} замечаний` : ''}
+              {cs.failed ? ` · ${cs.failed} ошибок` : ''}
+            </Box>
+          </Typography>
         </Stack>
-        <Typography sx={{ fontSize: 12.5, color: '#8A96A3', lineHeight: 1.45 }}>
-          Статус: {app.statusLabel}
-          <br />
-          Шаг: {app.currentStep || '—'}
-          <br />
-          Checks: {cs.passed}P / {cs.warnings}W / {cs.failed}F
-        </Typography>
       </Box>
     </Box>
   )

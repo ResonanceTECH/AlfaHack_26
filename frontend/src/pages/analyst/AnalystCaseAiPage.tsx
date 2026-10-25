@@ -62,7 +62,7 @@ export function AnalystCaseAiPage() {
 
   const summary =
     card.application.aiSummary ||
-    `Кратко по ${c.number || c.id}: ${c.company}, ${c.product}, ${c.amount.toLocaleString('ru-RU')} ₽ / ${c.termMonths} мес. Проверки: ${card.checksSummary.passed}P / ${card.checksSummary.warnings}W / ${card.checksSummary.failed}F.`
+    `Кратко по ${c.number || c.id}: ${c.company}, ${c.product}, ${c.amount.toLocaleString('ru-RU')} ₽ на ${c.termMonths} мес. Проверки: ${card.checksSummary.passed} ок${card.checksSummary.warnings ? `, замечаний ${card.checksSummary.warnings}` : ''}.`
 
   const [aiMsgs, setAiMsgs] = useState<LocalAiMsg[]>([{ role: 'ai', text: summary }])
 
@@ -341,13 +341,13 @@ function buildLocalAiReply(
 ): string {
   const q = question.toLowerCase()
   if (q.includes('документ')) {
-    return `По ${company}: смотрите open document requests и warning DOCUMENTS_BASELINE. Перед APPROVE закройте комплект или используйте NEED_INFO / REQUEST_DOCS.`
+    return `По ${company}: проверьте вкладку «Документы» и закройте открытые запросы перед одобрением. При нехватке данных запросите документы у клиента.`
   }
   if (q.includes('решен') || q.includes('одобр') || q.includes('отказ')) {
-    return `Доступные DecisionType: APPROVED / REJECTED / COUNTEROFFERED / NEED_INFO через экран «Решение». Сейчас checks ${passed}P / ${warnings}W.`
+    return `Решение оформляется на экране «Решение»: одобрить, отклонить, контрпредложение или запросить информацию. Сейчас проверок пройдено ${passed}${warnings ? `, замечаний ${warnings}` : ''}.`
   }
   if (q.includes('риск') || q.includes('политик')) {
-    return `Риски/explainability пока демо-слой. Для решения опирайтесь на checks + financials + историю статусов.`
+    return `Опирайтесь на результаты проверок, финансы и историю заявки. Итоговое решение фиксируйте на экране «Решение».`
   }
-  return `Учёл вопрос по заявке ${company}. Для клиента используйте вкладку «Клиент» — сообщения уходят в кабинет предпринимателя.`
+  return `Учёл вопрос по заявке ${company}. Чтобы ответить клиенту, переключитесь на вкладку «Клиент».`
 }

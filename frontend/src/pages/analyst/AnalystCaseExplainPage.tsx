@@ -19,7 +19,7 @@ export function AnalystCaseExplainPage() {
         </Typography>
         <Typography sx={{ fontSize: 14, color: '#5A6B7D', lineHeight: 1.55, maxWidth: 720 }}>
           Предварительная рекомендация: <b>одобрить с условием</b> закрытия замечания по справке об
-          оборотах. Ниже — вклад факторов SHAP-прокси (демо).
+          оборотах. Ниже — вклад ключевых факторов в рекомендацию модели.
         </Typography>
       </Box>
 

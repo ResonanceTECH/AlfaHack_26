@@ -1,4 +1,5 @@
 import {
+  Alert,
   Box,
   Button,
   CircularProgress,
@@ -9,9 +10,10 @@ import {
 } from '@mui/material'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { fetchAnalystQueue } from '@/api/analyst'
 import { StatusChip } from '@/components/analyst/AnalystCaseShell'
+import { readLastAnalystCaseId } from '@/features/analyst/lastCase'
 import { queueItemToCase } from '@/features/analyst/map'
 import { outlineBtn, tileSx } from '@/features/analyst/styles'
 import { useAuth } from '@/contexts/AuthContext'
@@ -21,15 +23,22 @@ const ALL = 'all'
 
 export function AnalystQueuePage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { user } = useAuth()
   const [status, setStatus] = useState(ALL)
   const [q, setQ] = useState('')
   const [qDebounced, setQDebounced] = useState('')
+  const missingCase = (location.state as { caseMissing?: string } | null)?.caseMissing
 
   useEffect(() => {
     const t = window.setTimeout(() => setQDebounced(q.trim()), 250)
     return () => window.clearTimeout(t)
   }, [q])
+
+  // one-shot: вычистить legacy ABC-… из last case при заходе в кабинет
+  useEffect(() => {
+    readLastAnalystCaseId()
+  }, [])
 
   const queueQ = useQuery({
     queryKey: ['analyst', 'queue', status, qDebounced],
@@ -68,6 +77,12 @@ export function AnalystQueuePage() {
       <Typography sx={{ fontSize: 14, color: '#7A8795', mb: 2.5 }}>
         Общая очередь банка · {queueQ.data?.total ?? '…'} в списке
       </Typography>
+
+      {missingCase && (
+        <Alert severity="info" sx={{ mb: 2, borderRadius: 2 }} onClose={() => navigate('.', { replace: true, state: {} })}>
+          Заявка «{missingCase}» больше недоступна. Откройте актуальную из списка.
+        </Alert>
+      )}
 
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ mb: 2 }}>
         <TextField

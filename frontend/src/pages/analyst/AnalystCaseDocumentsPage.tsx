@@ -15,7 +15,7 @@ import { useMemo, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { createAnalystDocumentRequest } from '@/api/analyst'
 import type { AnalystCaseOutlet } from '@/components/analyst/AnalystCaseShell'
-import { outlineBtn, primaryBtn, statusPill, tileSx } from '@/features/analyst/styles'
+import { primaryBtn, statusPill, tileSx } from '@/features/analyst/styles'
 import { formatFileSize } from '@/utils/format'
 
 const DOC_TYPES = [
@@ -214,19 +214,14 @@ export function AnalystCaseDocumentsPage() {
           {requestM.isPending ? <CircularProgress size={18} color="inherit" /> : 'Запросить'}
         </Button>
         {!canRequest && (
-          <Typography sx={{ mt: 1.25, fontSize: 12, color: '#C45A12' }}>
-            REQUEST_DOCS недоступен для статуса {card.application.statusLabel}
+          <Typography sx={{ mt: 1.25, fontSize: 12.5, color: '#C45A12' }}>
+            Запрос документов сейчас недоступен для статуса «{card.application.statusLabel}»
           </Typography>
         )}
         {doc && st && (
-          <Stack spacing={0.75} sx={{ mt: 2 }}>
-            <Typography sx={{ fontSize: 12.5, color: '#8A96A3' }}>
-              Выбрано: {doc.name} · {st.label}
-            </Typography>
-            <Button fullWidth variant="outlined" sx={outlineBtn} disabled>
-              Принять / отклонить — нет API
-            </Button>
-          </Stack>
+          <Typography sx={{ mt: 2, fontSize: 12.5, color: '#8A96A3' }}>
+            Выбрано: {doc.name} · {st.label}
+          </Typography>
         )}
       </Box>
     </Box>

@@ -57,8 +57,13 @@ export function AnalystCaseChecksPage() {
   return (
     <Box sx={{ ...tileSx, p: { xs: 2, md: 2.25 } }}>
       <Typography sx={{ fontWeight: 700, fontSize: 16, color: '#0B1F35', mb: 0.35 }}>
-        Автоматические проверки · {summary.passed}P / {summary.warnings}W / {summary.failed}F · всего{' '}
-        {summary.total}
+        Автоматические проверки
+      </Typography>
+      <Typography sx={{ fontSize: 13, color: '#8A96A3', mb: 0.5 }}>
+        {summary.passed} пройдено
+        {summary.warnings ? ` · ${summary.warnings} замечаний` : ''}
+        {summary.failed ? ` · ${summary.failed} ошибок` : ''}
+        {` · всего ${summary.total}`}
       </Typography>
 
       {checksQ.isLoading && (
@@ -80,8 +85,8 @@ export function AnalystCaseChecksPage() {
               <TableRow>
                 <TableCell sx={thSx}>Проверка</TableCell>
                 <TableCell sx={thSx}>Пояснение</TableCell>
-                <TableCell sx={thSx}>Audience</TableCell>
-                <TableCell sx={thSx}>Score</TableCell>
+                <TableCell sx={thSx}>Видимость</TableCell>
+                <TableCell sx={thSx}>Оценка</TableCell>
                 <TableCell sx={thSx}>Статус</TableCell>
                 <TableCell sx={{ ...thSx, textAlign: 'right' }}>Время</TableCell>
               </TableRow>
@@ -93,7 +98,11 @@ export function AnalystCaseChecksPage() {
                   <TableRow key={c.id} hover>
                     <TableCell sx={{ ...tdSx, fontWeight: 650 }}>{c.checkKey}</TableCell>
                     <TableCell sx={tdSx}>{c.explanation || c.reasonCodes.join(', ') || '—'}</TableCell>
-                    <TableCell sx={{ ...tdSx, color: '#7A8795' }}>{c.audience || '—'}</TableCell>
+                    <TableCell sx={{ ...tdSx, color: '#7A8795' }}>
+                      {c.audience === 'INTERNAL' || c.audience === 'ANALYST'
+                        ? 'Внутренняя'
+                        : 'Клиенту'}
+                    </TableCell>
                     <TableCell sx={{ ...tdSx, color: '#5A6B7D' }}>
                       {c.score != null ? c.score : '—'}
                     </TableCell>
@@ -128,7 +137,7 @@ export function AnalystCaseChecksPage() {
         sx={{ mt: 2 }}
       >
         <Typography sx={{ fontSize: 12.5, color: '#8A96A3', lineHeight: 1.45, maxWidth: 560 }}>
-          Данные с `GET /analyst/applications/{'{id}'}/checks`. Internal checks видны аналитику.
+          Внутренние проверки видит только банк; клиенту показываются публичные результаты.
         </Typography>
         <Stack direction="row" spacing={1} flexShrink={0}>
           <Button
