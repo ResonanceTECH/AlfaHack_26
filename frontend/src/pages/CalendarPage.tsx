@@ -260,6 +260,7 @@ const REMINDER_TYPE_OPTIONS: { id: string; label: string }[] = [
   { id: 'rent', label: 'Аренда' },
   { id: 'salary', label: 'ФОТ' },
   { id: 'supplier', label: 'Поставщики' },
+  { id: 'task', label: 'Задачи команды' },
   { id: 'other', label: 'Другое' },
 ]
 
@@ -295,7 +296,13 @@ export function CalendarPage() {
       .filter((o) => o.status !== 'paid')
       .map((o) => {
         const tone: Tone =
-          o.type === 'tax' ? 'orange' : o.type === 'loan' ? 'green' : 'gray'
+          o.type === 'tax'
+            ? 'orange'
+            : o.type === 'loan'
+              ? 'green'
+              : o.type === 'task'
+                ? 'orange'
+                : 'gray'
         return {
           id: o.id,
           title: o.title,

@@ -156,7 +156,7 @@ def default_reminder_settings() -> dict[str, Any]:
         "enabled": True,
         "days_before": [7, 3, 1],
         "channels": ["IN_APP"],
-        "types": ["loan", "tax", "rent", "salary", "supplier", "other"],
+        "types": ["loan", "tax", "rent", "salary", "supplier", "task", "other"],
     }
 
 
