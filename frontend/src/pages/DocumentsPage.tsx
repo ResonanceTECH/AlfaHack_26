@@ -2,19 +2,26 @@ import {
   Box,
   Button,
   CircularProgress,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  IconButton,
   InputAdornment,
   MenuItem,
   Stack,
   TextField,
   Typography,
 } from '@mui/material'
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded'
+import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import axios from 'axios'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import {
   deleteCompanyDocument,
   downloadCompanyDocument,
@@ -23,6 +30,18 @@ import {
   type CompanyDocument,
   type VaultDocStatus,
 } from '@/api/documents'
+import {
+  downloadApplicationDocument,
+  downloadDemoAppDocument,
+  previewApplicationDocumentUrl,
+  demoAppDocumentUrl,
+} from '@/api/applications'
+import {
+  listDocumentReviews,
+  patchDocumentReview,
+  REVIEW_STATUS_LABEL,
+  type DocumentReview,
+} from '@/api/docReviews'
 import { useAuth } from '@/contexts/AuthContext'
 import { useAppStore } from '@/hooks/useAppStore'
 
@@ -58,7 +77,7 @@ function apiError(err: unknown, fallback: string): string {
   return fallback
 }
 
-type TabKey = 'all' | 'need_upload' | 'pending' | 'accepted'
+type TabKey = 'all' | 'need_upload' | 'pending' | 'accepted' | 'mine_review'
 
 const STATUS_META: Record<
   DocStatus,
