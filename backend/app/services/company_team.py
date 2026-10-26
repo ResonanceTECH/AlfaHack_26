@@ -301,16 +301,40 @@ def decline_invite(db: Session, *, code: str, user: User) -> CompanyInvite:
     return invite
 
 
+_ROLE_RANK = {
+    MemberRole.VIEWER: 1,
+    MemberRole.MEMBER: 2,
+    MemberRole.OWNER: 3,
+}
+
+
 def accept_invite(db: Session, *, code: str, user: User) -> CompanyMembership:
     invite = db.scalar(select(CompanyInvite).where(CompanyInvite.code == code))
     if invite is None:
         raise AppError("NOT_FOUND", "Приглашение не найдено", status_code=http_status.HTTP_404_NOT_FOUND)
+
+    email = (user.email or "").strip().lower()
+    if email and invite.email.strip().lower() != email:
+        raise AppError(
+            "INVITE_EMAIL_MISMATCH",
+            "Это приглашение адресовано другому email",
+            status_code=http_status.HTTP_403_FORBIDDEN,
+        )
+
+    existing = get_membership(db, user.id, invite.company_id)
+
+    # Idempotent: already accepted / already a member of this company
+    if invite.status == "ACCEPTED" and existing is not None:
+        return existing
     if invite.status != "PENDING":
+        if existing is not None:
+            return existing
         raise AppError(
             "INVITE_NOT_PENDING",
             f"Приглашение уже {invite.status}",
             status_code=http_status.HTTP_409_CONFLICT,
         )
+
     exp = invite.expires_at
     if exp is not None:
         if exp.tzinfo is None:
@@ -330,12 +354,25 @@ def accept_invite(db: Session, *, code: str, user: User) -> CompanyMembership:
             status_code=http_status.HTTP_409_CONFLICT,
         )
 
-    membership = upsert_member(
-        db,
-        company_id=invite.company_id,
-        user_id=user.id,
-        role=invite.role,
-    )
+    if existing is not None:
+        # Never demote (OWNER → MEMBER) when re-accepting an invite
+        if _ROLE_RANK.get(existing.role, 0) >= _ROLE_RANK.get(invite.role, 0):
+            invite.status = "ACCEPTED"
+            db.flush()
+            return existing
+        membership = upsert_member(
+            db,
+            company_id=invite.company_id,
+            user_id=user.id,
+            role=invite.role,
+        )
+    else:
+        membership = upsert_member(
+            db,
+            company_id=invite.company_id,
+            user_id=user.id,
+            role=invite.role,
+        )
     invite.status = "ACCEPTED"
     db.flush()
     return membership
