@@ -568,15 +568,16 @@ def post_application_comment(
 
 @router.get(
     "/companies/{company_id}/applications/{application_id}/decision",
-    response_model=DecisionOut,
+    response_model=DecisionOut | None,
 )
 def get_application_decision(
     company_id: str, application_id: str, db: DbDep, user: CurrentUser
-) -> DecisionOut:
+) -> DecisionOut | None:
+    """Null when decision not issued yet — avoid noisy 404 in UI polling."""
     app = _company_app(db, company_id, application_id, user)
     raw = serialize_public_decision(db, app)
     if raw is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Решение ещё не сформировано")
+        return None
     return DecisionOut(
         application_id=raw["application_id"],
         decision=raw["decision"],

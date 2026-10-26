@@ -103,8 +103,14 @@ export async function getApplication(
 ): Promise<CreditApplication> {
   const cid = resolveCompanyId(companyId)
   if (cid) {
-    const { data } = await api.get(`/companies/${cid}/applications/${id}`)
-    return mapApplication(data as Record<string, unknown>)
+    try {
+      const { data } = await api.get(`/companies/${cid}/applications/${id}`)
+      return mapApplication(data as Record<string, unknown>)
+    } catch (err: unknown) {
+      // Wrong active company (e.g. company_002 while app is on company_001) → resolve by id
+      const status = (err as { response?: { status?: number } })?.response?.status
+      if (status !== 404) throw err
+    }
   }
   const { data } = await api.get(`/applications/${id}`)
   return mapApplication(data as Record<string, unknown>)
@@ -269,7 +275,9 @@ export async function fetchApplicationDecision(
 ): Promise<PublicDecision | null> {
   try {
     const { data } = await api.get(`/companies/${companyId}/applications/${applicationId}/decision`)
+    if (data == null) return null
     const raw = data as Record<string, unknown>
+    if (!raw.decision && !raw.applicationId && !raw.application_id) return null
     return {
       applicationId: str(raw.applicationId ?? raw.application_id),
       decision: str(raw.decision),
