@@ -434,6 +434,7 @@ def export_company_calendar_ics(
     month: str | None = Query(default=None, description="YYYY-MM"),
     date_from: date | None = Query(default=None, alias="from"),
     date_to: date | None = Query(default=None, alias="to"),
+    obligation_id: str | None = Query(default=None, alias="obligationId"),
 ) -> Response:
     require_company_access(db, user, company_id)
     company = db.get(Company, company_id)
@@ -443,7 +444,7 @@ def export_company_calendar_ics(
     alarm_days = settings["days_before"] if settings.get("enabled") else []
 
     d_from, d_to = date_from, date_to
-    if month and not (d_from or d_to):
+    if month and not (d_from or d_to) and not obligation_id:
         try:
             y_s, m_s = month.split("-", 1)
             y, m = int(y_s), int(m_s)
@@ -457,23 +458,31 @@ def export_company_calendar_ics(
                 status.HTTP_422_UNPROCESSABLE_ENTITY, detail="month должен быть YYYY-MM"
             ) from exc
 
-    rows = list(
-        db.scalars(
-            select(FinancialObligation)
-            .where(FinancialObligation.company_id == company_id)
-            .order_by(FinancialObligation.due_date)
-        ).all()
-    )
+    if obligation_id:
+        ob = db.get(FinancialObligation, obligation_id)
+        if ob is None or ob.company_id != company_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Событие не найдено")
+        rows = [ob]
+        filename = f"event-{obligation_id[:8]}"
+    else:
+        rows = list(
+            db.scalars(
+                select(FinancialObligation)
+                .where(FinancialObligation.company_id == company_id)
+                .order_by(FinancialObligation.due_date)
+            ).all()
+        )
+        filename = f"calendar-{company_id}"
+        if month:
+            filename = f"calendar-{month}"
+
     ics = build_calendar_ics(
         rows,
         calendar_name=f"{company.name} — календарь",
         alarm_days=alarm_days,
-        date_from=d_from,
-        date_to=d_to,
+        date_from=None if obligation_id else d_from,
+        date_to=None if obligation_id else d_to,
     )
-    filename = f"calendar-{company_id}"
-    if month:
-        filename = f"calendar-{month}"
     return Response(
         content=ics.encode("utf-8"),
         media_type="text/calendar; charset=utf-8",

@@ -334,6 +334,8 @@ export function AppLayout() {
     enabled: Boolean(user),
     staleTime: 30_000,
     refetchInterval: 60_000,
+    retry: false, // avoid ERR_CONNECTION_REFUSED spam while docker web/api restart
+    refetchOnWindowFocus: false,
   })
   const unreadNotifs = notifBadgeQ.data?.unreadCount ?? 0
 

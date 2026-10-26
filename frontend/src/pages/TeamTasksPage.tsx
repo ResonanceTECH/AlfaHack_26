@@ -172,13 +172,15 @@ export function TeamTasksPage() {
   })
 
   const createM = useMutation({
-    mutationFn: () =>
-      createCompanyTask(companyId!, {
+    mutationFn: () => {
+      if (!newAssigneeId) throw new Error('Выберите исполнителя из команды')
+      return createCompanyTask(companyId!, {
         title: newTitle.trim(),
-        assigneeUserId: newAssigneeId || undefined,
+        assigneeUserId: newAssigneeId,
         dueDate: newDue || undefined,
         status: 'todo',
-      }),
+      })
+    },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ['tasks', companyId] })
       await qc.invalidateQueries({ queryKey: ['obligations', companyId] })
@@ -203,7 +205,13 @@ export function TeamTasksPage() {
     { key: 'overdue', label: 'Просроченные' },
   ]
 
-  const members = membersQ.data ?? []
+  const members = useMemo(
+    () =>
+      (membersQ.data ?? []).filter(
+        (m) => m.source !== 'invite' && m.status === 'active' && Boolean(m.id),
+      ),
+    [membersQ.data],
+  )
 
   return (
     <Box sx={{ maxWidth: 1180, mx: 'auto', pb: 3 }}>
@@ -560,12 +568,20 @@ export function TeamTasksPage() {
             fullWidth
             value={newAssigneeId}
             onChange={(e) => setNewAssigneeId(e.target.value)}
+            disabled={membersQ.isLoading || members.length === 0}
+            helperText={
+              membersQ.isLoading
+                ? 'Загрузка участников…'
+                : members.length === 0
+                  ? 'Нет участников команды — сначала пригласите и дождитесь принятия'
+                  : 'Только принятые участники компании'
+            }
             sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
           >
-            <MenuItem value="">Не назначен</MenuItem>
             {members.map((m) => (
               <MenuItem key={m.id} value={m.id}>
                 {m.name}
+                {m.email ? ` · ${m.email}` : ''}
               </MenuItem>
             ))}
           </TextField>
@@ -593,7 +609,13 @@ export function TeamTasksPage() {
               fullWidth
               variant="contained"
               color="primary"
-              disabled={!newTitle.trim() || createM.isPending || !companyId}
+              disabled={
+                !newTitle.trim() ||
+                !newAssigneeId ||
+                createM.isPending ||
+                !companyId ||
+                members.length === 0
+              }
               onClick={() => createM.mutate()}
               sx={{
                 borderRadius: 2,

@@ -23,6 +23,7 @@ import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { apiErrorMessage } from '@/api/errors'
 import { useAppStore } from '@/hooks/useAppStore'
 import {
   createObligation,
@@ -79,121 +80,6 @@ type CalEvent = {
   badgeTone?: 'red' | 'amber'
   upcomingOnly?: boolean
 }
-
-const DEMO_EVENTS: CalEvent[] = [
-  {
-    id: 'd_rent',
-    title: 'Аренда',
-    chip: 'Аренда 238 000 ₽',
-    date: '2026-11-05',
-    amount: 238_000,
-    tone: 'gray',
-    icon: 'pay',
-  },
-  {
-    id: 'd_fot',
-    title: 'Аванс ФОТ',
-    chip: 'Аванс ФОТ',
-    date: '2026-11-10',
-    amount: 0,
-    tone: 'gray',
-    icon: 'pay',
-  },
-  {
-    id: 'd_usn',
-    title: 'Аванс по УСН',
-    chip: 'УСН: аванс',
-    date: '2026-11-25',
-    amount: 310_000,
-    tone: 'orange',
-    icon: 'pay',
-    detail: undefined,
-  },
-  {
-    id: 'd_reply',
-    title: 'Ответ на предложение банка',
-    chip: 'Ответ банку',
-    date: '2026-11-27',
-    tone: 'pink',
-    icon: 'warn',
-    detail: 'ABC-2026-1042',
-    badge: '4 дня',
-    badgeTone: 'red',
-  },
-  {
-    id: 'd_pay',
-    title: 'Платёж АВС-2026-0987',
-    chip: 'Платёж 114 000 ₽',
-    date: '2026-11-28',
-    amount: 114_000,
-    tone: 'green',
-    icon: 'pay',
-    detail: '114 000 ₽',
-  },
-  {
-    id: 'd_tax',
-    title: 'Налоги',
-    chip: 'Налоги',
-    date: '2026-11-30',
-    amount: 0,
-    tone: 'gray',
-    icon: 'pay',
-  },
-  {
-    id: 'd_docs',
-    title: 'Загрузить документы',
-    chip: 'Документы',
-    date: '2026-10-25',
-    tone: 'orange',
-    icon: 'docs',
-    detail: 'запрос менеджера',
-    badge: '2 дня',
-    badgeTone: 'amber',
-    upcomingOnly: true,
-  },
-  {
-    id: 'd_reply_oct',
-    title: 'Ответ на предложение банка',
-    chip: 'Ответ банку',
-    date: '2026-10-27',
-    tone: 'pink',
-    icon: 'warn',
-    detail: 'ABC-2026-1042',
-    badge: '4 дня',
-    badgeTone: 'red',
-    upcomingOnly: true,
-  },
-  {
-    id: 'd_pay_oct',
-    title: 'Платёж АВС-2026-0987',
-    chip: 'Платёж 114 000 ₽',
-    date: '2026-10-28',
-    amount: 114_000,
-    tone: 'green',
-    icon: 'pay',
-    detail: '114 000 ₽',
-    upcomingOnly: true,
-  },
-  {
-    id: 'd_new_credit',
-    title: 'Первый платёж по новому кредиту',
-    chip: 'Новый кредит',
-    date: '2026-11-28',
-    amount: 154_000,
-    tone: 'gray',
-    icon: 'clock',
-    detail: '≈ 154 000 ₽ · после подписания',
-    upcomingOnly: true,
-  },
-]
-
-const DEMO_UPCOMING_ORDER = [
-  'd_reply_oct',
-  'd_docs',
-  'd_pay_oct',
-  'd_usn',
-  'd_new_credit',
-]
 
 function chipColors(tone: Tone) {
   switch (tone) {
@@ -265,7 +151,7 @@ const REMINDER_TYPE_OPTIONS: { id: string; label: string }[] = [
 ]
 
 export function CalendarPage() {
-  const { obligations, companyId } = useAppStore()
+  const { obligations, companyId, financials } = useAppStore()
   const qc = useQueryClient()
   const [cursor, setCursor] = useState(() => dayjs().startOf('month'))
   const [selected, setSelected] = useState(() => dayjs().format('YYYY-MM-DD'))
@@ -291,43 +177,51 @@ export function CalendarPage() {
     if (remindQ.data) setRemindDraft(remindQ.data)
   }, [remindQ.data])
 
-  const liveEvents = useMemo((): CalEvent[] => {
+  const calendarEvents = useMemo((): CalEvent[] => {
+    const today = dayjs().startOf('day')
     return obligations
-      .filter((o) => o.status !== 'paid')
+      .filter((o) => {
+        const st = String(o.status ?? '').toLowerCase()
+        return st !== 'paid' && st !== 'cancelled' && st !== 'canceled'
+      })
       .map((o) => {
         const tone: Tone =
-          o.type === 'tax'
+          o.type === 'tax' || o.type === 'task'
             ? 'orange'
             : o.type === 'loan'
               ? 'green'
-              : o.type === 'task'
-                ? 'orange'
-                : 'gray'
+              : 'gray'
+        const due = dayjs(o.dueDate)
+        const daysLeft = due.diff(today, 'day')
+        let badge: string | undefined
+        let badgeTone: 'red' | 'amber' | undefined
+        if (daysLeft < 0) {
+          badge = 'просрочено'
+          badgeTone = 'red'
+        } else if (daysLeft <= 2) {
+          badge = daysLeft === 0 ? 'сегодня' : `${daysLeft} дн.`
+          badgeTone = 'red'
+        } else if (daysLeft <= 7) {
+          badge = `${daysLeft} дн.`
+          badgeTone = 'amber'
+        }
+        const short =
+          o.title.length > 14 ? `${o.title.slice(0, 12)}…` : o.title
         return {
           id: o.id,
           title: o.title,
-          chip:
-            o.amount > 0
-              ? `${o.title.length > 16 ? o.title.slice(0, 14) + '…' : o.title} ${money(o.amount)}`
-              : o.title,
-          date: o.dueDate,
+          chip: o.amount > 0 ? `${short} ${money(o.amount)}` : short,
+          date: o.dueDate.slice(0, 10),
           amount: o.amount,
           tone,
-          icon: 'pay' as const,
-          detail: o.amount ? money(o.amount) : undefined,
+          icon: (o.type === 'task' ? 'docs' : 'pay') as IconKind,
+          detail: o.amount > 0 ? money(o.amount) : o.type === 'task' ? 'задача' : undefined,
+          badge,
+          badgeTone,
         }
       })
+      .sort((a, b) => a.date.localeCompare(b.date))
   }, [obligations])
-
-  const calendarEvents = useMemo(() => {
-    const demoGrid = DEMO_EVENTS.filter((e) => !e.upcomingOnly)
-    const ids = new Set(liveEvents.map((e) => e.date + e.title))
-    const merged = [
-      ...demoGrid,
-      ...liveEvents.filter((e) => !ids.has(e.date + e.title) && !demoGrid.some((d) => d.id === e.id)),
-    ]
-    return merged
-  }, [liveEvents])
 
   const cells = useMemo(() => buildMonthCells(cursor), [cursor])
 
@@ -342,15 +236,60 @@ export function CalendarPage() {
   }, [calendarEvents])
 
   const upcoming = useMemo(() => {
-    const byId = new Map(DEMO_EVENTS.map((e) => [e.id, e]))
-    const demoList = DEMO_UPCOMING_ORDER.map((id) => byId.get(id)!).filter(Boolean)
-    if (liveEvents.length === 0) return demoList
-    const today = dayjs('2026-10-23')
-    const liveUp = liveEvents
+    const today = dayjs().startOf('day')
+    return calendarEvents
       .filter((e) => !dayjs(e.date).isBefore(today, 'day'))
-      .slice(0, 2)
-    return [...demoList.slice(0, 3), ...liveUp].slice(0, 5)
-  }, [liveEvents])
+      .slice(0, 6)
+  }, [calendarEvents])
+
+  const monthEvents = useMemo(
+    () => calendarEvents.filter((e) => dayjs(e.date).isSame(cursor, 'month')),
+    [calendarEvents, cursor],
+  )
+
+  const monthStats = useMemo(() => {
+    const loan = monthEvents
+      .filter((e) => e.tone === 'green' || (e.detail && e.title.toLowerCase().includes('кредит')))
+      .reduce((s, e) => s + (e.amount ?? 0), 0)
+    const tax = monthEvents
+      .filter((e) => e.tone === 'orange' && !e.title.toLowerCase().includes('задач'))
+      .reduce((s, e) => s + (e.amount ?? 0), 0)
+    const other = monthEvents.reduce((s, e) => s + (e.amount ?? 0), 0)
+    const byTypeLoan = monthEvents
+      .filter((e) => {
+        const o = obligations.find((x) => x.id === e.id)
+        return o?.type === 'loan'
+      })
+      .reduce((s, e) => s + (e.amount ?? 0), 0)
+    const byTypeTax = monthEvents
+      .filter((e) => obligations.find((x) => x.id === e.id)?.type === 'tax')
+      .reduce((s, e) => s + (e.amount ?? 0), 0)
+    const total = other
+    return {
+      loan: byTypeLoan || loan,
+      tax: byTypeTax || tax,
+      total,
+    }
+  }, [monthEvents, obligations])
+
+  const revenueShare = useMemo(() => {
+    const rev = financials?.avgMonthlyRevenue ?? 0
+    if (!rev || rev <= 0) return null
+    return Math.min(100, Math.round((monthStats.total / rev) * 100))
+  }, [financials, monthStats.total])
+
+  async function downloadEventIcs(obligationId: string) {
+    if (!companyId) return
+    setIcsBusy(true)
+    setError(null)
+    try {
+      await downloadCompanyCalendarIcs(companyId, { obligationId })
+    } catch (e) {
+      setError(apiErrorMessage(e, 'Не удалось скачать .ics'))
+    } finally {
+      setIcsBusy(false)
+    }
+  }
 
   async function addEvent() {
     if (!title.trim() || !companyId) return
@@ -372,7 +311,7 @@ export function CalendarPage() {
       setCursor(dayjs(dueDate).startOf('month'))
       setSelected(dueDate)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось добавить событие')
+      setError(apiErrorMessage(e, 'Не удалось добавить событие'))
     } finally {
       setSaving(false)
     }
@@ -545,7 +484,9 @@ export function CalendarPage() {
               const key = day.format('YYYY-MM-DD')
               const inMonth = day.isSame(cursor, 'month')
               const isSelected = key === selected
-              const dayEvents = (eventsByDay.get(key) ?? []).slice(0, 2)
+              const allDay = eventsByDay.get(key) ?? []
+              const dayEvents = allDay.slice(0, 2)
+              const more = allDay.length - dayEvents.length
               return (
                 <Box
                   key={key}
@@ -587,8 +528,19 @@ export function CalendarPage() {
                       return (
                         <Box
                           key={ev.id}
-                          title={ev.title}
+                          component="button"
+                          type="button"
+                          title={`${ev.title} — скачать .ics`}
+                          disabled={!companyId || icsBusy}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void downloadEventIcs(ev.id)
+                          }}
                           sx={{
+                            all: 'unset',
+                            boxSizing: 'border-box',
+                            display: 'block',
+                            width: '100%',
                             px: '5px',
                             py: '2px',
                             borderRadius: '4px',
@@ -600,12 +552,19 @@ export function CalendarPage() {
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap',
+                            cursor: 'pointer',
+                            '&:hover': { filter: 'brightness(0.96)' },
                           }}
                         >
                           {ev.chip}
                         </Box>
                       )
                     })}
+                    {more > 0 && (
+                      <Typography sx={{ fontSize: 10, fontWeight: 700, color: '#9AA5B1', pl: '2px' }}>
+                        +{more}
+                      </Typography>
+                    )}
                   </Stack>
                 </Box>
               )
@@ -636,16 +595,29 @@ export function CalendarPage() {
               Ближайшие события
             </Typography>
             <Stack spacing={0}>
+              {upcoming.length === 0 && (
+                <Typography sx={{ color: '#9AA5B1', fontSize: 13.5, py: 1 }}>
+                  Нет предстоящих событий — добавьте платёж или задачу
+                </Typography>
+              )}
               {upcoming.map((e, i) => (
                 <Stack
                   key={e.id}
                   direction="row"
                   spacing={1.25}
                   alignItems="flex-start"
+                  onClick={() => {
+                    if (!companyId) return
+                    void downloadEventIcs(e.id)
+                  }}
                   sx={{
                     py: 1.2,
                     borderBottom: i < upcoming.length - 1 ? '1px solid rgba(11,31,53,0.06)' : 0,
+                    cursor: companyId ? 'pointer' : 'default',
+                    borderRadius: 1,
+                    '&:hover': companyId ? { bgcolor: 'rgba(11,31,53,0.03)' } : undefined,
                   }}
+                  title="Скачать .ics"
                 >
                   <EventIcon kind={e.icon} />
                   <Box sx={{ flex: 1, minWidth: 0, pt: 0.15 }}>
@@ -662,6 +634,7 @@ export function CalendarPage() {
                     <Typography sx={{ fontSize: 12, color: '#9AA5B1', mt: 0.3 }}>
                       {dayjs(e.date).format('DD.MM')}
                       {e.detail ? ` · ${e.detail}` : ''}
+                      {' · .ics'}
                     </Typography>
                   </Box>
                   {e.badge && (
@@ -715,14 +688,16 @@ export function CalendarPage() {
                 mb: 2.25,
               }}
             >
-              <Stat label="По кредитам" value="114 000 ₽" />
-              <Stat label="Новый кредит (с нояб.)" value="≈ 154 000 ₽" />
-              <Stat label="Налоги и взносы" value="≈ 310 000 ₽" />
-              <Stat label="Итого" value="≈ 578 000 ₽" accent />
+              <Stat label="По кредитам" value={money(monthStats.loan)} />
+              <Stat label="Событий в месяце" value={String(monthEvents.length)} />
+              <Stat label="Налоги и взносы" value={money(monthStats.tax)} />
+              <Stat label="Итого" value={money(monthStats.total)} accent />
             </Box>
 
             <Typography sx={{ fontSize: 12.5, color: '#7A8795', mb: 1 }}>
-              Доля от прогноза выручки {monthGen}: 37%
+              {revenueShare != null
+                ? `Доля от прогноза выручки ${monthGen}: ${revenueShare}%`
+                : `Сумма обязательств ${monthGen}`}
             </Typography>
             <Box
               sx={{
@@ -735,7 +710,7 @@ export function CalendarPage() {
             >
               <Box
                 sx={{
-                  width: '37%',
+                  width: `${revenueShare ?? Math.min(100, monthEvents.length * 12)}%`,
                   height: '100%',
                   bgcolor: '#EF3124',
                   borderRadius: 999,

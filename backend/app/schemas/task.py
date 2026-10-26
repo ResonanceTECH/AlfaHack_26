@@ -27,7 +27,7 @@ class CompanyTaskOut(APIModel):
 class CompanyTaskCreate(APIModel):
     title: str = Field(min_length=1, max_length=512)
     description: str | None = None
-    assignee_user_id: str | None = None
+    assignee_user_id: str = Field(min_length=1, description="Только участник компании")
     due_date: date | None = None
     status: str = "todo"
 

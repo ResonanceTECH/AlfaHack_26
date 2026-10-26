@@ -301,16 +301,60 @@ def decline_invite(db: Session, *, code: str, user: User) -> CompanyInvite:
     return invite
 
 
+_ROLE_RANK = {
+    MemberRole.VIEWER: 1,
+    MemberRole.MEMBER: 2,
+    MemberRole.OWNER: 3,
+}
+
+
+def _find_pending_for_email_company(
+    db: Session, *, email: str, company_id: str
+) -> CompanyInvite | None:
+    return db.scalar(
+        select(CompanyInvite)
+        .where(
+            func.lower(CompanyInvite.email) == email,
+            CompanyInvite.company_id == company_id,
+            CompanyInvite.status == "PENDING",
+        )
+        .order_by(CompanyInvite.created_at.desc())
+        .limit(1)
+    )
+
+
 def accept_invite(db: Session, *, code: str, user: User) -> CompanyMembership:
     invite = db.scalar(select(CompanyInvite).where(CompanyInvite.code == code))
     if invite is None:
         raise AppError("NOT_FOUND", "Приглашение не найдено", status_code=http_status.HTTP_404_NOT_FOUND)
+
+    email = (user.email or "").strip().lower()
+    if email and invite.email.strip().lower() != email:
+        raise AppError(
+            "INVITE_EMAIL_MISMATCH",
+            "Это приглашение адресовано другому email",
+            status_code=http_status.HTTP_403_FORBIDDEN,
+        )
+
+    existing = get_membership(db, user.id, invite.company_id)
+
+    # Stale notification codes (ACCEPTED/REVOKED/DECLINED): never 409 if already a member
     if invite.status != "PENDING":
+        if existing is not None:
+            return existing
+        # Prefer a newer pending invite for the same company+email
+        if email:
+            newer = _find_pending_for_email_company(
+                db, email=email, company_id=invite.company_id
+            )
+            if newer is not None and newer.code != invite.code:
+                return accept_invite(db, code=newer.code, user=user)
         raise AppError(
             "INVITE_NOT_PENDING",
-            f"Приглашение уже {invite.status}",
+            "Приглашение уже недействительно. Запросите новое у владельца.",
             status_code=http_status.HTTP_409_CONFLICT,
         )
+
     exp = invite.expires_at
     if exp is not None:
         if exp.tzinfo is None:
@@ -318,6 +362,8 @@ def accept_invite(db: Session, *, code: str, user: User) -> CompanyMembership:
         if exp < utcnow():
             invite.status = "REVOKED"
             db.flush()
+            if existing is not None:
+                return existing
             raise AppError(
                 "INVITE_EXPIRED",
                 "Срок приглашения истёк",
@@ -330,12 +376,25 @@ def accept_invite(db: Session, *, code: str, user: User) -> CompanyMembership:
             status_code=http_status.HTTP_409_CONFLICT,
         )
 
-    membership = upsert_member(
-        db,
-        company_id=invite.company_id,
-        user_id=user.id,
-        role=invite.role,
-    )
+    if existing is not None:
+        # Never demote (OWNER → MEMBER) when re-accepting an invite
+        if _ROLE_RANK.get(existing.role, 0) >= _ROLE_RANK.get(invite.role, 0):
+            invite.status = "ACCEPTED"
+            db.flush()
+            return existing
+        membership = upsert_member(
+            db,
+            company_id=invite.company_id,
+            user_id=user.id,
+            role=invite.role,
+        )
+    else:
+        membership = upsert_member(
+            db,
+            company_id=invite.company_id,
+            user_id=user.id,
+            role=invite.role,
+        )
     invite.status = "ACCEPTED"
     db.flush()
     return membership

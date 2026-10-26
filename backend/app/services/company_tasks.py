@@ -167,6 +167,11 @@ def create_task(
     status = (status or "todo").strip().lower()
     if status not in VALID_STATUSES:
         raise HTTPException(http_status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Некорректный статус")
+    if not assignee_user_id:
+        raise HTTPException(
+            http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Укажите исполнителя из состава команды",
+        )
     _require_member(db, company_id, assignee_user_id)
     company = db.get(Company, company_id)
     company_name = company.name if company else "компанию"

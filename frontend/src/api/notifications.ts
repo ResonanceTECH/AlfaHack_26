@@ -93,15 +93,8 @@ export function notificationHref(
     return taskId ? `/app/team/tasks?task=${encodeURIComponent(taskId)}` : '/app/team/tasks'
   }
   if (t.includes('INVITE') || t.includes('TEAM_INVITE')) {
-    const code = str(p.code ?? p.inviteCode ?? p.invite_code, '')
-    const companyId = str(p.companyId ?? p.company_id, '')
-    const role = str(p.role, 'MEMBER').toLowerCase()
-    if (code) {
-      const qs = new URLSearchParams({ invite: code })
-      if (companyId) qs.set('company', companyId)
-      if (role) qs.set('role', role === 'viewer' ? 'viewer' : 'accountant')
-      return `/select-company?${qs.toString()}`
-    }
+    // Never deep-link stale payload codes → /select-company?invite=… (causes 409 spam).
+    // Accept/decline only via live /invites/mine on Team / Notifications.
     return '/app/team'
   }
   if (appId) {
@@ -119,6 +112,23 @@ export function inviteCodeFromNotification(n: AppNotification): string | undefin
   if (!t.includes('INVITE')) return undefined
   const code = str(n.payload.code ?? n.payload.inviteCode ?? n.payload.invite_code, '')
   return code || undefined
+}
+
+export function inviteMetaFromNotification(n: AppNotification): {
+  code?: string
+  inviteId?: string
+  companyId?: string
+} {
+  const t = n.type.toUpperCase()
+  if (!t.includes('INVITE')) return {}
+  const code = str(n.payload.code ?? n.payload.inviteCode ?? n.payload.invite_code, '')
+  const inviteId = str(n.payload.inviteId ?? n.payload.invite_id, '')
+  const companyId = str(n.payload.companyId ?? n.payload.company_id, '')
+  return {
+    code: code || undefined,
+    inviteId: inviteId || undefined,
+    companyId: companyId || undefined,
+  }
 }
 
 export function notificationCategory(
