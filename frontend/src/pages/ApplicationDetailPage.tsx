@@ -19,6 +19,8 @@ import { EmptyState } from '@/components/common/EmptyState'
 import {
   acceptApplicationOffer,
   declineApplicationOffer,
+  downloadApplicationDocument,
+  downloadDemoAppDocument,
   fetchApplicationComments,
   fetchApplicationDecision,
   fetchApplicationOffers,
@@ -43,6 +45,7 @@ import { useAppStore } from '@/hooks/useAppStore'
 import {
   formatBytesLabel,
   loadAppDocuments,
+  mergeSlotsWithLiveDocs,
   saveAppDocuments,
   type AppDocSlot,
   type AppDocStatus,
@@ -218,6 +221,33 @@ export function ApplicationDetailPage() {
     if (id) setSlots(loadAppDocuments(id))
   }, [id])
 
+  // Bind checklist slots to live application.documents (enables real download)
+  useEffect(() => {
+    if (!id || !app?.documents?.length) return
+    setSlots((prev) => {
+      const base = prev.length ? prev : loadAppDocuments(id)
+      const next = mergeSlotsWithLiveDocs(
+        base,
+        app.documents.map((d) => ({
+          id: d.id,
+          type: d.type,
+          name: d.name,
+          size: d.size,
+          status: d.status,
+        })),
+      )
+      const changed = next.some(
+        (s, i) =>
+          s.documentId !== base[i]?.documentId ||
+          s.fileName !== base[i]?.fileName ||
+          s.status !== base[i]?.status,
+      )
+      if (!changed) return prev
+      saveAppDocuments(id, next)
+      return next
+    })
+  }, [id, app?.documents])
+
   useEffect(() => {
     if (typeof window === 'undefined' || !app) return
     if (window.location.hash !== '#documents') return
@@ -319,15 +349,18 @@ export function ApplicationDetailPage() {
     if (!id || !app) return
     setBusyId(slotId)
     setError(null)
+    let documentId: string | undefined
     try {
       try {
         if (app.companyId) {
-          await uploadCompanyApplicationDocument(app.companyId, app.id, file, {
+          const uploaded = await uploadCompanyApplicationDocument(app.companyId, app.id, file, {
             docType: slots.find((s) => s.id === slotId)?.id || 'OTHER',
           })
+          documentId = uploaded.id
         } else {
           const updated = await uploadApplicationDocument(app.id, file)
           upsertLocalApp(updated)
+          documentId = updated.documents.find((d) => d.name === file.name)?.id
         }
         await qc.invalidateQueries({ queryKey: ['application', id] })
         await qc.invalidateQueries({ queryKey: ['applications'] })
@@ -342,6 +375,7 @@ export function ApplicationDetailPage() {
                 status: 'uploaded' as AppDocStatus,
                 fileName: file.name,
                 fileSizeLabel: formatBytesLabel(file.size),
+                documentId: documentId ?? s.documentId,
               }
             : s,
         ),
@@ -349,6 +383,31 @@ export function ApplicationDetailPage() {
       showFlash(`Загружено: ${file.name}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось загрузить файл')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function downloadSlot(slot: AppDocSlot) {
+    if (!slot.fileName && !slot.documentId) return
+    setBusyId(slot.id)
+    setError(null)
+    try {
+      if (slot.documentId && companyId && id) {
+        await downloadApplicationDocument(
+          companyId,
+          id,
+          slot.documentId,
+          slot.fileName || undefined,
+        )
+      } else if (slot.fileName) {
+        await downloadDemoAppDocument(slot.fileName)
+      } else {
+        throw new Error('Файл недоступен для скачивания')
+      }
+      showFlash(`Скачано: ${slot.fileName || 'документ'}`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось скачать документ')
     } finally {
       setBusyId(null)
     }
@@ -981,7 +1040,7 @@ export function ApplicationDetailPage() {
                   dragging={dragId === slot.id}
                   setDragging={(v) => setDragId(v ? slot.id : null)}
                   onPick={(files) => onPick(slot.id, files)}
-                  onDownload={() => showFlash(`Скачивание: ${slot.fileName}`)}
+                  onDownload={() => void downloadSlot(slot)}
                 />
               ))}
             </Stack>
@@ -1474,9 +1533,10 @@ function DocRow({
             >
               Заменить
             </Button>
-            {hasFile && slot.status !== 'review' && (
+            {hasFile && (
               <Button
                 variant="text"
+                disabled={busy}
                 onClick={onDownload}
                 sx={{ fontWeight: 600, color: '#5A6B7D', textTransform: 'none' }}
               >

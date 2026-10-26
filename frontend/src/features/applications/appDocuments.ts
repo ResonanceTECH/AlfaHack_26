@@ -8,6 +8,22 @@ export type AppDocSlot = {
   status: AppDocStatus
   fileName?: string
   fileSizeLabel?: string
+  /** Live ApplicationDocument.id when synced from API / upload. */
+  documentId?: string
+}
+
+/** Map backend document_type → checklist slot id. */
+const TYPE_TO_SLOT: Record<string, string> = {
+  statement: 'statement',
+  bank_statement: 'statement',
+  bank_statement_6m: 'statement',
+  bank_statement_12m: 'statement',
+  passport: 'passport',
+  equipment: 'equipment',
+  tax: 'tax',
+  usn: 'tax',
+  bki: 'bki',
+  collateral: 'collateral',
 }
 
 const KEY = 'alfa_app_documents'
@@ -119,4 +135,53 @@ export function saveAppDocuments(applicationId: string, slots: AppDocSlot[]) {
 export function formatBytesLabel(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`
   return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`
+}
+
+export type LiveAppDoc = {
+  id: string
+  type: string
+  name: string
+  size: number
+  status: string
+}
+
+/** Merge checklist slots with live `/applications/.../documents` rows. */
+export function mergeSlotsWithLiveDocs(
+  slots: AppDocSlot[],
+  docs: LiveAppDoc[],
+): AppDocSlot[] {
+  const usable = docs.filter((d) => d.status !== 'requested' && d.id)
+  if (!usable.length) return slots
+
+  const bySlot = new Map<string, LiveAppDoc>()
+  for (const d of usable) {
+    const key = TYPE_TO_SLOT[d.type.toLowerCase()] || d.type.toLowerCase()
+    if (!bySlot.has(key)) bySlot.set(key, d)
+  }
+  // filename fallback for seed names
+  for (const d of usable) {
+    for (const slot of slots) {
+      if (slot.fileName && d.name === slot.fileName && !bySlot.has(slot.id)) {
+        bySlot.set(slot.id, d)
+      }
+    }
+  }
+
+  return slots.map((slot) => {
+    const live = bySlot.get(slot.id)
+    if (!live) return slot
+    const status: AppDocStatus =
+      live.status === 'rejected'
+        ? 'needed'
+        : live.status === 'verified'
+          ? 'review'
+          : 'uploaded'
+    return {
+      ...slot,
+      documentId: live.id,
+      fileName: live.name || slot.fileName,
+      fileSizeLabel: live.size > 0 ? formatBytesLabel(live.size) : slot.fileSizeLabel,
+      status,
+    }
+  })
 }

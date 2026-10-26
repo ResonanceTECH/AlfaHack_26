@@ -375,16 +375,91 @@ export async function uploadCompanyApplicationDocument(
   applicationId: string,
   file: File,
   opts?: { docType?: string; documentRequestId?: string },
-): Promise<void> {
+): Promise<ApplicationDocument> {
   const form = new FormData()
   form.append('file', file)
   form.append('doc_type', opts?.docType || 'OTHER')
   if (opts?.documentRequestId) {
     form.append('document_request_id', opts.documentRequestId)
   }
-  await api.post(`/companies/${companyId}/applications/${applicationId}/documents`, form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  })
+  const { data } = await api.post(
+    `/companies/${companyId}/applications/${applicationId}/documents`,
+    form,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  )
+  return mapDoc(data as Record<string, unknown>)
+}
+
+async function fetchApplicationDocumentBlob(
+  companyId: string,
+  applicationId: string,
+  documentId: string,
+): Promise<{ blob: Blob; fileName?: string }> {
+  const { data, headers } = await api.get(
+    `/companies/${companyId}/applications/${applicationId}/documents/${encodeURIComponent(documentId)}/download`,
+    { responseType: 'blob' },
+  )
+  const disp = String(headers['content-disposition'] ?? '')
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disp)
+  return {
+    blob: data as Blob,
+    fileName: match ? decodeURIComponent(match[1]!) : undefined,
+  }
+}
+
+/** Object URL for in-app PDF preview (caller must revoke). */
+export async function previewApplicationDocumentUrl(
+  companyId: string,
+  applicationId: string,
+  documentId: string,
+): Promise<string> {
+  const { blob } = await fetchApplicationDocumentBlob(companyId, applicationId, documentId)
+  return URL.createObjectURL(blob)
+}
+
+/** Download application document via authenticated blob (not a naked <a href>). */
+export async function downloadApplicationDocument(
+  companyId: string,
+  applicationId: string,
+  documentId: string,
+  fileName?: string,
+): Promise<void> {
+  const { blob, fileName: fromHeader } = await fetchApplicationDocumentBlob(
+    companyId,
+    applicationId,
+    documentId,
+  )
+  const url = URL.createObjectURL(blob)
+  const name = fileName || fromHeader || 'document'
+  const a = document.createElement('a')
+  a.href = url
+  a.target = '_blank'
+  a.rel = 'noopener'
+  a.download = name
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
+/** Demo PDFs shipped in /public/demo/app-docs for seeded checklist slots. */
+export function demoAppDocumentUrl(fileName: string): string {
+  return `/demo/app-docs/${encodeURIComponent(fileName)}`
+}
+
+export async function downloadDemoAppDocument(fileName: string): Promise<void> {
+  const path = demoAppDocumentUrl(fileName)
+  const res = await fetch(path)
+  if (!res.ok) throw new Error(`Файл не найден: ${fileName}`)
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = fileName
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
 
 export async function respondDocumentRequest(

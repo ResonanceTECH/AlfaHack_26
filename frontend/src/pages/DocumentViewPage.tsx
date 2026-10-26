@@ -41,10 +41,10 @@ const tileSx = {
 } as const
 
 const APP_ID = 'ABC-2026-1042'
-const AMOUNT = '3 000 000 ₽'
+const AMOUNT = 'NaN'
 const TERM = '24 мес.'
 const RATE = '17,9%'
-const PAYMENT = '154 000 ₽'
+const PAYMENT = 'NaN'
 
 const PAYMENTS = [
   { date: '28.11.2026', amount: '154 000', rest: '2 890 000' },
@@ -197,6 +197,18 @@ export function DocumentViewPage() {
   }, [smsOpen])
 
   function downloadPdf() {
+    if (!isContractRoute) {
+      setFlash('PDF скачивается (демо)')
+      window.setTimeout(() => setFlash(null), 2000)
+      return
+    }
+    const a = document.createElement('a')
+    a.href = '/demo/contract_ABC-775C68EB.pdf'
+    a.download = `contract_${applicationId || 'demo'}.pdf`
+    a.rel = 'noopener'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
     setFlash('PDF скачивается (демо)')
     window.setTimeout(() => setFlash(null), 2000)
   }

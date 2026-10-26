@@ -97,13 +97,20 @@ export function notificationHref(
     // Accept/decline only via live /invites/mine on Team / Notifications.
     return '/app/team'
   }
+  if (
+    t.includes('CREDIT_FIRST') ||
+    t.includes('LOAN_SCHEDULE') ||
+    t.includes('PAYMENT') ||
+    t.includes('OBLIGATION')
+  ) {
+    return '/app/calendar'
+  }
   if (appId) {
     if (t.includes('DOC')) return `/app/applications/${appId}`
     if (t.includes('OFFER') || t.includes('APPROV')) return `/app/applications/${appId}/edit`
     return `/app/applications/${appId}`
   }
   if (t.includes('DOC') || t.includes('STATEMENT')) return '/app/documents'
-  if (t.includes('PAYMENT') || t.includes('OBLIGATION')) return '/app/calendar'
   return '/app/notifications'
 }
 
