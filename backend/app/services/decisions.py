@@ -551,6 +551,16 @@ def accept_offer(
             payload={"application_id": app.id, "offer_id": offer.id},
         )
 
+    # Calendar: full payment schedule + «первый платёж» notification
+    from app.services.loan_calendar import seed_loan_schedule_obligations
+
+    seed_loan_schedule_obligations(
+        db,
+        app=app,
+        offer=offer,
+        notify_user_ids=[user.id],
+    )
+
     db.flush()
     return {
         "application_id": app.id,

@@ -377,6 +377,12 @@ def list_obligations(
     company_id: str | None = Query(default=None, alias="companyId"),
 ) -> list[ObligationOut]:
     cid = resolve_company_id(db, user, company_id)
+    # Lazy backfill: accepted offers → calendar loan payments
+    from app.services.loan_calendar import sync_company_accepted_loan_schedules
+
+    created = sync_company_accepted_loan_schedules(db, company_id=cid)
+    if created:
+        db.commit()
     rows = list(
         db.scalars(
             select(FinancialObligation)

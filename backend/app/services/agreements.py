@@ -29,12 +29,15 @@ def _accepted_offer(db: Session, app: CreditApplication) -> CreditOffer | None:
 
 
 def ensure_agreement(db: Session, app: CreditApplication) -> Agreement:
+    from app.services.loan_calendar import ensure_loan_schedule_for_app
+
     existing = db.scalar(
         select(Agreement)
         .options(joinedload(Agreement.confirmation))
         .where(Agreement.application_id == app.id)
     )
     if existing is not None:
+        ensure_loan_schedule_for_app(db, app)
         return existing
 
     if app.status not in (
@@ -71,6 +74,7 @@ def ensure_agreement(db: Session, app: CreditApplication) -> Agreement:
     )
     db.add(agreement)
     db.flush()
+    ensure_loan_schedule_for_app(db, app)
     return agreement
 
 
