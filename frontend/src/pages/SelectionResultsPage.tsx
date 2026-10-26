@@ -58,10 +58,11 @@ const tileSx = {
   p: { xs: 2, md: 2.25 },
 } as const
 
-const TYPE_FILTERS: { key: ProductType | 'leasing'; label: string }[] = [
+const TYPE_FILTERS: { key: ProductType | 'leasing' | 'credit_line'; label: string }[] = [
   { key: 'working_capital', label: 'Оборотный кредит' },
   { key: 'overdraft', label: 'Овердрафт' },
   { key: 'investment', label: 'Инвестиционный' },
+  { key: 'credit_line', label: 'Кредитная линия' },
   { key: 'leasing', label: 'Лизинг' },
 ]
 
@@ -71,11 +72,12 @@ export function SelectionResultsPage() {
   const [draft, setDraft] = useState<SelectionDraft>(() => loadSelectionDraft(companyId))
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<'payment' | 'rate' | 'score'>('payment')
-  const [rateMax, setRateMax] = useState(21)
+  const [rateMax, setRateMax] = useState(30)
   const [types, setTypes] = useState<Record<string, boolean>>({
     working_capital: true,
     overdraft: true,
     investment: true,
+    credit_line: true,
     leasing: false,
   })
   const [collateral, setCollateral] = useState({
@@ -226,8 +228,14 @@ export function SelectionResultsPage() {
   function resetFilters() {
     setFilterAmount(draft.amount)
     setFilterTerm(draft.termMonths)
-    setRateMax(21)
-    setTypes({ working_capital: true, overdraft: true, investment: true, leasing: false })
+    setRateMax(30)
+    setTypes({
+      working_capital: true,
+      overdraft: true,
+      investment: true,
+      credit_line: true,
+      leasing: false,
+    })
     setCollateral({ none: true, guarantee: true, property: false })
     setSpeed('1')
     setSearch('')
