@@ -81,34 +81,75 @@ def rank_products(
         if not getattr(p, "is_active", True):
             continue
 
-        legal_forms = p.legal_forms or []
-        suitable = p.suitable_goals or []
-        legal_ok = company.legal_form.value in legal_forms or company.legal_form in legal_forms
-        age_ok = age >= p.min_business_age_months
-        amount_ok = Decimal(str(p.amount_min)) <= amount <= Decimal(str(p.amount_max))
-        term_ok = p.term_min <= term_months <= p.term_max
+        legal_forms = list(p.legal_forms or [])
+        suitable = list(p.suitable_goals or [])
+        legal_val = (
+            company.legal_form.value
+            if hasattr(company.legal_form, "value")
+            else str(company.legal_form)
+        )
+        legal_ok = legal_val in legal_forms or company.legal_form in legal_forms
+        age_ok = age >= int(p.min_business_age_months or 0)
+        p_min = Decimal(str(p.amount_min))
+        p_max = Decimal(str(p.amount_max))
+        amount_ok = p_min <= amount <= p_max
+        term_ok = int(p.term_min) <= term_months <= int(p.term_max)
 
-        if not (legal_ok and age_ok and amount_ok and term_ok):
-            continue
-
+        # Soft ranking: never drop products from the catalog in demo —
+        # clamp amount/term into product band and mark mismatches as warnings.
         reasons: list[str] = []
         warnings: list[str] = ["Условия требуют подтверждения банком"]
-        score = 0.4
+        score = 0.42
+        eligible = True
+
+        if not legal_ok:
+            eligible = False
+            score -= 0.2
+            warnings.append(f"Юрформа {legal_val} не в типовом списке продукта")
+        if not age_ok:
+            eligible = False
+            score -= 0.12
+            warnings.append(
+                f"Возраст бизнеса ниже ориентира продукта ({p.min_business_age_months} мес.)"
+            )
+
+        rec_amount = amount
+        if amount < p_min:
+            eligible = False
+            score -= 0.08
+            rec_amount = p_min
+            warnings.append(f"Сумма ниже минимума продукта — ориентир от {p_min:,.0f} ₽")
+        elif amount > p_max:
+            eligible = False
+            score -= 0.08
+            rec_amount = p_max
+            warnings.append(f"Сумма выше лимита — ориентир до {p_max:,.0f} ₽")
+
+        rec_term = term_months
+        if term_months < int(p.term_min):
+            eligible = False
+            score -= 0.05
+            rec_term = int(p.term_min)
+            warnings.append(f"Срок короче минимума — ориентир от {p.term_min} мес.")
+        elif term_months > int(p.term_max):
+            eligible = False
+            score -= 0.05
+            rec_term = int(p.term_max)
+            warnings.append(f"Срок длиннее максимума — ориентир до {p.term_max} мес.")
+        else:
+            score += 0.1
+            reasons.append("Срок соответствует условиям продукта")
 
         goal_ok = goal_val in suitable
         if goal_ok:
             score += 0.25
             reasons.append(f"Подходит для цели «{GOAL_LABELS.get(goal_val, goal_val)}»")
         else:
-            score -= 0.1
+            score -= 0.08
             warnings.append("Цель финансирования не типична для продукта")
 
-        if term_ok:
-            score += 0.1
-            reasons.append("Срок соответствует бизнес-цели")
-
         rate = (Decimal(str(p.rate_min)) + Decimal(str(p.rate_max))) / 2
-        payment = annuity_payment(amount, rate, min(term_months, p.term_max))
+        payment = annuity_payment(rec_amount, rate, rec_term)
         free_cash = (
             Decimal(str(financials.avg_monthly_revenue))
             - Decimal(str(financials.operating_expenses))
@@ -121,7 +162,7 @@ def rank_products(
             score += 0.08
             warnings.append("Нагрузка близка к пределу свободного денежного потока")
         else:
-            score -= 0.15
+            score -= 0.12
             warnings.append("Расчётный платёж превышает свободный денежный поток")
 
         if not p.collateral_required:
@@ -130,7 +171,10 @@ def rank_products(
         else:
             warnings.append("Потребуется залог — условия уточняются банком")
 
-        score = max(0.05, min(0.98, score))
+        if amount_ok and term_ok and legal_ok and age_ok:
+            score += 0.05
+
+        score = max(0.08, min(0.98, score))
         product_type = p.type.value if hasattr(p.type, "value") else p.type
 
         recommendations.append(
@@ -139,11 +183,11 @@ def rank_products(
                 "product_type": product_type,
                 "product_name": p.name,
                 "match_score": float(round2(Decimal(str(score)))),
-                "eligible_by_basic_rules": True,
+                "eligible_by_basic_rules": eligible and amount_ok and term_ok and legal_ok and age_ok,
                 "estimated_monthly_payment": round2(payment),
                 "estimated_rate": round2(rate),
-                "recommended_amount": amount,
-                "recommended_term": min(max(term_months, p.term_min), p.term_max),
+                "recommended_amount": rec_amount,
+                "recommended_term": rec_term,
                 "reasons": reasons,
                 "warnings": warnings,
             }

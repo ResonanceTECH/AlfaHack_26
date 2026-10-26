@@ -162,6 +162,73 @@ PRODUCTS = [
         "fees": [{"name": "Плата за лимит", "type": "fixed", "value": 5000}],
         "schedule_types": ["annuity"],
     },
+    {
+        "id": "express_01",
+        "name": "Экспресс-кредит «Быстрые деньги»",
+        "type": ProductType.WORKING_CAPITAL,
+        "description": "Быстрое пополнение оборотки на малые суммы — демо для любых целей.",
+        "amount_min": Decimal("100000"),
+        "amount_max": Decimal("3000000"),
+        "term_min": 1,
+        "term_max": 24,
+        "rate_min": Decimal("16.9"),
+        "rate_max": Decimal("22.5"),
+        "collateral_required": False,
+        "legal_forms": ["IP", "OOO"],
+        "min_business_age_months": 3,
+        "suitable_goals": [
+            "inventory_purchase",
+            "cash_gap",
+            "equipment",
+            "new_point",
+            "production_expansion",
+            "other",
+        ],
+        "documents": ["Паспорт", "Выписка по р/с 3 мес."],
+        "fees": [{"name": "Комиссия за выдачу", "type": "percent", "value": 0.8}],
+        "schedule_types": ["annuity"],
+        "eligibility_rules": {"scoring_product": "working_capital"},
+    },
+    {
+        "id": "equipment_01",
+        "name": "Кредит на оборудование «Станки»",
+        "type": ProductType.INVESTMENT,
+        "description": "Целевой кредит под покупку станков, линий и техники.",
+        "amount_min": Decimal("300000"),
+        "amount_max": Decimal("25000000"),
+        "term_min": 6,
+        "term_max": 60,
+        "rate_min": Decimal("15.9"),
+        "rate_max": Decimal("20.5"),
+        "collateral_required": True,
+        "legal_forms": ["IP", "OOO"],
+        "min_business_age_months": 6,
+        "suitable_goals": ["equipment", "production_expansion", "other"],
+        "documents": ["Паспорт", "КП / договор поставки", "Выписка 6 мес."],
+        "fees": [{"name": "Комиссия за выдачу", "type": "percent", "value": 0.7}],
+        "schedule_types": ["annuity", "differentiated"],
+        "eligibility_rules": {"scoring_product": "investment"},
+    },
+    {
+        "id": "point_01",
+        "name": "Кредит на открытие точки",
+        "type": ProductType.INVESTMENT,
+        "description": "Финансирование аренды, ремонта и запуска новой точки продаж.",
+        "amount_min": Decimal("500000"),
+        "amount_max": Decimal("15000000"),
+        "term_min": 6,
+        "term_max": 48,
+        "rate_min": Decimal("16.2"),
+        "rate_max": Decimal("21.5"),
+        "collateral_required": False,
+        "legal_forms": ["IP", "OOO"],
+        "min_business_age_months": 6,
+        "suitable_goals": ["new_point", "production_expansion", "other"],
+        "documents": ["Паспорт", "Договор аренды / намерения", "Бизнес-план"],
+        "fees": [{"name": "Комиссия за выдачу", "type": "percent", "value": 0.6}],
+        "schedule_types": ["annuity"],
+        "eligibility_rules": {"scoring_product": "investment"},
+    },
 ]
 
 SCENARIOS = [
@@ -342,36 +409,62 @@ def _seed_rbac(db) -> None:
             db.add(RolePermission(role=role, permission=perm))
 
 
-def _seed_catalog(db, now: datetime) -> None:
+def _upsert_demo_products(db) -> None:
+    """Insert or refresh demo credit products only (idempotent)."""
     for p in PRODUCTS:
         row = dict(p)
         row["code"] = p["id"]
         row["status"] = ProductStatus.PUBLISHED
         row["is_active"] = True
-        db.add(CreditProduct(**row))
-        db.add(
-            CreditProductRule(
-                product_id=p["id"],
-                rule_type="eligibility",
-                parameters={
-                    "min_age_months": p["min_business_age_months"],
-                    "legal_forms": p["legal_forms"],
-                    "goals": p["suitable_goals"],
-                },
-                version="demo-rules-v1",
+        row.setdefault("currency", "RUB")
+        row.setdefault("eligibility_rules", {})
+        row.setdefault("features", [])
+        existing = db.get(CreditProduct, p["id"])
+        if existing is None:
+            db.add(CreditProduct(**row))
+            db.add(
+                CreditProductRule(
+                    product_id=p["id"],
+                    rule_type="eligibility",
+                    parameters={
+                        "min_age_months": p["min_business_age_months"],
+                        "legal_forms": p["legal_forms"],
+                        "goals": p["suitable_goals"],
+                    },
+                    version="demo-rules-v1",
+                )
             )
-        )
-        db.add(
-            CreditProductVersion(
-                id=f"cpv_{p['id']}",
-                product_id=p["id"],
-                version=1,
-                snapshot={k: str(v) if isinstance(v, Decimal) else v for k, v in p.items() if k != "type"}
-                | {"type": p["type"].value, "status": ProductStatus.PUBLISHED.value},
-                changelog="initial publish",
-                created_by=USER_ADMIN,
+            db.add(
+                CreditProductVersion(
+                    id=f"cpv_{p['id']}",
+                    product_id=p["id"],
+                    version=1,
+                    snapshot={
+                        k: str(v) if isinstance(v, Decimal) else v
+                        for k, v in p.items()
+                        if k != "type"
+                    }
+                    | {"type": p["type"].value, "status": ProductStatus.PUBLISHED.value},
+                    changelog="initial publish",
+                    created_by=USER_ADMIN,
+                )
             )
-        )
+            continue
+
+        for key, val in row.items():
+            if key == "id":
+                continue
+            setattr(existing, key, val)
+        existing.is_active = True
+        existing.status = ProductStatus.PUBLISHED
+
+
+def _seed_catalog(db, now: datetime) -> None:
+    """Full catalog seed: products + policy + ML registry (fresh DB)."""
+    _upsert_demo_products(db)
+
+    if db.get(CreditPolicy, "policy_default") is not None:
+        return
 
     policy = CreditPolicy(
         id="policy_default",
@@ -1210,10 +1303,10 @@ def seed(*, force: bool = False) -> None:
     try:
         existing = db.get(User, USER_ENT_01)
         if existing and not force:
-            from scripts.seed_scoring import seed_scoring
-            seed_scoring(db)
+            # Always refresh products so new demo credits appear without wipe
+            _upsert_demo_products(db)
             db.commit()
-            print(f"Seed уже применён (seed_version={SEED_VERSION}) — пропуск")
+            print(f"Seed уже применён (seed_version={SEED_VERSION}) — продукты обновлены")
             print("  force: python -m scripts.seed --force  или POST /admin/demo/reset")
             return
 
