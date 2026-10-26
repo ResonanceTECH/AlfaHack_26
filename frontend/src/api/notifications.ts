@@ -88,6 +88,10 @@ export function notificationHref(
     return '/app/analyst'
   }
 
+  if (t.includes('TEAM_TASK') || (t.includes('TASK') && !t.includes('OBLIGATION'))) {
+    const taskId = str(p.taskId ?? p.task_id, '')
+    return taskId ? `/app/team/tasks?task=${encodeURIComponent(taskId)}` : '/app/team/tasks'
+  }
   if (t.includes('INVITE') || t.includes('TEAM_INVITE')) {
     const code = str(p.code ?? p.inviteCode ?? p.invite_code, '')
     const companyId = str(p.companyId ?? p.company_id, '')
