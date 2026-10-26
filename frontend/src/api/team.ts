@@ -214,35 +214,53 @@ export async function removeMember(companyId: string, userId: string): Promise<v
   await api.delete(`/companies/${companyId}/members/${encodeURIComponent(userId)}`)
 }
 
+function parseAcceptResult(
+  data: unknown,
+  fallbackCompanyId?: string,
+): AcceptInviteResult {
+  const raw = (data ?? {}) as Record<string, unknown>
+  const companyId = raw.companyId ?? raw.company_id
+  return {
+    companyId:
+      companyId != null && companyId !== ''
+        ? str(companyId)
+        : fallbackCompanyId,
+  }
+}
+
+/**
+ * Accept invite by code. Prefers a live PENDING code from `/invites/mine`
+ * so stale notification payload codes never hit the network as 409 spam.
+ */
 export async function acceptInvite(code: string): Promise<AcceptInviteResult> {
+  const trimmed = code.trim()
+  if (!trimmed) throw new Error('Пустой код приглашения')
+
+  const mine = await listMyInvites().catch(() => [] as CompanyInvite[])
+  const exact = mine.find((i) => i.code === trimmed)
+  // Prefer exact pending match; never POST a code that is absent from mine
+  // when another pending invite exists (stale notification deep-links).
+  const codeToPost = exact?.code ?? (mine.length === 1 ? mine[0]?.code : undefined) ?? trimmed
+
   try {
-    const { data } = await api.post(`/invites/${encodeURIComponent(code)}/accept`)
-    const raw = (data ?? {}) as Record<string, unknown>
-    // Backend returns CompanyMemberOut: { userId, companyId, role, ... }
-    const companyId = raw.companyId ?? raw.company_id
-    return {
-      companyId: companyId != null && companyId !== '' ? str(companyId) : undefined,
-    }
+    const { data } = await api.post(`/invites/${encodeURIComponent(codeToPost)}/accept`)
+    return parseAcceptResult(data, exact?.companyId ?? mine[0]?.companyId)
   } catch (err) {
-    // Stale notification codes: resolve via inbox or treat already-member as OK
     const status = axios.isAxiosError(err) ? err.response?.status : undefined
     const errBody = axios.isAxiosError(err)
       ? (err.response?.data as { error?: { code?: string } } | undefined)
       : undefined
     const codeName = errBody?.error?.code
     if (status === 409 || codeName === 'INVITE_NOT_PENDING' || codeName === 'INVITE_EXPIRED') {
-      const mine = await listMyInvites().catch(() => [] as CompanyInvite[])
-      const live = mine.find((i) => i.code && i.code !== code) ?? mine[0]
-      if (live?.code) {
+      const refreshed = await listMyInvites().catch(() => [] as CompanyInvite[])
+      const live =
+        refreshed.find((i) => i.code && i.code !== codeToPost) ?? refreshed[0]
+      if (live?.code && live.code !== codeToPost) {
         const { data } = await api.post(`/invites/${encodeURIComponent(live.code)}/accept`)
-        const raw = (data ?? {}) as Record<string, unknown>
-        const companyId = raw.companyId ?? raw.company_id
-        return {
-          companyId: companyId != null && companyId !== '' ? str(companyId) : live.companyId,
-        }
+        return parseAcceptResult(data, live.companyId)
       }
-      // No pending left — likely already accepted earlier
-      return { companyId: mine[0]?.companyId }
+      // Already accepted / revoked and no pending left — soft OK (no throw → no retry loops)
+      return { companyId: live?.companyId ?? exact?.companyId }
     }
     throw err
   }
