@@ -2,31 +2,51 @@
 
 from __future__ import annotations
 
+_CLI_MARKERS = (
+    "curl/",
+    "wget/",
+    "python-requests",
+    "python-urllib",
+    "httpx/",
+    "postman",
+    "insomnia",
+    "httpie/",
+    "go-http-client",
+    "java/",
+)
+
+
+def is_cli_user_agent(ua: str | None) -> bool:
+    """Smoke/API clients — hide from «Активные сеансы»."""
+    if not ua:
+        return False
+    low = str(ua).strip().lower()
+    if not low:
+        return False
+    if low.startswith("curl/") or low.startswith("wget/"):
+        return True
+    return any(m in low for m in _CLI_MARKERS)
+
 
 def format_device_label(ua: str | None) -> str:
-    """Map raw User-Agent → short RU label for «Активные сеансы»."""
+    """Map raw User-Agent → short RU label, e.g. «Chrome на Mac»."""
     if not ua or not str(ua).strip():
         return "Неизвестное устройство"
 
     s = str(ua).strip()
     low = s.lower()
 
-    # CLI / automation — common from smoke curls against /auth/login
-    if low.startswith("curl/") or "/curl" in low[:24]:
-        ver = s.split("/", 1)[-1].split()[0] if "/" in s else ""
-        return f"API-клиент (curl{f' {ver}' if ver else ''})"
-    if "wget/" in low:
-        return "API-клиент (wget)"
-    if "python-requests" in low or low.startswith("python-urllib"):
-        return "API-клиент (Python)"
-    if "httpx/" in low:
-        return "API-клиент (httpx)"
-    if "postman" in low:
-        return "Postman"
-    if "insomnia" in low:
-        return "Insomnia"
+    if is_cli_user_agent(s):
+        if "curl/" in low:
+            return "Служебный вход (API)"
+        if "postman" in low:
+            return "Postman"
+        if "insomnia" in low:
+            return "Insomnia"
+        return "Служебный вход (API)"
+
     if "okhttp" in low:
-        return "Android-приложение"
+        return "Приложение · Android"
 
     os_name: str | None = None
     if "iphone" in low:
@@ -36,7 +56,7 @@ def format_device_label(ua: str | None) -> str:
     elif "android" in low:
         os_name = "Android"
     elif "mac os x" in low or "macintosh" in low:
-        os_name = "macOS"
+        os_name = "Mac"
     elif "windows nt" in low or "windows" in low:
         os_name = "Windows"
     elif "cros" in low:
@@ -50,7 +70,7 @@ def format_device_label(ua: str | None) -> str:
     elif "opr/" in low or "opera" in low:
         browser = "Opera"
     elif "yabrowser" in low or "yowser" in low:
-        browser = "Яндекс.Браузер"
+        browser = "Яндекс"
     elif "firefox/" in low or "fxios/" in low:
         browser = "Firefox"
     elif "crios/" in low or "chrome/" in low:
@@ -61,7 +81,7 @@ def format_device_label(ua: str | None) -> str:
         browser = "Samsung Internet"
 
     if browser and os_name:
-        return f"{browser} · {os_name}"
+        return f"{browser} на {os_name}"
     if browser:
         return browser
     if os_name:

@@ -77,9 +77,15 @@ def post_assign_document_reviews(
         company_id=company_id,
     )
     db.commit()
-    for r in created:
-        db.refresh(r)
-    return [DocumentReviewOut(**serialize_review(r)) for r in created]
+    ids = [r.id for r in created]
+    refreshed = [
+        row
+        for row in list_reviews(db, company_id=company_id, application_id=body.application_id)
+        if row["id"] in ids
+    ]
+    # preserve create order
+    by_id = {row["id"]: row for row in refreshed}
+    return [DocumentReviewOut(**by_id[i]) for i in ids if i in by_id]
 
 
 @router.patch(
