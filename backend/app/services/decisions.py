@@ -561,6 +561,11 @@ def accept_offer(
         notify_user_ids=[user.id],
     )
 
+    # Accountant / teammate re-checks bank decision report
+    from app.services.doc_reviews import ensure_decision_report_review
+
+    ensure_decision_report_review(db, app=app, actor=user)
+
     db.flush()
     return {
         "application_id": app.id,

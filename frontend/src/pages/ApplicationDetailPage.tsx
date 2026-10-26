@@ -1393,14 +1393,14 @@ export function ApplicationDetailPage() {
             sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
           >
             {(membersQ.data ?? [])
-              .filter((m) => m.status === 'active' && m.userId !== user?.id)
+              .filter((m) => m.status === 'active' && m.id !== user?.id)
               .map((m) => (
-                <MenuItem key={m.userId || m.id} value={m.userId || m.id}>
+                <MenuItem key={m.id} value={m.id}>
                   {m.name} · {ROLE_LABEL[m.role] || m.role}
                 </MenuItem>
               ))}
           </TextField>
-          {(membersQ.data ?? []).filter((m) => m.status === 'active' && m.userId !== user?.id)
+          {(membersQ.data ?? []).filter((m) => m.status === 'active' && m.id !== user?.id)
             .length === 0 && (
             <Typography sx={{ mt: 1.5, fontSize: 13, color: '#C45A12' }}>
               В команде пока нет других участников. Пригласите бухгалтера на странице «Команда».

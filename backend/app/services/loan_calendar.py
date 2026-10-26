@@ -116,13 +116,14 @@ def seed_loan_schedule_obligations(
         start_date=start,
     )
     product = (app.product_name or "Кредит").strip()
+    product_label = product if product.startswith("«") else f"«{product}»"
     created: list[FinancialObligation] = []
 
     for row in schedule["rows"]:
         due: date = row["date"]
         pay = _money(row["payment"])
         month_i = int(row["month"])
-        title = f"Платёж по кредиту «{product}» · {month_i}/{term}"
+        title = f"Платёж по кредиту {product_label} · {month_i}/{term}"
         ob = FinancialObligation(
             company_id=app.company_id,
             type="loan",
@@ -156,7 +157,7 @@ def seed_loan_schedule_obligations(
     assert first_due is not None
     body = (
         f"Кредит одобрен и принят. Первый платёж — {_format_ru_date(first_due)} "
-        f"на сумму {_format_rub(_money(first.amount))} по продукту «{product}». "
+        f"на сумму {_format_rub(_money(first.amount))} по продукту {product_label}. "
         f"График из {term} платежей добавлен в календарь."
     )
 
