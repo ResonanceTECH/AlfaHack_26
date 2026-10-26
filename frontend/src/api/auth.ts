@@ -151,38 +151,58 @@ export type UserSession = {
   revoked: boolean
 }
 
+/** True for curl/httpx/postman smoke sessions — hide in profile UI. */
+export function isCliSessionLabel(label: string | null | undefined): boolean {
+  if (!label) return false
+  const low = label.toLowerCase()
+  return (
+    low.includes('curl') ||
+    low.includes('httpx') ||
+    low.includes('wget') ||
+    low.includes('python') ||
+    low.startsWith('api-клиент') ||
+    low.startsWith('служебный вход') ||
+    low.includes('postman') ||
+    low.includes('insomnia')
+  )
+}
+
 /** Fallback UA → label if API still returns raw User-Agent. */
 export function formatDeviceLabel(ua: string | null | undefined): string {
   if (!ua || !ua.trim()) return 'Неизвестное устройство'
   const s = ua.trim()
   const low = s.toLowerCase()
 
-  if (low.startsWith('curl/') || low.includes('curl/')) {
-    const ver = s.includes('/') ? s.split('/')[1]?.split(/\s/)[0] : ''
-    return `API-клиент (curl${ver ? ` ${ver}` : ''})`
-  }
-  if (low.includes('wget/')) return 'API-клиент (wget)'
-  if (low.includes('python-requests') || low.startsWith('python-urllib')) return 'API-клиент (Python)'
-  if (low.includes('httpx/')) return 'API-клиент (httpx)'
-  if (low.includes('postman')) return 'Postman'
-  if (low.includes('insomnia')) return 'Insomnia'
-
-  // Already formatted by API
+  // Already formatted by API («Chrome на Mac»)
   if (
+    s.includes(' на ') ||
     s.includes(' · ') ||
+    s.startsWith('Служебный') ||
     s.startsWith('API-клиент') ||
     s === 'Postman' ||
     s === 'Insomnia' ||
-    s === 'Неизвестное устройство'
+    s === 'Неизвестное устройство' ||
+    s.startsWith('Приложение')
   ) {
     return s
   }
+
+  if (
+    low.startsWith('curl/') ||
+    low.includes('wget/') ||
+    low.includes('httpx/') ||
+    low.includes('python-requests')
+  ) {
+    return 'Служебный вход (API)'
+  }
+  if (low.includes('postman')) return 'Postman'
+  if (low.includes('insomnia')) return 'Insomnia'
 
   let osName: string | undefined
   if (low.includes('iphone')) osName = 'iPhone'
   else if (low.includes('ipad')) osName = 'iPad'
   else if (low.includes('android')) osName = 'Android'
-  else if (low.includes('mac os x') || low.includes('macintosh')) osName = 'macOS'
+  else if (low.includes('mac os x') || low.includes('macintosh')) osName = 'Mac'
   else if (low.includes('windows')) osName = 'Windows'
   else if (low.includes('cros')) osName = 'ChromeOS'
   else if (low.includes('linux') || low.includes('x11')) osName = 'Linux'
@@ -190,7 +210,7 @@ export function formatDeviceLabel(ua: string | null | undefined): string {
   let browser: string | undefined
   if (low.includes('edg/') || low.includes('edgios/') || low.includes('edge/')) browser = 'Edge'
   else if (low.includes('opr/') || low.includes('opera')) browser = 'Opera'
-  else if (low.includes('yabrowser')) browser = 'Яндекс.Браузер'
+  else if (low.includes('yabrowser')) browser = 'Яндекс'
   else if (low.includes('firefox/') || low.includes('fxios/')) browser = 'Firefox'
   else if (low.includes('crios/') || low.includes('chrome/')) browser = 'Chrome'
   else if (
@@ -202,7 +222,7 @@ export function formatDeviceLabel(ua: string | null | undefined): string {
     browser = 'Safari'
   }
 
-  if (browser && osName) return `${browser} · ${osName}`
+  if (browser && osName) return `${browser} на ${osName}`
   if (browser) return browser
   if (osName) return osName
   return s.length > 56 ? `${s.slice(0, 56)}…` : s
@@ -238,7 +258,9 @@ function asSessionList(data: unknown): Record<string, unknown>[] {
 
 export async function listSessions(): Promise<UserSession[]> {
   const { data } = await api.get('/auth/sessions')
-  return asSessionList(data).map(mapUserSession)
+  return asSessionList(data)
+    .map(mapUserSession)
+    .filter((s) => s.current || !isCliSessionLabel(s.deviceInfo))
 }
 
 export async function revokeSession(id: string): Promise<void> {

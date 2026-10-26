@@ -533,3 +533,99 @@ export async function postApplicationComment(
     createdAt: str(raw.createdAt ?? raw.created_at),
   }
 }
+
+export type AppAgreement = {
+  id: string
+  applicationId: string
+  companyId: string
+  number?: string
+  status: string
+  amount: number
+  termMonths: number
+  rate: number
+  confirmed: boolean
+  confirmedAt?: string
+  sentAt?: string
+  helperApproved: boolean
+  helperReviews: {
+    id: string
+    assigneeUserId: string
+    assigneeName?: string
+    status: string
+    comment?: string
+  }[]
+  disclaimer: string
+}
+
+function mapAppAgreement(raw: Record<string, unknown>): AppAgreement {
+  const helpers = ((raw.helperReviews ?? raw.helper_reviews ?? []) as Record<string, unknown>[]).map(
+    (h) => ({
+      id: str(h.id),
+      assigneeUserId: str(h.assigneeUserId ?? h.assignee_user_id),
+      assigneeName:
+        h.assigneeName != null || h.assignee_name != null
+          ? str(h.assigneeName ?? h.assignee_name)
+          : undefined,
+      status: str(h.status),
+      comment: h.comment != null ? str(h.comment) : undefined,
+    }),
+  )
+  return {
+    id: str(raw.id),
+    applicationId: str(raw.applicationId ?? raw.application_id),
+    companyId: str(raw.companyId ?? raw.company_id),
+    number: raw.number != null ? str(raw.number) : undefined,
+    status: str(raw.status),
+    amount: num(raw.amount),
+    termMonths: num(raw.termMonths ?? raw.term_months),
+    rate: num(raw.rate),
+    confirmed: Boolean(raw.confirmed),
+    confirmedAt:
+      raw.confirmedAt != null || raw.confirmed_at != null
+        ? str(raw.confirmedAt ?? raw.confirmed_at)
+        : undefined,
+    sentAt: raw.sentAt != null || raw.sent_at != null ? str(raw.sentAt ?? raw.sent_at) : undefined,
+    helperApproved: Boolean(raw.helperApproved ?? raw.helper_approved),
+    helperReviews: helpers,
+    disclaimer: str(raw.disclaimer, 'Демонстрационный договор'),
+  }
+}
+
+export async function fetchApplicationAgreement(
+  companyId: string,
+  applicationId: string,
+): Promise<AppAgreement> {
+  const { data } = await api.get(`/companies/${companyId}/applications/${applicationId}/agreement`)
+  return mapAppAgreement(data as Record<string, unknown>)
+}
+
+export async function fetchApplicationAgreementPdfBlob(
+  companyId: string,
+  applicationId: string,
+): Promise<Blob> {
+  const { data } = await api.get(
+    `/companies/${companyId}/applications/${applicationId}/agreement/download`,
+    { responseType: 'blob' },
+  )
+  return data as Blob
+}
+
+export async function confirmApplicationAgreement(
+  companyId: string,
+  applicationId: string,
+  body?: { acknowledged?: boolean; note?: string },
+): Promise<{ agreementId: string; status: string; confirmedAt: string }> {
+  const { data } = await api.post(
+    `/companies/${companyId}/applications/${applicationId}/agreement/confirm`,
+    {
+      acknowledged: body?.acknowledged ?? true,
+      note: body?.note,
+    },
+  )
+  const raw = data as Record<string, unknown>
+  return {
+    agreementId: str(raw.agreementId ?? raw.agreement_id),
+    status: str(raw.status),
+    confirmedAt: str(raw.confirmedAt ?? raw.confirmed_at),
+  }
+}

@@ -8,6 +8,7 @@ export type DocReviewKind =
   | 'company_document'
   | 'decision_report'
   | 'pack'
+  | 'agreement'
 
 export type DocumentReview = {
   id: string
@@ -157,5 +158,5 @@ export const REVIEW_STATUS_LABEL: Record<string, string> = {
   pending: 'Ожидает проверки',
   viewed: 'Просмотрен',
   approved: 'Согласован',
-  rejected: 'Отклонён',
+  rejected: 'На доработку',
 }

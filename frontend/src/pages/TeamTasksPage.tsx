@@ -11,11 +11,12 @@ import {
 } from '@mui/material'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
-import { useMemo, useState } from 'react'
-import { Link as RouterLink } from 'react-router-dom'
+import { useMemo, useRef, useState } from 'react'
+import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import dayjs from 'dayjs'
+import { listDocumentReviews } from '@/api/docReviews'
 import { listMembers } from '@/api/team'
 import {
   createCompanyTask,
@@ -33,6 +34,7 @@ type DueTone = 'danger' | 'warn' | 'neutral' | 'success'
 type UiTask = {
   id: string
   title: string
+  description?: string
   assignee: string
   initials: string
   dueLabel: string
@@ -99,6 +101,7 @@ function mapUiTask(t: CompanyTask, myUserId?: string): UiTask {
   return {
     id: t.id,
     title: t.title,
+    description: t.description,
     assignee: t.assigneeName || t.assigneeEmail || 'Не назначен',
     initials: initialsOf(t.assigneeName || t.assigneeEmail),
     dueLabel,
@@ -108,6 +111,11 @@ function mapUiTask(t: CompanyTask, myUserId?: string): UiTask {
     column: statusToColumn(t.status),
     dueDate: t.dueDate,
   }
+}
+
+function isDocsTask(task: UiTask): boolean {
+  const blob = `${task.title} ${task.description || ''}`.toLowerCase()
+  return /документ|заявк|договор|согласован|провер|отчёт|отчет/.test(blob)
 }
 
 function apiError(err: unknown, fallback: string): string {
@@ -124,6 +132,7 @@ function apiError(err: unknown, fallback: string): string {
 
 export function TeamTasksPage() {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const { companyId: storeCompanyId } = useAppStore()
   const companyId = storeCompanyId || user?.companyId
   const qc = useQueryClient()
@@ -135,6 +144,7 @@ export function TeamTasksPage() {
   const [newAssigneeId, setNewAssigneeId] = useState('')
   const [newDue, setNewDue] = useState(() => dayjs().add(3, 'day').format('YYYY-MM-DD'))
   const [error, setError] = useState<string | null>(null)
+  const dragMoved = useRef(false)
 
   const tasksQ = useQuery({
     queryKey: ['tasks', companyId],
@@ -146,6 +156,24 @@ export function TeamTasksPage() {
     queryFn: () => listMembers(companyId!),
     enabled: Boolean(companyId),
   })
+  const reviewsQ = useQuery({
+    queryKey: ['doc-reviews', companyId],
+    queryFn: () => listDocumentReviews(companyId!),
+    enabled: Boolean(companyId),
+  })
+
+  function openTaskDocuments(task: UiTask) {
+    if (dragMoved.current) return
+    const reviews = (reviewsQ.data ?? []).filter((r) => r.taskId === task.id)
+    const agreement = reviews.find((r) => r.kind === 'agreement')
+    if (agreement?.applicationId) {
+      navigate(`/app/applications/${agreement.applicationId}/contract`)
+      return
+    }
+    if (isDocsTask(task) || reviews.length > 0) {
+      navigate('/app/documents?tab=review')
+    }
+  }
 
   const tasks = useMemo(
     () => (tasksQ.data ?? []).map((t) => mapUiTask(t, user?.id)),
@@ -400,7 +428,17 @@ export function TeamTasksPage() {
                     <Box
                       key={task.id}
                       draggable
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openTaskDocuments(task)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          openTaskDocuments(task)
+                        }
+                      }}
                       onDragStart={(e) => {
+                        dragMoved.current = true
                         setDragId(task.id)
                         e.dataTransfer.setData('text/task-id', task.id)
                         e.dataTransfer.effectAllowed = 'move'
@@ -408,6 +446,9 @@ export function TeamTasksPage() {
                       onDragEnd={() => {
                         setDragId(null)
                         setOverCol(null)
+                        window.setTimeout(() => {
+                          dragMoved.current = false
+                        }, 0)
                       }}
                       sx={{
                         bgcolor: '#fff',
@@ -415,7 +456,7 @@ export function TeamTasksPage() {
                         p: 1.5,
                         border: '1px solid rgba(11,31,53,0.06)',
                         boxShadow: '0 1px 6px rgba(11,31,53,0.04)',
-                        cursor: 'grab',
+                        cursor: isDocsTask(task) ? 'pointer' : 'grab',
                         opacity: dragId === task.id ? 0.55 : 1,
                         '&:active': { cursor: 'grabbing' },
                         '&:hover': { borderColor: 'rgba(11,31,53,0.14)' },

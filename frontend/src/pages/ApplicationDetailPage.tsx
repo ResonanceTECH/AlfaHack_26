@@ -47,7 +47,11 @@ import {
   type AiAgentResponse,
 } from '@/api/ai'
 import { AiAgentReply } from '@/components/ai/AiAgentReply'
-import { assignDocumentReviews } from '@/api/docReviews'
+import {
+  assignDocumentReviews,
+  listDocumentReviews,
+  REVIEW_STATUS_LABEL,
+} from '@/api/docReviews'
 import { listMembers } from '@/api/team'
 import { useAuth } from '@/contexts/AuthContext'
 import { useAppStore } from '@/hooks/useAppStore'
@@ -225,6 +229,15 @@ export function ApplicationDetailPage() {
     enabled: Boolean(companyId && !editable),
     staleTime: 60_000,
   })
+  const appReviewsQ = useQuery({
+    queryKey: ['doc-reviews', companyId, id],
+    queryFn: () => listDocumentReviews(companyId!, { applicationId: id! }),
+    enabled: Boolean(companyId && id && !editable),
+    staleTime: 15_000,
+  })
+  const reviewFeedback = (appReviewsQ.data ?? []).filter(
+    (r) => r.status === 'approved' || r.status === 'rejected' || Boolean(r.comment),
+  )
 
   const [slots, setSlots] = useState<AppDocSlot[]>(() => (id ? loadAppDocuments(id) : []))
   const [flash, setFlash] = useState<string | null>(null)
@@ -480,8 +493,10 @@ export function ApplicationDetailPage() {
         items,
       })
       setAssignOpen(false)
-      showFlash('Проверка назначена · задача в «Задачах команды»')
-      await qc.invalidateQueries({ queryKey: ['team', 'tasks'] })
+      showFlash('Назначено · уведомление, календарь и задача на доске')
+      await qc.invalidateQueries({ queryKey: ['tasks', companyId] })
+      await qc.invalidateQueries({ queryKey: ['obligations', companyId] })
+      await qc.invalidateQueries({ queryKey: ['doc-reviews', companyId] })
       await qc.invalidateQueries({ queryKey: ['document-reviews'] })
       await qc.invalidateQueries({ queryKey: ['notifications'] })
     } catch (e) {
@@ -1143,6 +1158,91 @@ export function ApplicationDetailPage() {
                 />
               ))}
             </Stack>
+
+            {reviewFeedback.length > 0 && (
+              <Box
+                sx={{
+                  mt: 2,
+                  pt: 1.75,
+                  borderTop: '1px solid rgba(11,31,53,0.08)',
+                }}
+              >
+                <Typography sx={{ fontWeight: 800, fontSize: 14, color: '#0B1F35', mb: 0.5 }}>
+                  Обратная связь по проверке
+                </Typography>
+                <Typography sx={{ fontSize: 12.5, color: '#8A96A3', mb: 1.25, lineHeight: 1.4 }}>
+                  Комментарии коллеги. Можно заменить файл («Заменить» у слота) или принять как есть.
+                </Typography>
+                <Stack spacing={1}>
+                  {reviewFeedback.map((r) => {
+                    const rework = r.status === 'rejected'
+                    const slot = slots.find(
+                      (s) => s.id === r.slotKey || s.documentId === r.documentId,
+                    )
+                    return (
+                      <Box
+                        key={r.id}
+                        sx={{
+                          p: 1.35,
+                          borderRadius: 2,
+                          border: rework
+                            ? '1px solid rgba(196,90,18,0.35)'
+                            : '1px solid rgba(27,138,90,0.25)',
+                          bgcolor: rework ? '#FFF6EB' : '#E6F5EE',
+                        }}
+                      >
+                        <Stack
+                          direction={{ xs: 'column', sm: 'row' }}
+                          spacing={1}
+                          justifyContent="space-between"
+                          alignItems={{ xs: 'stretch', sm: 'center' }}
+                        >
+                          <Box sx={{ minWidth: 0 }}>
+                            <Typography sx={{ fontWeight: 750, fontSize: 13.5, color: '#0B1F35' }}>
+                              {r.title}
+                            </Typography>
+                            <Typography sx={{ fontSize: 12.5, color: '#5A6B7D', mt: 0.3 }}>
+                              {r.assigneeName || 'Коллега'} ·{' '}
+                              {REVIEW_STATUS_LABEL[r.status] || r.status}
+                              {r.comment ? ` · «${r.comment}»` : ''}
+                            </Typography>
+                          </Box>
+                          {rework && slot && (
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => {
+                                const input = document.createElement('input')
+                                input.type = 'file'
+                                input.accept = ACCEPT
+                                input.onchange = () => {
+                                  const file = input.files?.[0]
+                                  if (file) void attachFile(slot.id, file)
+                                }
+                                input.click()
+                              }}
+                              sx={{ textTransform: 'none', fontWeight: 700, whiteSpace: 'nowrap' }}
+                            >
+                              Заменить файл
+                            </Button>
+                          )}
+                          {r.kind === 'agreement' && id && (
+                            <Button
+                              component={RouterLink}
+                              to={`/app/applications/${id}/contract`}
+                              size="small"
+                              sx={{ textTransform: 'none', fontWeight: 700 }}
+                            >
+                              К договору
+                            </Button>
+                          )}
+                        </Stack>
+                      </Box>
+                    )
+                  })}
+                </Stack>
+              </Box>
+            )}
           </Box>
 
           <Box sx={tileSx}>
@@ -1328,7 +1428,9 @@ export function ApplicationDetailPage() {
                   Принять предложение банка
                 </Button>
               )}
-              {app.status === 'issued' && (
+              {(app.status === 'issued' ||
+                app.status === 'agreement_preparation' ||
+                app.status === 'offer_accepted') && (
                 <Button
                   component={RouterLink}
                   to={`/app/applications/${app.id}/contract`}
@@ -1381,8 +1483,9 @@ export function ApplicationDetailPage() {
         </DialogTitle>
         <DialogContent>
           <Typography sx={{ fontSize: 13.5, color: '#5A6B7D', mb: 2, lineHeight: 1.45 }}>
-            Сотрудник получит задачу и увидит файлы в разделе «Документы → На проверке». После
-            решения банка ему же уйдёт отчёт на перепроверку.
+            Сотрудник сразу получит уведомление, дедлайн появится в календаре, карточка — на доске
+            «Команда → Задачи», файлы — в «Документы → На проверке». После решения банка ему же
+            уйдёт отчёт на перепроверку.
           </Typography>
           <TextField
             select

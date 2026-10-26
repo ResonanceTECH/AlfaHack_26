@@ -331,6 +331,64 @@ export async function proposeAnalystDecision(applicationId: string, body: Analys
   return data as Record<string, unknown>
 }
 
+export type AnalystAgreement = {
+  id: string
+  applicationId: string
+  companyId: string
+  number?: string
+  status: string
+  amount: number
+  termMonths: number
+  rate: number
+  confirmed: boolean
+  confirmedAt?: string
+  documentReady: boolean
+  sentAt?: string
+  helperApproved: boolean
+  disclaimer: string
+}
+
+function mapAgreement(raw: Record<string, unknown>): AnalystAgreement {
+  return {
+    id: str(raw.id),
+    applicationId: str(raw.applicationId ?? raw.application_id),
+    companyId: str(raw.companyId ?? raw.company_id),
+    number: raw.number != null ? str(raw.number) : undefined,
+    status: str(raw.status),
+    amount: num(raw.amount),
+    termMonths: num(raw.termMonths ?? raw.term_months),
+    rate: num(raw.rate),
+    confirmed: Boolean(raw.confirmed),
+    confirmedAt:
+      raw.confirmedAt != null || raw.confirmed_at != null
+        ? str(raw.confirmedAt ?? raw.confirmed_at)
+        : undefined,
+    documentReady: Boolean(raw.documentReady ?? raw.document_ready ?? true),
+    sentAt:
+      raw.sentAt != null || raw.sent_at != null ? str(raw.sentAt ?? raw.sent_at) : undefined,
+    helperApproved: Boolean(raw.helperApproved ?? raw.helper_approved),
+    disclaimer: str(raw.disclaimer, 'Демонстрационный договор'),
+  }
+}
+
+export async function fetchAnalystAgreement(applicationId: string): Promise<AnalystAgreement> {
+  const { data } = await api.get(`/analyst/applications/${applicationId}/agreement`)
+  return mapAgreement(data as Record<string, unknown>)
+}
+
+export async function sendAnalystAgreement(applicationId: string): Promise<AnalystAgreement> {
+  const { data } = await api.post(`/analyst/applications/${applicationId}/agreement/send`)
+  return mapAgreement(data as Record<string, unknown>)
+}
+
+/** Auth'd PDF blob URL for iframe / download (caller must revokeObjectURL). */
+export async function fetchAnalystAgreementPdfBlob(applicationId: string): Promise<Blob> {
+  const { data } = await api.get(`/analyst/applications/${applicationId}/agreement/download`, {
+    responseType: 'blob',
+  })
+  return data as Blob
+}
+
 export async function assignAnalystApplication(applicationId: string): Promise<AnalystApplicationCard> {
   await api.post(`/analyst/applications/${applicationId}/assign`)
   return fetchAnalystCard(applicationId)

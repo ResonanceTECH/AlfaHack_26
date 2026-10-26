@@ -81,13 +81,29 @@ export function notificationHref(
   const t = n.type.toUpperCase()
 
   if (role === 'analyst') {
-    if (appId) return `/app/analyst/cases/${appId}`
+    if (t.includes('AGREEMENT')) {
+      return appId ? `/app/analyst/cases/${appId}/decision` : '/app/analyst'
+    }
+    if (t.includes('APP_DOC') || t.includes('DOC_UPLOAD')) {
+      return appId ? `/app/analyst/cases/${appId}/checks` : '/app/analyst'
+    }
+    if (appId) {
+      if (t.includes('DOC')) return `/app/analyst/cases/${appId}/documents`
+      return `/app/analyst/cases/${appId}`
+    }
     if (t.includes('QUEUE') || t.includes('ASSIGN')) return '/app/analyst'
     if (t.includes('DOC')) return '/app/analyst/mine'
     if (t.includes('SLA')) return '/app/analyst/attention'
     return '/app/analyst'
   }
 
+  if (t.includes('DOC_REVIEW_RESULT')) {
+    const app = str(p.applicationId ?? p.application_id, '')
+    return app ? `/app/applications/${app}` : '/app/documents'
+  }
+  if (t.includes('DOC_REVIEW')) {
+    return '/app/documents?tab=review'
+  }
   if (t.includes('TEAM_TASK') || (t.includes('TASK') && !t.includes('OBLIGATION'))) {
     const taskId = str(p.taskId ?? p.task_id, '')
     return taskId ? `/app/team/tasks?task=${encodeURIComponent(taskId)}` : '/app/team/tasks'
@@ -106,11 +122,12 @@ export function notificationHref(
     return '/app/calendar'
   }
   if (appId) {
+    if (t.includes('AGREEMENT')) return `/app/applications/${appId}/contract`
     if (t.includes('DOC')) return `/app/applications/${appId}`
     if (t.includes('OFFER') || t.includes('APPROV')) return `/app/applications/${appId}/edit`
     return `/app/applications/${appId}`
   }
-  if (t.includes('DOC_REVIEW') || t.includes('DOC') || t.includes('STATEMENT')) {
+  if (t.includes('DOC') || t.includes('STATEMENT')) {
     return '/app/documents?tab=review'
   }
   return '/app/notifications'
@@ -151,7 +168,8 @@ export function notificationCategory(
     if (t.includes('QUEUE') || t.includes('ASSIGN')) return 'queue'
     return 'system'
   }
-  if (t.includes('DOC') || t.includes('STATEMENT')) return 'documents'
+  if (t.includes('DOC_REVIEW') || t.includes('DOC') || t.includes('STATEMENT')) return 'documents'
+  if (t.includes('TEAM_TASK') || t.includes('TASK')) return 'applications'
   if (
     t.includes('PAYMENT') ||
     t.includes('OBLIGATION') ||
