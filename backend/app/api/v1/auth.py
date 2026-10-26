@@ -29,6 +29,7 @@ from app.schemas.auth import (
 from app.schemas.common import MessageOut
 from app.services import auth_flow
 from app.services.audit import write_audit
+from app.services.device_label import format_device_label
 from app.services.email import get_email_provider
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -53,6 +54,7 @@ def _user_out(user: User) -> UserOut:
 
 
 def _device_info(request: Request) -> str:
+    """Persist raw User-Agent; list_sessions formats a friendly label."""
     return (request.headers.get("User-Agent") or "")[:400]
 
 
@@ -373,7 +375,7 @@ def list_sessions(request: Request, db: DbDep, user: CurrentUser) -> list[Sessio
     return [
         SessionOut(
             id=s.id,
-            device_info=s.device_info,
+            device_info=format_device_label(s.device_info),
             created_at=s.created_at,
             expires_at=s.expires_at,
             current=s.id == current_id,
