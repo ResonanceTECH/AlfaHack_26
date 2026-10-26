@@ -198,41 +198,45 @@ export function ApplicationDetailPage() {
   const [explanationLoading, setExplanationLoading] = useState(false)
   const [explanationError, setExplanationError] = useState<string | null>(null)
 
+  // Prefer company from loaded app — store may hold company_002 while app is on company_001
+  const resolvedCompanyId = app?.companyId || companyId
+  const nestedReady = Boolean(id && resolvedCompanyId && !editable && (appQ.data || localApp))
+
   const decisionQ = useQuery({
-    queryKey: ['application', id, 'decision'],
-    queryFn: () => fetchApplicationDecision(companyId!, id!),
-    enabled: Boolean(id && companyId && !editable),
+    queryKey: ['application', id, 'decision', resolvedCompanyId],
+    queryFn: () => fetchApplicationDecision(resolvedCompanyId!, id!),
+    enabled: nestedReady,
     retry: false,
   })
   const offersQ = useQuery({
-    queryKey: ['application', id, 'offers'],
-    queryFn: () => fetchApplicationOffers(companyId!, id!),
-    enabled: Boolean(id && companyId && !editable),
+    queryKey: ['application', id, 'offers', resolvedCompanyId],
+    queryFn: () => fetchApplicationOffers(resolvedCompanyId!, id!),
+    enabled: nestedReady,
     retry: false,
   })
   const docReqsQ = useQuery({
-    queryKey: ['application', id, 'document-requests'],
-    queryFn: () => fetchDocumentRequests(companyId!, id!),
-    enabled: Boolean(id && companyId && !editable),
+    queryKey: ['application', id, 'document-requests', resolvedCompanyId],
+    queryFn: () => fetchDocumentRequests(resolvedCompanyId!, id!),
+    enabled: nestedReady,
     retry: false,
   })
   const commentsQ = useQuery({
-    queryKey: ['application', id, 'comments'],
-    queryFn: () => fetchApplicationComments(companyId!, id!),
-    enabled: Boolean(id && companyId && !editable),
+    queryKey: ['application', id, 'comments', resolvedCompanyId],
+    queryFn: () => fetchApplicationComments(resolvedCompanyId!, id!),
+    enabled: nestedReady,
     retry: false,
     refetchInterval: 15_000,
   })
   const membersQ = useQuery({
-    queryKey: ['team', 'members', companyId],
-    queryFn: () => listMembers(companyId!),
-    enabled: Boolean(companyId && !editable),
+    queryKey: ['team', 'members', resolvedCompanyId],
+    queryFn: () => listMembers(resolvedCompanyId!),
+    enabled: Boolean(resolvedCompanyId && !editable),
     staleTime: 60_000,
   })
   const appReviewsQ = useQuery({
-    queryKey: ['doc-reviews', companyId, id],
-    queryFn: () => listDocumentReviews(companyId!, { applicationId: id! }),
-    enabled: Boolean(companyId && id && !editable),
+    queryKey: ['doc-reviews', resolvedCompanyId, id],
+    queryFn: () => listDocumentReviews(resolvedCompanyId!, { applicationId: id! }),
+    enabled: Boolean(resolvedCompanyId && id && !editable),
     staleTime: 15_000,
   })
   const reviewFeedback = (appReviewsQ.data ?? []).filter(
@@ -299,7 +303,7 @@ export function ApplicationDetailPage() {
   // hooks must stay above early returns (React #310)
   const acceptM = useMutation({
     mutationFn: (offer: CreditOffer) =>
-      acceptApplicationOffer(companyId!, id!, offer.id, offer.offerVersion),
+      acceptApplicationOffer(resolvedCompanyId!, id!, offer.id, offer.offerVersion),
     onSuccess: async () => {
       showFlash('Предложение банка принято')
       await qc.invalidateQueries({ queryKey: ['application', id] })
@@ -317,7 +321,7 @@ export function ApplicationDetailPage() {
 
   const declineM = useMutation({
     mutationFn: (offer: CreditOffer) =>
-      declineApplicationOffer(companyId!, id!, offer.id, 'Отклонено клиентом'),
+      declineApplicationOffer(resolvedCompanyId!, id!, offer.id, 'Отклонено клиентом'),
     onSuccess: async () => {
       showFlash('Предложение отклонено')
       await qc.invalidateQueries({ queryKey: ['application', id, 'offers'] })
@@ -327,7 +331,7 @@ export function ApplicationDetailPage() {
   })
 
   const chatM = useMutation({
-    mutationFn: () => postApplicationComment(companyId!, id!, chatText.trim()),
+    mutationFn: () => postApplicationComment(resolvedCompanyId!, id!, chatText.trim()),
     onSuccess: async () => {
       setChatText('')
       showFlash('Сообщение отправлено банку')
