@@ -121,6 +121,23 @@ export function inviteCodeFromNotification(n: AppNotification): string | undefin
   return code || undefined
 }
 
+export function inviteMetaFromNotification(n: AppNotification): {
+  code?: string
+  inviteId?: string
+  companyId?: string
+} {
+  const t = n.type.toUpperCase()
+  if (!t.includes('INVITE')) return {}
+  const code = str(n.payload.code ?? n.payload.inviteCode ?? n.payload.invite_code, '')
+  const inviteId = str(n.payload.inviteId ?? n.payload.invite_id, '')
+  const companyId = str(n.payload.companyId ?? n.payload.company_id, '')
+  return {
+    code: code || undefined,
+    inviteId: inviteId || undefined,
+    companyId: companyId || undefined,
+  }
+}
+
 export function notificationCategory(
   n: AppNotification,
   analyst: boolean,
