@@ -346,17 +346,22 @@ export async function dispatchCalendarReminders(companyId: string): Promise<void
 /** Download RFC5545 .ics from backend (with VALARM from reminder settings). */
 export async function downloadCompanyCalendarIcs(
   companyId: string,
-  opts?: { month?: string },
+  opts?: { month?: string; obligationId?: string },
 ): Promise<void> {
+  const params: Record<string, string> = {}
+  if (opts?.obligationId) params.obligationId = opts.obligationId
+  else if (opts?.month) params.month = opts.month
   const { data } = await api.get(`/companies/${companyId}/calendar.ics`, {
-    params: opts?.month ? { month: opts.month } : undefined,
+    params,
     responseType: 'blob',
   })
   const blob = data instanceof Blob ? data : new Blob([data], { type: 'text/calendar' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `calendar-${opts?.month ?? companyId}.ics`
+  a.download = opts?.obligationId
+    ? `event-${opts.obligationId.slice(0, 8)}.ics`
+    : `calendar-${opts?.month ?? companyId}.ics`
   a.click()
   URL.revokeObjectURL(url)
 }
