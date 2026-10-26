@@ -1,7 +1,6 @@
 services:
   db:
     image: postgres:16.6-alpine
-    restart: unless-stopped
     environment:
       POSTGRES_USER: alfa
       POSTGRES_PASSWORD: alfa
@@ -18,7 +17,6 @@ services:
 
   redis:
     image: redis:7.4-alpine
-    restart: unless-stopped
     ports:
       - "6379:6379"
     healthcheck:
@@ -31,7 +29,6 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
@@ -39,11 +36,11 @@ services:
       DATABASE_URL: postgresql+psycopg://alfa:alfa@db:5432/alfa_credit
       REDIS_URL: redis://redis:6379/0
       JWT_SECRET_KEY: docker-demo-secret-change-me
-      LLM_ENABLED: ${LLM_ENABLED:-false}
-      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:8081/v1}
+      LLM_ENABLED: ${LLM_ENABLED:-true}
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://llm:8080/v1}
       LLM_MAIN: ${LLM_MAIN:-Qwen3-4B-Instruct-2507}
       LLM_LIGHT: ${LLM_LIGHT:-Qwen3-4B-Instruct-2507}
-      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-20}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-120}
       LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-900}
       LLM_API_KEY: ${LLM_API_KEY:-}
       FRONTEND_URL: http://localhost:8080
@@ -55,6 +52,8 @@ services:
       db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      llm:
         condition: service_healthy
     command: >
       sh -c "alembic upgrade head &&
@@ -69,13 +68,99 @@ services:
 
   web:
     build: ./frontend
-    restart: unless-stopped
     ports:
       - "8080:80"
     depends_on:
       api:
         condition: service_healthy
 
+  model-download:
+    image: python:3.12.8-slim
+    environment:
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - llm_models:/models
+    command:
+      - python
+      - -u
+      - -c
+      - |
+        import hashlib
+        import time
+        from pathlib import Path
+        from urllib.request import urlopen
+
+        target = Path('/models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf')
+        expected = '3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597'
+        url = 'https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/18727206c51467496bfba014368bd0a30e97f411/Qwen3-4B-Instruct-2507-Q4_K_M.gguf'
+
+        def digest(path):
+            value = hashlib.sha256()
+            with path.open('rb') as stream:
+                for chunk in iter(lambda: stream.read(4 * 1024 * 1024), b''):
+                    value.update(chunk)
+            return value.hexdigest()
+
+        if target.is_file() and digest(target) == expected:
+            print('Model already present; SHA256 verified. Download skipped.')
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            partial = target.with_name(target.name + '.part')
+            for attempt in range(10):
+                try:
+                    print(f'Downloading model, attempt {attempt + 1}/10...')
+                    value, size, reported = hashlib.sha256(), 0, 0
+                    with urlopen(url, timeout=120) as response, partial.open('wb') as output:
+                        for chunk in iter(lambda: response.read(4 * 1024 * 1024), b''):
+                            output.write(chunk)
+                            value.update(chunk)
+                            size += len(chunk)
+                            if size - reported >= 128 * 1024 * 1024:
+                                print(f'Downloaded {size // (1024 * 1024)} MiB')
+                                reported = size
+                    if value.hexdigest() != expected:
+                        raise ValueError('Model SHA256 mismatch')
+                    partial.replace(target)
+                    print('Model downloaded and SHA256 verified.')
+                    break
+                except (OSError, ValueError) as exc:
+                    print(f'Download failed: {type(exc).__name__}: {exc}')
+                    if attempt == 9:
+                        raise
+                    time.sleep(min(3 * (attempt + 1), 30))
+
+  llm:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    volumes:
+      - llm_models:/models:ro
+    ports:
+      - "127.0.0.1:8081:8080"
+    command:
+      - "-m"
+      - "/models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
+      - "--alias"
+      - "Qwen3-4B-Instruct-2507"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
+      - "--threads"
+      - "4"
+      - "--ctx-size"
+      - "8192"
+      - "--parallel"
+      - "1"
+    depends_on:
+      model-download:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--max-time", "5", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 6s
+      retries: 30
+      start_period: 120s
+
 volumes:
   pgdata:
   uploads:
+  llm_models:
