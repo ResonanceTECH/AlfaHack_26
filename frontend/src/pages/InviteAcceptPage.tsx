@@ -14,7 +14,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { apiErrorMessage } from '@/api/errors'
-import { acceptInvite, listMyInvites } from '@/api/team'
+import { acceptInvite } from '@/api/team'
 import { getCompany, listCompanies } from '@/api/companies'
 import { LogoutConfirmDialog } from '@/components/common/LogoutConfirmDialog'
 import { useAuth } from '@/contexts/AuthContext'
@@ -150,18 +150,9 @@ export function InviteAcceptPage() {
         window.setTimeout(() => clearInviteAndGo('/app'), 500)
         return
       }
-      let codeToUse = inviteCode
-      try {
-        const mine = await listMyInvites()
-        const match =
-          mine.find((i) => i.code === inviteCode) ||
-          (companyId ? mine.find((i) => i.companyId === companyId) : undefined) ||
-          mine[0]
-        if (match?.code) codeToUse = match.code
-      } catch {
-        /* keep URL code */
-      }
-      const res = await acceptInvite(codeToUse)
+      const res = await acceptInvite(inviteCode, {
+        companyId: companyId || undefined,
+      })
       const nextId = res.companyId || companyId
       if (nextId) selectCompany(nextId)
       setDone('accepted')

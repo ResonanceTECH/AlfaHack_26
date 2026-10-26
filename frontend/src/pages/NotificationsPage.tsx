@@ -117,11 +117,21 @@ export function NotificationsPage() {
   const [inviteActionError, setInviteActionError] = useState<string | null>(null)
 
   const inviteActionM = useMutation({
-    mutationFn: async ({ code, action }: { code: string; action: 'accept' | 'decline' }) => {
-      if (action === 'accept') return acceptInvite(code)
+    mutationFn: async ({
+      code,
+      action,
+      companyId,
+    }: {
+      code: string
+      action: 'accept' | 'decline'
+      companyId?: string
+    }) => {
+      // Only live codes from /invites/mine reach here (actionableCode).
+      if (action === 'accept') return acceptInvite(code, { companyId })
       await declineInvite(code)
       return undefined
     },
+    retry: false,
     onSuccess: async (res) => {
       setInviteActionError(null)
       await Promise.all([
@@ -450,7 +460,11 @@ export function NotificationsPage() {
                               if (n.unread) {
                                 void markNotificationRead(n.id).catch(() => undefined)
                               }
-                              inviteActionM.mutate({ code: actionableCode, action: 'decline' })
+                              inviteActionM.mutate({
+                                code: actionableCode,
+                                action: 'decline',
+                                companyId: n.inviteCompanyId,
+                              })
                             }}
                             sx={{
                               borderRadius: 2,
@@ -471,7 +485,11 @@ export function NotificationsPage() {
                               if (n.unread) {
                                 void markNotificationRead(n.id).catch(() => undefined)
                               }
-                              inviteActionM.mutate({ code: actionableCode, action: 'accept' })
+                              inviteActionM.mutate({
+                                code: actionableCode,
+                                action: 'accept',
+                                companyId: n.inviteCompanyId,
+                              })
                             }}
                             sx={{
                               borderRadius: 2,
