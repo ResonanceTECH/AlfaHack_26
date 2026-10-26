@@ -299,3 +299,64 @@ export async function updateObligation(
   const { data } = await api.patch(`/obligations/${id}`, patch)
   return mapObligation(data as Record<string, unknown>)
 }
+
+export type CalendarReminderSettings = {
+  enabled: boolean
+  daysBefore: number[]
+  channels: string[]
+  types: string[]
+}
+
+function mapReminderSettings(raw: Record<string, unknown>): CalendarReminderSettings {
+  const days = (raw.daysBefore ?? raw.days_before ?? [7, 3, 1]) as number[]
+  const channels = (raw.channels ?? ['IN_APP']) as string[]
+  const types = (raw.types ?? ['loan', 'tax', 'rent', 'salary', 'supplier', 'other']) as string[]
+  return {
+    enabled: Boolean(raw.enabled ?? true),
+    daysBefore: days.map(Number).filter((n) => n >= 0),
+    channels: channels.map(String),
+    types: types.map((t) => String(t).toLowerCase()),
+  }
+}
+
+export async function getCalendarReminderSettings(
+  companyId: string,
+): Promise<CalendarReminderSettings> {
+  const { data } = await api.get(`/companies/${companyId}/calendar/reminder-settings`)
+  return mapReminderSettings(data as Record<string, unknown>)
+}
+
+export async function patchCalendarReminderSettings(
+  companyId: string,
+  patch: Partial<CalendarReminderSettings>,
+): Promise<CalendarReminderSettings> {
+  const body: Record<string, unknown> = {}
+  if (patch.enabled != null) body.enabled = patch.enabled
+  if (patch.daysBefore != null) body.daysBefore = patch.daysBefore
+  if (patch.channels != null) body.channels = patch.channels
+  if (patch.types != null) body.types = patch.types
+  const { data } = await api.patch(`/companies/${companyId}/calendar/reminder-settings`, body)
+  return mapReminderSettings(data as Record<string, unknown>)
+}
+
+export async function dispatchCalendarReminders(companyId: string): Promise<void> {
+  await api.post(`/companies/${companyId}/calendar/reminders/dispatch`)
+}
+
+/** Download RFC5545 .ics from backend (with VALARM from reminder settings). */
+export async function downloadCompanyCalendarIcs(
+  companyId: string,
+  opts?: { month?: string },
+): Promise<void> {
+  const { data } = await api.get(`/companies/${companyId}/calendar.ics`, {
+    params: opts?.month ? { month: opts.month } : undefined,
+    responseType: 'blob',
+  })
+  const blob = data instanceof Blob ? data : new Blob([data], { type: 'text/calendar' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `calendar-${opts?.month ?? companyId}.ics`
+  a.click()
+  URL.revokeObjectURL(url)
+}
