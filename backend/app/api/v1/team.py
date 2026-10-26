@@ -16,7 +16,9 @@ from app.services.audit import write_audit
 from app.services.company_team import (
     accept_invite,
     create_invite,
+    decline_invite,
     list_company_members,
+    list_my_pending_invites,
     list_pending_invites,
     patch_member_role,
     remove_member,
@@ -33,6 +35,12 @@ router = APIRouter(tags=["team"])
 def company_members(company_id: str, db: DbDep, user: CurrentUser) -> list[CompanyMemberOut]:
     require_company_access(db, user, company_id)
     return [CompanyMemberOut(**m) for m in list_company_members(db, company_id)]
+
+
+@router.get("/invites/mine", response_model=list[CompanyInviteOut])
+def my_invites(db: DbDep, user: CurrentUser) -> list[CompanyInviteOut]:
+    """Inbox приглашённого: pending invites на email текущего пользователя."""
+    return [CompanyInviteOut(**i) for i in list_my_pending_invites(db, user)]
 
 
 @router.post(
@@ -158,6 +166,25 @@ def company_delete_member(
         action="member_delete",
         correlation_id=cid,
         company_id=company_id,
+    )
+    db.commit()
+    return MessageOut(message="ok")
+
+
+@router.post("/invites/{code}/decline", response_model=MessageOut)
+def decline_company_invite(
+    code: str, db: DbDep, user: CurrentUser, cid: CorrelationId
+) -> MessageOut:
+    invite = decline_invite(db, code=code, user=user)
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="company_invite",
+        entity_id=invite.id,
+        action="invite_decline",
+        details={"company_id": invite.company_id},
+        correlation_id=cid,
+        company_id=invite.company_id,
     )
     db.commit()
     return MessageOut(message="ok")

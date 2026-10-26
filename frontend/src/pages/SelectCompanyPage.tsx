@@ -18,7 +18,7 @@ import {
 } from '@mui/material'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   createCompany,
@@ -28,6 +28,7 @@ import {
 } from '@/api/companies'
 import { useAuth } from '@/contexts/AuthContext'
 import { LogoutConfirmDialog } from '@/components/common/LogoutConfirmDialog'
+import { IncomingInvitesCard } from '@/components/team/IncomingInvitesCard'
 import { InviteAcceptPage } from '@/pages/InviteAcceptPage'
 import type { CompanyListItem, MemberRole, RegistryCompany } from '@/types'
 import { formatDate } from '@/utils/format'
@@ -254,6 +255,11 @@ function SelectCompanyChooser() {
     )
   }
 
+  function onInviteAccepted(companyId?: string) {
+    if (companyId) selectCompany(companyId)
+    navigate('/app')
+  }
+
   if (isEmpty) {
     return (
       <FirstVisitEmpty
@@ -276,6 +282,7 @@ function SelectCompanyChooser() {
         onConfirm={() => found && createMut.mutate(found)}
         onManual={() => navigate('/onboarding/company')}
         onLogout={onLogout}
+        invitesSlot={<IncomingInvitesCard onAccepted={onInviteAccepted} />}
       />
     )
   }
@@ -314,6 +321,8 @@ function SelectCompanyChooser() {
             gap: 1.5,
           }}
         >
+          <IncomingInvitesCard onAccepted={onInviteAccepted} sx={{ flexShrink: 0 }} />
+
           <Box sx={{ flexShrink: 0 }}>
             <Typography
               sx={{
@@ -715,6 +724,7 @@ function FirstVisitEmpty({
   onConfirm,
   onManual,
   onLogout,
+  invitesSlot,
 }: {
   inn: string
   onInnChange: (v: string) => void
@@ -727,6 +737,7 @@ function FirstVisitEmpty({
   onConfirm: () => void
   onManual: () => void
   onLogout: () => void
+  invitesSlot?: ReactNode
 }) {
   const isOOO = found?.legalForm === 'OOO'
   const detailRows = found
@@ -779,23 +790,25 @@ function FirstVisitEmpty({
           gap: { xs: 2, md: 2.5 },
         }}
       >
-        <Box sx={{ flexShrink: 0 }}>
-          <Typography
-            sx={{
-              fontFamily: 'Manrope, sans-serif',
-              fontWeight: 800,
-              fontSize: { xs: 26, md: 32 },
-              letterSpacing: '-0.035em',
-              color: '#0B1F35',
-              lineHeight: 1.12,
-            }}
-          >
-            Добавить компанию по ИНН
-          </Typography>
-          <Typography sx={{ color: '#5A6B7D', fontSize: 15, mt: 0.75, lineHeight: 1.4 }}>
-            Найдём организацию в реестре и подтвердим доступ
-          </Typography>
-        </Box>
+          {invitesSlot}
+
+          <Box sx={{ flexShrink: 0 }}>
+            <Typography
+              sx={{
+                fontFamily: 'Manrope, sans-serif',
+                fontWeight: 800,
+                fontSize: { xs: 26, md: 32 },
+                letterSpacing: '-0.035em',
+                color: '#0B1F35',
+                lineHeight: 1.12,
+              }}
+            >
+              Добавить компанию по ИНН
+            </Typography>
+            <Typography sx={{ color: '#5A6B7D', fontSize: 15, mt: 0.75, lineHeight: 1.4 }}>
+              Найдём организацию в реестре и подтвердим доступ
+            </Typography>
+          </Box>
 
         <Box
           sx={{

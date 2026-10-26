@@ -88,6 +88,18 @@ export function notificationHref(
     return '/app/analyst'
   }
 
+  if (t.includes('INVITE') || t.includes('TEAM_INVITE')) {
+    const code = str(p.code ?? p.inviteCode ?? p.invite_code, '')
+    const companyId = str(p.companyId ?? p.company_id, '')
+    const role = str(p.role, 'MEMBER').toLowerCase()
+    if (code) {
+      const qs = new URLSearchParams({ invite: code })
+      if (companyId) qs.set('company', companyId)
+      if (role) qs.set('role', role === 'viewer' ? 'viewer' : 'accountant')
+      return `/select-company?${qs.toString()}`
+    }
+    return '/app/team'
+  }
   if (appId) {
     if (t.includes('DOC')) return `/app/applications/${appId}`
     if (t.includes('OFFER') || t.includes('APPROV')) return `/app/applications/${appId}/edit`
@@ -96,6 +108,13 @@ export function notificationHref(
   if (t.includes('DOC') || t.includes('STATEMENT')) return '/app/documents'
   if (t.includes('PAYMENT') || t.includes('OBLIGATION')) return '/app/calendar'
   return '/app/notifications'
+}
+
+export function inviteCodeFromNotification(n: AppNotification): string | undefined {
+  const t = n.type.toUpperCase()
+  if (!t.includes('INVITE')) return undefined
+  const code = str(n.payload.code ?? n.payload.inviteCode ?? n.payload.invite_code, '')
+  return code || undefined
 }
 
 export function notificationCategory(

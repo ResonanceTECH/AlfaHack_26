@@ -18,7 +18,14 @@ import axios from 'axios'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { cancelInvite, inviteToMember, listInvites, listMembers, removeMember as removeMemberApi } from '@/api/team'
+import {
+  cancelInvite,
+  inviteToMember,
+  listInvites,
+  listMembers,
+  removeMember as removeMemberApi,
+} from '@/api/team'
+import { IncomingInvitesCard } from '@/components/team/IncomingInvitesCard'
 import { useAuth } from '@/contexts/AuthContext'
 import { useAppStore } from '@/hooks/useAppStore'
 import {
@@ -112,7 +119,7 @@ function MatrixIcon({ ok }: { ok: boolean }) {
 
 export function TeamPage() {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, selectCompany } = useAuth()
   const { companyId: storeCompanyId, company } = useAppStore()
   const qc = useQueryClient()
   const companyId = storeCompanyId || user?.companyId
@@ -149,7 +156,7 @@ export function TeamPage() {
   const invitedCount = members.filter((m) => m.status === 'invited').length
   const showMatrix = shouldShowRoleMatrix(members)
   const matrixRoles = assignedRoles(members)
-  const loading = membersQ.isLoading || invitesQ.isLoading
+  const loading = Boolean(companyId) && (membersQ.isLoading || invitesQ.isLoading)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -317,6 +324,14 @@ export function TeamPage() {
           {actionError}
         </Typography>
       )}
+
+      <IncomingInvitesCard
+        sx={{ mb: 2 }}
+        onAccepted={(id) => {
+          if (id) selectCompany(id)
+          setActionError(null)
+        }}
+      />
 
       <Box sx={{ ...tileSx, mb: 2, overflow: 'auto' }}>
         <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>

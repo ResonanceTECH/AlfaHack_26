@@ -2,13 +2,16 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   IconButton,
   MenuItem,
   Stack,
+  Switch,
   TextField,
   Typography,
 } from '@mui/material'
@@ -17,11 +20,17 @@ import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
 import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import dayjs, { type Dayjs } from 'dayjs'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '@/hooks/useAppStore'
-import { createObligation } from '@/api/companies'
+import {
+  createObligation,
+  downloadCompanyCalendarIcs,
+  getCalendarReminderSettings,
+  patchCalendarReminderSettings,
+  type CalendarReminderSettings,
+} from '@/api/companies'
 
 const MONTHS_RU = [
   'январь',
@@ -53,9 +62,6 @@ const MONTHS_RU_GEN = [
 ]
 
 const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
-
-const DEMO_CURSOR = dayjs('2026-11-01')
-const DEMO_SELECTED = '2026-11-23'
 
 type Tone = 'gray' | 'orange' | 'pink' | 'green'
 type IconKind = 'warn' | 'docs' | 'pay' | 'clock'
@@ -247,46 +253,42 @@ function EventIcon({ kind }: { kind: IconKind }) {
   )
 }
 
-function downloadIcs(events: CalEvent[], filename: string) {
-  const lines = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//Liniya Resheniya//Calendar//RU',
-    'CALSCALE:GREGORIAN',
-  ]
-  for (const e of events.filter((x) => !x.upcomingOnly)) {
-    const d = e.date.replace(/-/g, '')
-    lines.push(
-      'BEGIN:VEVENT',
-      `UID:${e.id}@liniya-resheniya`,
-      `DTSTART;VALUE=DATE:${d}`,
-      `SUMMARY:${e.title.replace(/,/g, '\\,')}`,
-      e.amount != null ? `DESCRIPTION:${money(e.amount)}` : 'DESCRIPTION:',
-      'END:VEVENT',
-    )
-  }
-  lines.push('END:VCALENDAR')
-  const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
-}
+const REMINDER_DAY_OPTIONS = [0, 1, 3, 7, 14]
+const REMINDER_TYPE_OPTIONS: { id: string; label: string }[] = [
+  { id: 'loan', label: 'Кредиты' },
+  { id: 'tax', label: 'Налоги' },
+  { id: 'rent', label: 'Аренда' },
+  { id: 'salary', label: 'ФОТ' },
+  { id: 'supplier', label: 'Поставщики' },
+  { id: 'other', label: 'Другое' },
+]
 
 export function CalendarPage() {
   const { obligations, companyId } = useAppStore()
   const qc = useQueryClient()
-  const [cursor, setCursor] = useState(() => DEMO_CURSOR)
-  const [selected, setSelected] = useState(DEMO_SELECTED)
+  const [cursor, setCursor] = useState(() => dayjs().startOf('month'))
+  const [selected, setSelected] = useState(() => dayjs().format('YYYY-MM-DD'))
   const [addOpen, setAddOpen] = useState(false)
+  const [remindOpen, setRemindOpen] = useState(false)
   const [title, setTitle] = useState('')
   const [amount, setAmount] = useState(50_000)
-  const [dueDate, setDueDate] = useState('2026-11-15')
+  const [dueDate, setDueDate] = useState(() => dayjs().add(7, 'day').format('YYYY-MM-DD'))
   const [type, setType] = useState('supplier')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [icsBusy, setIcsBusy] = useState(false)
+  const [remindDraft, setRemindDraft] = useState<CalendarReminderSettings | null>(null)
+  const [remindSaving, setRemindSaving] = useState(false)
+
+  const remindQ = useQuery({
+    queryKey: ['calendar', 'reminder-settings', companyId],
+    queryFn: () => getCalendarReminderSettings(companyId!),
+    enabled: Boolean(companyId) && remindOpen,
+  })
+
+  useEffect(() => {
+    if (remindQ.data) setRemindDraft(remindQ.data)
+  }, [remindQ.data])
 
   const liveEvents = useMemo((): CalEvent[] => {
     return obligations
@@ -424,12 +426,20 @@ export function CalendarPage() {
           </Button>
           <Button
             variant="outlined"
-            onClick={() =>
-              downloadIcs(calendarEvents, `alfa-calendar-${cursor.format('YYYY-MM')}.ics`)
-            }
+            disabled={!companyId || icsBusy}
+            onClick={() => {
+              if (!companyId) return
+              setIcsBusy(true)
+              setError(null)
+              void downloadCompanyCalendarIcs(companyId, { month: cursor.format('YYYY-MM') })
+                .catch((e) =>
+                  setError(e instanceof Error ? e.message : 'Не удалось скачать .ics'),
+                )
+                .finally(() => setIcsBusy(false))
+            }}
             sx={outlineBtn}
           >
-            Экспорт в .ics
+            {icsBusy ? '…' : 'Экспорт в .ics'}
           </Button>
         </Stack>
       </Stack>
@@ -729,13 +739,128 @@ export function CalendarPage() {
               fullWidth
               variant="outlined"
               sx={{ ...outlineBtn, py: 1.05 }}
-              onClick={() => setAddOpen(true)}
+              onClick={() => setRemindOpen(true)}
             >
               Настроить напоминания
             </Button>
           </Box>
         </Stack>
       </Box>
+
+      <Dialog open={remindOpen} onClose={() => setRemindOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle sx={{ fontFamily: 'Manrope, sans-serif', fontWeight: 800 }}>
+          Напоминания
+        </DialogTitle>
+        <DialogContent>
+          {remindQ.isLoading && !remindDraft && (
+            <Typography sx={{ color: '#7A8795', fontSize: 14, py: 2 }}>Загрузка…</Typography>
+          )}
+          {remindDraft && (
+            <Stack spacing={2} sx={{ pt: 0.5 }}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={remindDraft.enabled}
+                    onChange={(e) =>
+                      setRemindDraft({ ...remindDraft, enabled: e.target.checked })
+                    }
+                  />
+                }
+                label="Включить напоминания"
+              />
+              <Box>
+                <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#0B1F35', mb: 1 }}>
+                  За сколько дней
+                </Typography>
+                <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1}>
+                  {REMINDER_DAY_OPTIONS.map((d) => {
+                    const on = remindDraft.daysBefore.includes(d)
+                    return (
+                      <FormControlLabel
+                        key={d}
+                        control={
+                          <Checkbox
+                            size="small"
+                            checked={on}
+                            onChange={() => {
+                              const next = on
+                                ? remindDraft.daysBefore.filter((x) => x !== d)
+                                : [...remindDraft.daysBefore, d].sort((a, b) => b - a)
+                              setRemindDraft({ ...remindDraft, daysBefore: next })
+                            }}
+                          />
+                        }
+                        label={d === 0 ? 'В день платежа' : `За ${d} дн.`}
+                      />
+                    )
+                  })}
+                </Stack>
+              </Box>
+              <Box>
+                <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#0B1F35', mb: 1 }}>
+                  Типы событий
+                </Typography>
+                <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1}>
+                  {REMINDER_TYPE_OPTIONS.map((t) => {
+                    const on = remindDraft.types.includes(t.id)
+                    return (
+                      <FormControlLabel
+                        key={t.id}
+                        control={
+                          <Checkbox
+                            size="small"
+                            checked={on}
+                            onChange={() => {
+                              const next = on
+                                ? remindDraft.types.filter((x) => x !== t.id)
+                                : [...remindDraft.types, t.id]
+                              setRemindDraft({ ...remindDraft, types: next })
+                            }}
+                          />
+                        }
+                        label={t.label}
+                      />
+                    )
+                  })}
+                </Stack>
+              </Box>
+              <Typography sx={{ fontSize: 12.5, color: '#7A8795', lineHeight: 1.45 }}>
+                Настройки попадут в VALARM при экспорте .ics и в in-app уведомления
+                (OBLIGATION_DUE).
+              </Typography>
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => setRemindOpen(false)} sx={{ fontWeight: 600, color: '#5A6B7D' }}>
+            Отмена
+          </Button>
+          <Button
+            variant="contained"
+            color="primary"
+            disabled={!companyId || !remindDraft || remindSaving}
+            onClick={() => {
+              if (!companyId || !remindDraft) return
+              setRemindSaving(true)
+              void patchCalendarReminderSettings(companyId, remindDraft)
+                .then(async (saved) => {
+                  setRemindDraft(saved)
+                  await qc.invalidateQueries({
+                    queryKey: ['calendar', 'reminder-settings', companyId],
+                  })
+                  setRemindOpen(false)
+                })
+                .catch((e) =>
+                  setError(e instanceof Error ? e.message : 'Не удалось сохранить настройки'),
+                )
+                .finally(() => setRemindSaving(false))
+            }}
+            sx={{ fontWeight: 700, borderRadius: 2 }}
+          >
+            {remindSaving ? '…' : 'Сохранить'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={addOpen} onClose={() => setAddOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle sx={{ fontFamily: 'Manrope, sans-serif', fontWeight: 800 }}>

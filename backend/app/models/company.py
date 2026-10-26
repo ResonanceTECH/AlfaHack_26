@@ -29,6 +29,7 @@ class Company(Base):
     employees_count: Mapped[int] = mapped_column(Integer, default=0)
     registry_status: Mapped[str] = mapped_column(String(32), default="ACTIVE")
     version: Mapped[int] = mapped_column(Integer, default=1)
+    calendar_settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

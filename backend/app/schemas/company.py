@@ -126,7 +126,7 @@ class ObligationOut(APIModel):
 class ObligationCreate(APIModel):
     type: str
     title: str
-    amount: Money = Field(gt=0)
+    amount: Money = Field(ge=0)
     due_date: date
     recurring: bool = False
     status: str = "planned"
@@ -137,10 +137,26 @@ class ObligationCreate(APIModel):
 class ObligationUpdate(APIModel):
     type: str | None = None
     title: str | None = None
-    amount: Money | None = None
+    amount: Money | None = Field(default=None, ge=0)
     due_date: date | None = None
     recurring: bool | None = None
     status: str | None = None
+
+
+class CalendarReminderSettings(APIModel):
+    enabled: bool = True
+    days_before: list[int] = Field(default_factory=lambda: [7, 3, 1])
+    channels: list[str] = Field(default_factory=lambda: ["IN_APP"])
+    types: list[str] = Field(
+        default_factory=lambda: ["loan", "tax", "rent", "salary", "supplier", "other"]
+    )
+
+
+class CalendarReminderSettingsPatch(APIModel):
+    enabled: bool | None = None
+    days_before: list[int] | None = None
+    channels: list[str] | None = None
+    types: list[str] | None = None
 
 
 class BusinessGoalCreate(APIModel):
@@ -190,6 +206,8 @@ class CompanyInviteOut(APIModel):
     expires_at: datetime | None = None
     created_at: datetime | None = None
     message: str | None = None
+    company_name: str | None = None
+    invited_by_name: str | None = None
 
 
 class CompanyDocumentOut(APIModel):
