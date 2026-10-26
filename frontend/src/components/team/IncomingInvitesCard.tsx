@@ -1,6 +1,6 @@
 import { Box, Button, Stack, Typography } from '@mui/material'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import axios from 'axios'
+import { apiErrorMessage } from '@/api/errors'
 import {
   acceptInvite,
   declineInvite,
@@ -16,18 +16,6 @@ const tileSx = {
   boxShadow: '0 1px 8px rgba(11,31,53,0.04)',
   p: { xs: 2, md: 2.25 },
 } as const
-
-function apiError(err: unknown, fallback: string): string {
-  if (axios.isAxiosError(err)) {
-    const detail = err.response?.data?.detail
-    if (typeof detail === 'string') return detail
-    if (Array.isArray(detail)) {
-      return detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join('; ')
-    }
-  }
-  if (err instanceof Error) return err.message
-  return fallback
-}
 
 type Props = {
   onAccepted?: (companyId?: string) => void
@@ -48,9 +36,12 @@ export function IncomingInvitesCard({ onAccepted, onDeclined, sx }: Props) {
   const acceptM = useMutation({
     mutationFn: (code: string) => acceptInvite(code),
     onSuccess: async (res) => {
-      await qc.invalidateQueries({ queryKey: ['team'] })
-      await qc.invalidateQueries({ queryKey: ['companies'] })
-      await qc.invalidateQueries({ queryKey: ['notifications'] })
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['team'] }),
+        qc.invalidateQueries({ queryKey: ['companies'] }),
+        qc.invalidateQueries({ queryKey: ['notifications'] }),
+        qc.invalidateQueries({ queryKey: ['team', 'invites', 'mine'] }),
+      ])
       onAccepted?.(res.companyId)
     },
   })
@@ -58,8 +49,11 @@ export function IncomingInvitesCard({ onAccepted, onDeclined, sx }: Props) {
   const declineM = useMutation({
     mutationFn: (code: string) => declineInvite(code),
     onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ['team'] })
-      await qc.invalidateQueries({ queryKey: ['notifications'] })
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['team'] }),
+        qc.invalidateQueries({ queryKey: ['notifications'] }),
+        qc.invalidateQueries({ queryKey: ['team', 'invites', 'mine'] }),
+      ])
       onDeclined?.()
     },
   })
@@ -70,7 +64,7 @@ export function IncomingInvitesCard({ onAccepted, onDeclined, sx }: Props) {
     return (
       <Box sx={{ ...tileSx, ...sx }}>
         <Typography sx={{ color: '#C41E14', fontSize: 13, fontWeight: 600 }}>
-          {apiError(myInvitesQ.error, 'Не удалось загрузить приглашения')}
+          {apiErrorMessage(myInvitesQ.error, 'Не удалось загрузить приглашения')}
         </Typography>
         <Button
           size="small"
@@ -106,7 +100,7 @@ export function IncomingInvitesCard({ onAccepted, onDeclined, sx }: Props) {
       </Typography>
       {actionError && (
         <Typography sx={{ color: '#C41E14', fontSize: 13, fontWeight: 600, mb: 1.25 }}>
-          {apiError(actionError, 'Не удалось обработать приглашение')}
+          {apiErrorMessage(actionError, 'Не удалось обработать приглашение')}
         </Typography>
       )}
       <Stack spacing={1.25}>
