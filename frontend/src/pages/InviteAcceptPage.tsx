@@ -13,8 +13,8 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import axios from 'axios'
-import { acceptInvite } from '@/api/team'
+import { apiErrorMessage } from '@/api/errors'
+import { acceptInvite, listMyInvites } from '@/api/team'
 import { getCompany, listCompanies } from '@/api/companies'
 import { LogoutConfirmDialog } from '@/components/common/LogoutConfirmDialog'
 import { useAuth } from '@/contexts/AuthContext'
@@ -80,18 +80,6 @@ function RightIcon({ ok }: { ok: boolean }) {
 }
 
 /** Экран получателя ссылки `/select-company?invite=…&company=…&role=…` */
-function apiError(err: unknown, fallback: string): string {
-  if (axios.isAxiosError(err)) {
-    const detail = err.response?.data?.detail
-    if (typeof detail === 'string') return detail
-    if (Array.isArray(detail)) {
-      return detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join('; ')
-    }
-  }
-  if (err instanceof Error) return err.message
-  return fallback
-}
-
 export function InviteAcceptPage() {
   const { user, selectCompany, logout } = useAuth()
   const navigate = useNavigate()
@@ -156,7 +144,24 @@ export function InviteAcceptPage() {
     setBusy(true)
     setAcceptError(null)
     try {
-      const res = await acceptInvite(inviteCode)
+      if (alreadyMember && companyId) {
+        selectCompany(companyId)
+        setDone('accepted')
+        window.setTimeout(() => clearInviteAndGo('/app'), 500)
+        return
+      }
+      let codeToUse = inviteCode
+      try {
+        const mine = await listMyInvites()
+        const match =
+          mine.find((i) => i.code === inviteCode) ||
+          (companyId ? mine.find((i) => i.companyId === companyId) : undefined) ||
+          mine[0]
+        if (match?.code) codeToUse = match.code
+      } catch {
+        /* keep URL code */
+      }
+      const res = await acceptInvite(codeToUse)
       const nextId = res.companyId || companyId
       if (nextId) selectCompany(nextId)
       setDone('accepted')
@@ -165,7 +170,7 @@ export function InviteAcceptPage() {
       }, 700)
     } catch (err) {
       setBusy(false)
-      setAcceptError(apiError(err, 'Не удалось принять приглашение'))
+      setAcceptError(apiErrorMessage(err, 'Не удалось принять приглашение'))
     }
   }
 

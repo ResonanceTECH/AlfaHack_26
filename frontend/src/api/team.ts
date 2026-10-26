@@ -1,3 +1,4 @@
+import axios from 'axios'
 import { api, str } from '@/api/client'
 import {
   ROLE_RIGHTS_TEXT,
@@ -214,12 +215,36 @@ export async function removeMember(companyId: string, userId: string): Promise<v
 }
 
 export async function acceptInvite(code: string): Promise<AcceptInviteResult> {
-  const { data } = await api.post(`/invites/${encodeURIComponent(code)}/accept`)
-  const raw = (data ?? {}) as Record<string, unknown>
-  // Backend returns CompanyMemberOut: { userId, companyId, role, ... }
-  const companyId = raw.companyId ?? raw.company_id
-  return {
-    companyId: companyId != null && companyId !== '' ? str(companyId) : undefined,
+  try {
+    const { data } = await api.post(`/invites/${encodeURIComponent(code)}/accept`)
+    const raw = (data ?? {}) as Record<string, unknown>
+    // Backend returns CompanyMemberOut: { userId, companyId, role, ... }
+    const companyId = raw.companyId ?? raw.company_id
+    return {
+      companyId: companyId != null && companyId !== '' ? str(companyId) : undefined,
+    }
+  } catch (err) {
+    // Stale notification codes: resolve via inbox or treat already-member as OK
+    const status = axios.isAxiosError(err) ? err.response?.status : undefined
+    const errBody = axios.isAxiosError(err)
+      ? (err.response?.data as { error?: { code?: string } } | undefined)
+      : undefined
+    const codeName = errBody?.error?.code
+    if (status === 409 || codeName === 'INVITE_NOT_PENDING' || codeName === 'INVITE_EXPIRED') {
+      const mine = await listMyInvites().catch(() => [] as CompanyInvite[])
+      const live = mine.find((i) => i.code && i.code !== code) ?? mine[0]
+      if (live?.code) {
+        const { data } = await api.post(`/invites/${encodeURIComponent(live.code)}/accept`)
+        const raw = (data ?? {}) as Record<string, unknown>
+        const companyId = raw.companyId ?? raw.company_id
+        return {
+          companyId: companyId != null && companyId !== '' ? str(companyId) : live.companyId,
+        }
+      }
+      // No pending left — likely already accepted earlier
+      return { companyId: mine[0]?.companyId }
+    }
+    throw err
   }
 }
 

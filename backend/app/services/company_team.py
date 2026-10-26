@@ -308,6 +308,21 @@ _ROLE_RANK = {
 }
 
 
+def _find_pending_for_email_company(
+    db: Session, *, email: str, company_id: str
+) -> CompanyInvite | None:
+    return db.scalar(
+        select(CompanyInvite)
+        .where(
+            func.lower(CompanyInvite.email) == email,
+            CompanyInvite.company_id == company_id,
+            CompanyInvite.status == "PENDING",
+        )
+        .order_by(CompanyInvite.created_at.desc())
+        .limit(1)
+    )
+
+
 def accept_invite(db: Session, *, code: str, user: User) -> CompanyMembership:
     invite = db.scalar(select(CompanyInvite).where(CompanyInvite.code == code))
     if invite is None:
@@ -323,15 +338,20 @@ def accept_invite(db: Session, *, code: str, user: User) -> CompanyMembership:
 
     existing = get_membership(db, user.id, invite.company_id)
 
-    # Idempotent: already accepted / already a member of this company
-    if invite.status == "ACCEPTED" and existing is not None:
-        return existing
+    # Stale notification codes (ACCEPTED/REVOKED/DECLINED): never 409 if already a member
     if invite.status != "PENDING":
         if existing is not None:
             return existing
+        # Prefer a newer pending invite for the same company+email
+        if email:
+            newer = _find_pending_for_email_company(
+                db, email=email, company_id=invite.company_id
+            )
+            if newer is not None and newer.code != invite.code:
+                return accept_invite(db, code=newer.code, user=user)
         raise AppError(
             "INVITE_NOT_PENDING",
-            f"Приглашение уже {invite.status}",
+            "Приглашение уже недействительно. Запросите новое у владельца.",
             status_code=http_status.HTTP_409_CONFLICT,
         )
 
@@ -342,6 +362,8 @@ def accept_invite(db: Session, *, code: str, user: User) -> CompanyMembership:
         if exp < utcnow():
             invite.status = "REVOKED"
             db.flush()
+            if existing is not None:
+                return existing
             raise AppError(
                 "INVITE_EXPIRED",
                 "Срок приглашения истёк",

@@ -93,7 +93,7 @@ export async function createCompanyTask(
   input: {
     title: string
     description?: string
-    assigneeUserId?: string
+    assigneeUserId: string
     dueDate?: string
     status?: TaskStatus
   },
