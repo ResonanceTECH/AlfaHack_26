@@ -194,8 +194,9 @@ export function AnalystCaseDocumentsPage() {
           /* demo fallback */
         }
       }
-      if (row.fileName || row.name) {
-        await downloadDemoAppDocument(row.fileName || row.name)
+      const name = row.fileName || row.name
+      if (name) {
+        await downloadDemoAppDocument(name)
       }
     } catch {
       setPreviewError('Не удалось скачать файл')

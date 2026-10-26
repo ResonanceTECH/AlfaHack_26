@@ -26,7 +26,35 @@ const TYPE_TO_SLOT: Record<string, string> = {
   collateral: 'collateral',
 }
 
-const KEY = 'alfa_app_documents'
+const KEY = 'alfa_app_documents_v2'
+
+/** Filenames under `frontend/public/demo/app-docs/` for checklist downloads. */
+export const DEMO_APP_DOC_BY_SLOT: Record<string, string> = {
+  statement: 'выписка_40702_окт2026.pdf',
+  passport: 'passport_petrov.pdf',
+  equipment: 'kp_equipment_2026.pdf',
+  tax: 'usn_2025.pdf',
+  bki: 'consent_bki.pdf',
+  collateral: 'collateral_equipment.pdf',
+}
+
+/** In-memory cache of files picked in this session (survives until reload). */
+const uploadCache = new Map<string, File>()
+
+export function cacheAppDocFile(applicationId: string, slotId: string, file: File) {
+  uploadCache.set(`${applicationId}:${slotId}`, file)
+}
+
+export function getCachedAppDocFile(applicationId: string, slotId: string): File | undefined {
+  return uploadCache.get(`${applicationId}:${slotId}`)
+}
+
+export function resolveDemoAppDocName(slot: Pick<AppDocSlot, 'id' | 'fileName'>): string | undefined {
+  if (slot.fileName && Object.values(DEMO_APP_DOC_BY_SLOT).includes(slot.fileName)) {
+    return slot.fileName
+  }
+  return DEMO_APP_DOC_BY_SLOT[slot.id] || slot.fileName
+}
 
 const DEFAULT_SLOTS: Omit<AppDocSlot, 'status' | 'fileName' | 'fileSizeLabel'>[] = [
   {
@@ -67,25 +95,38 @@ const DEFAULT_SLOTS: Omit<AppDocSlot, 'status' | 'fileName' | 'fileSizeLabel'>[]
   },
 ]
 
+/** Full kit seeded so «Скачать» works via /demo/app-docs out of the box. */
 const SEED: Record<string, Partial<AppDocSlot>> = {
   statement: {
     status: 'uploaded',
-    fileName: 'выписка_40702_окт2026.pdf',
-    fileSizeLabel: '2.4 МБ',
+    fileName: DEMO_APP_DOC_BY_SLOT.statement,
+    fileSizeLabel: '53.2 КБ',
   },
   passport: {
     status: 'uploaded',
-    fileName: 'passport_petrov.pdf',
-    fileSizeLabel: '1.1 МБ',
+    fileName: DEMO_APP_DOC_BY_SLOT.passport,
+    fileSizeLabel: '50.6 КБ',
   },
-  equipment: { status: 'needed' },
+  equipment: {
+    status: 'uploaded',
+    fileName: DEMO_APP_DOC_BY_SLOT.equipment,
+    fileSizeLabel: '50.9 КБ',
+  },
   tax: {
-    status: 'review',
-    fileName: 'usn_2025.pdf',
-    fileSizeLabel: '0.8 МБ',
+    status: 'uploaded',
+    fileName: DEMO_APP_DOC_BY_SLOT.tax,
+    fileSizeLabel: '50.9 КБ',
   },
-  bki: { status: 'needed' },
-  collateral: { status: 'optional' },
+  bki: {
+    status: 'uploaded',
+    fileName: DEMO_APP_DOC_BY_SLOT.bki,
+    fileSizeLabel: '50.7 КБ',
+  },
+  collateral: {
+    status: 'uploaded',
+    fileName: DEMO_APP_DOC_BY_SLOT.collateral,
+    fileSizeLabel: '52.1 КБ',
+  },
 }
 
 function readStore(): Record<string, AppDocSlot[]> {

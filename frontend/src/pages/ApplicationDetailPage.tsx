@@ -3,7 +3,12 @@ import {
   Box,
   Button,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   LinearProgress,
+  MenuItem,
   Stack,
   TextField,
   Typography,
@@ -12,6 +17,7 @@ import CheckRoundedIcon from '@mui/icons-material/CheckRounded'
 import PriorityHighRoundedIcon from '@mui/icons-material/PriorityHighRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import PersonAddAlt1RoundedIcon from '@mui/icons-material/PersonAddAlt1Rounded'
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { Link as RouterLink, Navigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -21,6 +27,7 @@ import {
   declineApplicationOffer,
   downloadApplicationDocument,
   downloadDemoAppDocument,
+  triggerBlobDownload,
   fetchApplicationComments,
   fetchApplicationDecision,
   fetchApplicationOffers,
@@ -40,12 +47,18 @@ import {
   type AiAgentResponse,
 } from '@/api/ai'
 import { AiAgentReply } from '@/components/ai/AiAgentReply'
+import { assignDocumentReviews } from '@/api/docReviews'
+import { listMembers } from '@/api/team'
 import { useAuth } from '@/contexts/AuthContext'
 import { useAppStore } from '@/hooks/useAppStore'
+import { ROLE_LABEL } from '@/features/team/store'
 import {
+  cacheAppDocFile,
   formatBytesLabel,
+  getCachedAppDocFile,
   loadAppDocuments,
   mergeSlotsWithLiveDocs,
+  resolveDemoAppDocName,
   saveAppDocuments,
   type AppDocSlot,
   type AppDocStatus,
@@ -206,6 +219,12 @@ export function ApplicationDetailPage() {
     retry: false,
     refetchInterval: 15_000,
   })
+  const membersQ = useQuery({
+    queryKey: ['team', 'members', companyId],
+    queryFn: () => listMembers(companyId!),
+    enabled: Boolean(companyId && !editable),
+    staleTime: 60_000,
+  })
 
   const [slots, setSlots] = useState<AppDocSlot[]>(() => (id ? loadAppDocuments(id) : []))
   const [flash, setFlash] = useState<string | null>(null)
@@ -216,6 +235,9 @@ export function ApplicationDetailPage() {
   const bulkRef = useRef<HTMLInputElement>(null)
   const docReqFileRef = useRef<HTMLInputElement>(null)
   const [activeDocReq, setActiveDocReq] = useState<DocumentRequest | null>(null)
+  const [assignOpen, setAssignOpen] = useState(false)
+  const [assignUserId, setAssignUserId] = useState('')
+  const [assignBusy, setAssignBusy] = useState(false)
 
   useEffect(() => {
     if (id) setSlots(loadAppDocuments(id))
@@ -351,6 +373,7 @@ export function ApplicationDetailPage() {
     setError(null)
     let documentId: string | undefined
     try {
+      cacheAppDocFile(id, slotId, file)
       try {
         if (app.companyId) {
           const uploaded = await uploadCompanyApplicationDocument(app.companyId, app.id, file, {
@@ -389,27 +412,82 @@ export function ApplicationDetailPage() {
   }
 
   async function downloadSlot(slot: AppDocSlot) {
-    if (!slot.fileName && !slot.documentId) return
+    if (!id) return
+    const label = slot.fileName || resolveDemoAppDocName(slot) || 'документ'
     setBusyId(slot.id)
     setError(null)
     try {
-      if (slot.documentId && companyId && id) {
-        await downloadApplicationDocument(
-          companyId,
-          id,
-          slot.documentId,
-          slot.fileName || undefined,
-        )
-      } else if (slot.fileName) {
-        await downloadDemoAppDocument(slot.fileName)
-      } else {
-        throw new Error('Файл недоступен для скачивания')
+      // 1) file picked this session
+      const cached = getCachedAppDocFile(id, slot.id)
+      if (cached) {
+        triggerBlobDownload(cached, cached.name || label)
+        showFlash(`Скачано: ${cached.name || label}`)
+        return
       }
-      showFlash(`Скачано: ${slot.fileName || 'документ'}`)
+      // 2) live API document
+      if (slot.documentId && companyId) {
+        try {
+          await downloadApplicationDocument(
+            companyId,
+            id,
+            slot.documentId,
+            slot.fileName || undefined,
+          )
+          showFlash(`Скачано: ${label}`)
+          return
+        } catch {
+          /* fall through to demo */
+        }
+      }
+      // 3) demo PDF by known slot / filename
+      const demoName = resolveDemoAppDocName(slot)
+      if (demoName) {
+        await downloadDemoAppDocument(demoName)
+        showFlash(`Скачано: ${demoName}`)
+        return
+      }
+      throw new Error('Файл недоступен для скачивания')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось скачать документ')
     } finally {
       setBusyId(null)
+    }
+  }
+
+  async function assignPackReview() {
+    if (!companyId || !id || !assignUserId) return
+    const items = slots
+      .filter((s) => Boolean(s.fileName))
+      .map((s) => ({
+        kind: 'app_slot' as const,
+        slotKey: s.id,
+        documentId: s.documentId,
+        title: s.title,
+        fileName: s.fileName,
+      }))
+    if (!items.length) {
+      setError('Нет загруженных документов для проверки')
+      return
+    }
+    setAssignBusy(true)
+    setError(null)
+    try {
+      await assignDocumentReviews(companyId, {
+        assigneeUserId: assignUserId,
+        applicationId: id,
+        purpose: 'review',
+        dueDays: 3,
+        items,
+      })
+      setAssignOpen(false)
+      showFlash('Проверка назначена · задача в «Задачах команды»')
+      await qc.invalidateQueries({ queryKey: ['team', 'tasks'] })
+      await qc.invalidateQueries({ queryKey: ['document-reviews'] })
+      await qc.invalidateQueries({ queryKey: ['notifications'] })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось назначить проверку')
+    } finally {
+      setAssignBusy(false)
     }
   }
 
@@ -993,21 +1071,42 @@ export function ApplicationDetailPage() {
                   PDF, JPEG, PNG, XML
                 </Typography>
               </Box>
-              <Button
-                variant="outlined"
-                startIcon={<AddRoundedIcon />}
-                onClick={() => bulkRef.current?.click()}
-                sx={{
-                  borderRadius: 2,
-                  borderColor: 'rgba(239,49,36,0.45)',
-                  color: '#EF3124',
-                  fontWeight: 700,
-                  bgcolor: '#fff',
-                  textTransform: 'none',
-                }}
-              >
-                Загрузить файл
-              </Button>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                <Button
+                  variant="outlined"
+                  startIcon={<PersonAddAlt1RoundedIcon />}
+                  disabled={!slots.some((s) => s.fileName)}
+                  onClick={() => {
+                    setAssignUserId('')
+                    setAssignOpen(true)
+                  }}
+                  sx={{
+                    borderRadius: 2,
+                    borderColor: 'rgba(11,31,53,0.16)',
+                    color: '#0B1F35',
+                    fontWeight: 700,
+                    bgcolor: '#fff',
+                    textTransform: 'none',
+                  }}
+                >
+                  Назначить проверку
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<AddRoundedIcon />}
+                  onClick={() => bulkRef.current?.click()}
+                  sx={{
+                    borderRadius: 2,
+                    borderColor: 'rgba(239,49,36,0.45)',
+                    color: '#EF3124',
+                    fontWeight: 700,
+                    bgcolor: '#fff',
+                    textTransform: 'none',
+                  }}
+                >
+                  Загрузить файл
+                </Button>
+              </Stack>
               <input
                 ref={bulkRef}
                 hidden
@@ -1275,6 +1374,53 @@ export function ApplicationDetailPage() {
           </Box>
         </Stack>
       </Box>
+
+      <Dialog open={assignOpen} onClose={() => !assignBusy && setAssignOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle sx={{ fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>
+          Назначить проверку документов
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: 13.5, color: '#5A6B7D', mb: 2, lineHeight: 1.45 }}>
+            Сотрудник получит задачу и увидит файлы в разделе «Документы → На проверке». После
+            решения банка ему же уйдёт отчёт на перепроверку.
+          </Typography>
+          <TextField
+            select
+            fullWidth
+            label="Кто проверяет"
+            value={assignUserId}
+            onChange={(e) => setAssignUserId(e.target.value)}
+            sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+          >
+            {(membersQ.data ?? [])
+              .filter((m) => m.status === 'active' && m.userId !== user?.id)
+              .map((m) => (
+                <MenuItem key={m.userId || m.id} value={m.userId || m.id}>
+                  {m.name} · {ROLE_LABEL[m.role] || m.role}
+                </MenuItem>
+              ))}
+          </TextField>
+          {(membersQ.data ?? []).filter((m) => m.status === 'active' && m.userId !== user?.id)
+            .length === 0 && (
+            <Typography sx={{ mt: 1.5, fontSize: 13, color: '#C45A12' }}>
+              В команде пока нет других участников. Пригласите бухгалтера на странице «Команда».
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setAssignOpen(false)} disabled={assignBusy} sx={{ textTransform: 'none' }}>
+            Отмена
+          </Button>
+          <Button
+            variant="contained"
+            disabled={!assignUserId || assignBusy}
+            onClick={() => void assignPackReview()}
+            sx={{ textTransform: 'none', fontWeight: 700, boxShadow: 'none' }}
+          >
+            {assignBusy ? 'Назначаю…' : 'Назначить'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }

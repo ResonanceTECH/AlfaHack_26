@@ -110,7 +110,9 @@ export function notificationHref(
     if (t.includes('OFFER') || t.includes('APPROV')) return `/app/applications/${appId}/edit`
     return `/app/applications/${appId}`
   }
-  if (t.includes('DOC') || t.includes('STATEMENT')) return '/app/documents'
+  if (t.includes('DOC_REVIEW') || t.includes('DOC') || t.includes('STATEMENT')) {
+    return '/app/documents?tab=review'
+  }
   return '/app/notifications'
 }
 
@@ -150,7 +152,14 @@ export function notificationCategory(
     return 'system'
   }
   if (t.includes('DOC') || t.includes('STATEMENT')) return 'documents'
-  if (t.includes('PAYMENT') || t.includes('OBLIGATION')) return 'payments'
+  if (
+    t.includes('PAYMENT') ||
+    t.includes('OBLIGATION') ||
+    t.includes('CREDIT_FIRST') ||
+    t.includes('LOAN')
+  ) {
+    return 'payments'
+  }
   if (
     t.includes('APP') ||
     t.includes('OFFER') ||
@@ -172,7 +181,7 @@ export function notificationKind(
   }
   if (t.includes('DOC')) return 'doc'
   if (t.includes('QUEUE') || t.includes('ASSIGN')) return 'queue'
-  if (t.includes('PAYMENT') || t.includes('DUE')) return 'time'
+  if (t.includes('PAYMENT') || t.includes('DUE') || t.includes('CREDIT_FIRST')) return 'time'
   if (t.includes('INVITE') || t.includes('MEMBER')) return 'person'
   return 'success'
 }

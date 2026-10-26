@@ -6,6 +6,9 @@ import type {
   UserRole,
 } from '@/types'
 import { ACTIVE_COMPANY_KEY, api, num, str } from '@/api/client'
+import { triggerBlobDownload } from '@/utils/download'
+
+export { triggerBlobDownload } from '@/utils/download'
 
 /** Backend: DRAFT / IN_REVIEW / … → frontend: draft / in_review / … */
 const STATUS_ALIASES: Record<string, ApplicationStatus> = {
@@ -429,17 +432,12 @@ export async function downloadApplicationDocument(
     applicationId,
     documentId,
   )
-  const url = URL.createObjectURL(blob)
-  const name = fileName || fromHeader || 'document'
-  const a = document.createElement('a')
-  a.href = url
-  a.target = '_blank'
-  a.rel = 'noopener'
-  a.download = name
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  // Backend stub when file_path is empty — treat as miss so caller can fall back to demo PDF
+  const ct = (blob.type || '').toLowerCase()
+  if (ct.includes('text/plain') && blob.size < 2048) {
+    throw new Error('Файл на сервере недоступен')
+  }
+  triggerBlobDownload(blob, fileName || fromHeader || 'document')
 }
 
 /** Demo PDFs shipped in /public/demo/app-docs for seeded checklist slots. */
@@ -447,19 +445,38 @@ export function demoAppDocumentUrl(fileName: string): string {
   return `/demo/app-docs/${encodeURIComponent(fileName)}`
 }
 
+function isSpaHtmlFallback(res: Response, blob: Blob): boolean {
+  const ct = `${res.headers.get('content-type') || ''} ${blob.type || ''}`.toLowerCase()
+  return ct.includes('text/html')
+}
+
 export async function downloadDemoAppDocument(fileName: string): Promise<void> {
-  const path = demoAppDocumentUrl(fileName)
-  const res = await fetch(path)
-  if (!res.ok) throw new Error(`Файл не найден: ${fileName}`)
-  const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = fileName
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  // Prefer encoded path; also try raw UTF-8 for servers that don't decode %XX in static files
+  const candidates = [
+    `/demo/app-docs/${encodeURIComponent(fileName)}`,
+    `/demo/app-docs/${fileName}`,
+  ]
+  let lastErr: Error | null = null
+  for (const path of candidates) {
+    try {
+      const res = await fetch(path)
+      if (!res.ok) {
+        lastErr = new Error(`Файл не найден: ${fileName}`)
+        continue
+      }
+      const blob = await res.blob()
+      // Vite/nginx SPA fallback returns index.html with 200 — not a real PDF
+      if (isSpaHtmlFallback(res, blob) || blob.size < 64) {
+        lastErr = new Error(`Файл не найден: ${fileName}`)
+        continue
+      }
+      triggerBlobDownload(blob, fileName)
+      return
+    } catch (e) {
+      lastErr = e instanceof Error ? e : new Error(String(e))
+    }
+  }
+  throw lastErr || new Error(`Файл не найден: ${fileName}`)
 }
 
 export async function respondDocumentRequest(
