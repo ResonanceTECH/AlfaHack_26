@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile, status
@@ -14,6 +15,8 @@ from app.models.finance import FinancialObligation, FinancialSnapshot
 from app.models.funding import FundingNeed, FundingNeedItem
 from app.schemas.common import MessageOut
 from app.schemas.company import (
+    CalendarReminderSettings,
+    CalendarReminderSettingsPatch,
     CompanyCreate,
     CompanyDocumentOut,
     CompanyListItem,
@@ -50,6 +53,12 @@ from app.services.access import (
     resolve_company_id,
 )
 from app.services.audit import write_audit
+from app.services.calendar_ics import build_calendar_ics
+from app.services.calendar_reminders import (
+    dispatch_obligation_reminders,
+    get_company_reminder_settings,
+    save_company_reminder_settings,
+)
 from app.services.company_documents import (
     create_document,
     delete_document,
@@ -344,19 +353,42 @@ def update_financials(
     db.refresh(snap)
     return snap
 
+def _obligation_out(ob: FinancialObligation) -> ObligationOut:
+    meta = ob.meta or {}
+    if ob.due_date is None:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Обязательство без даты")
+    return ObligationOut(
+        id=ob.id,
+        company_id=ob.company_id,
+        type=ob.type,
+        title=ob.title or ob.creditor or ob.type,
+        amount=ob.amount,
+        due_date=ob.due_date,
+        recurring=bool(ob.recurring),
+        status=ob.status or "planned",
+        currency=str(meta.get("currency") or "RUB"),
+    )
+
+
 @router.get("/obligations", response_model=list[ObligationOut])
-def list_obligations(db: DbDep, user: CurrentUser, company_id: str | None = None) -> list[FinancialObligation]:
+def list_obligations(
+    db: DbDep,
+    user: CurrentUser,
+    company_id: str | None = Query(default=None, alias="companyId"),
+) -> list[ObligationOut]:
     cid = resolve_company_id(db, user, company_id)
-    return list(
+    rows = list(
         db.scalars(
             select(FinancialObligation)
             .where(FinancialObligation.company_id == cid)
             .order_by(FinancialObligation.due_date)
         ).all()
     )
+    return [_obligation_out(r) for r in rows if r.due_date is not None]
+
 
 @router.post("/obligations", response_model=ObligationOut, status_code=201)
-def create_obligation(body: ObligationCreate, db: DbDep, user: CurrentUser) -> FinancialObligation:
+def create_obligation(body: ObligationCreate, db: DbDep, user: CurrentUser) -> ObligationOut:
     cid = resolve_company_id(db, user, body.company_id)
     require_company_access(db, user, cid, write=True)
     ob = FinancialObligation(
@@ -366,27 +398,159 @@ def create_obligation(body: ObligationCreate, db: DbDep, user: CurrentUser) -> F
         amount=body.amount,
         due_date=body.due_date,
         recurring=body.recurring,
-        status=body.status,
-        currency=body.currency,
+        status=body.status or "planned",
+        meta={"currency": body.currency or "RUB"},
     )
     db.add(ob)
     db.commit()
     db.refresh(ob)
-    return ob
+    return _obligation_out(ob)
+
 
 @router.patch("/obligations/{obligation_id}", response_model=ObligationOut)
 def update_obligation(
     obligation_id: str, body: ObligationUpdate, db: DbDep, user: CurrentUser
-) -> FinancialObligation:
+) -> ObligationOut:
     ob = db.get(FinancialObligation, obligation_id)
     if ob is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Обязательство не найдено")
     require_company_access(db, user, ob.company_id, write=True)
-    for k, v in body.model_dump(exclude_unset=True).items():
+    data = body.model_dump(exclude_unset=True)
+    for k, v in data.items():
         setattr(ob, k, v)
     db.commit()
     db.refresh(ob)
-    return ob
+    return _obligation_out(ob)
+
+
+@router.get(
+    "/companies/{company_id}/calendar.ics",
+    responses={200: {"content": {"text/calendar": {}}}},
+)
+def export_company_calendar_ics(
+    company_id: str,
+    db: DbDep,
+    user: CurrentUser,
+    month: str | None = Query(default=None, description="YYYY-MM"),
+    date_from: date | None = Query(default=None, alias="from"),
+    date_to: date | None = Query(default=None, alias="to"),
+) -> Response:
+    require_company_access(db, user, company_id)
+    company = db.get(Company, company_id)
+    if company is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
+    settings = get_company_reminder_settings(company)
+    alarm_days = settings["days_before"] if settings.get("enabled") else []
+
+    d_from, d_to = date_from, date_to
+    if month and not (d_from or d_to):
+        try:
+            y_s, m_s = month.split("-", 1)
+            y, m = int(y_s), int(m_s)
+            d_from = date(y, m, 1)
+            if m == 12:
+                d_to = date(y + 1, 1, 1) - timedelta(days=1)
+            else:
+                d_to = date(y, m + 1, 1) - timedelta(days=1)
+        except ValueError as exc:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY, detail="month должен быть YYYY-MM"
+            ) from exc
+
+    rows = list(
+        db.scalars(
+            select(FinancialObligation)
+            .where(FinancialObligation.company_id == company_id)
+            .order_by(FinancialObligation.due_date)
+        ).all()
+    )
+    ics = build_calendar_ics(
+        rows,
+        calendar_name=f"{company.name} — календарь",
+        alarm_days=alarm_days,
+        date_from=d_from,
+        date_to=d_to,
+    )
+    filename = f"calendar-{company_id}"
+    if month:
+        filename = f"calendar-{month}"
+    return Response(
+        content=ics.encode("utf-8"),
+        media_type="text/calendar; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}.ics"',
+        },
+    )
+
+
+@router.get(
+    "/companies/{company_id}/calendar/reminder-settings",
+    response_model=CalendarReminderSettings,
+)
+def get_reminder_settings(
+    company_id: str, db: DbDep, user: CurrentUser
+) -> CalendarReminderSettings:
+    require_company_access(db, user, company_id)
+    company = db.get(Company, company_id)
+    if company is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
+    return CalendarReminderSettings(**get_company_reminder_settings(company))
+
+
+@router.patch(
+    "/companies/{company_id}/calendar/reminder-settings",
+    response_model=CalendarReminderSettings,
+)
+def patch_reminder_settings(
+    company_id: str,
+    body: CalendarReminderSettingsPatch,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+) -> CalendarReminderSettings:
+    require_company_access(db, user, company_id, write=True)
+    company = db.get(Company, company_id)
+    if company is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Компания не найдена")
+    settings = save_company_reminder_settings(
+        company, body.model_dump(exclude_unset=True)
+    )
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="company",
+        entity_id=company_id,
+        action="calendar_reminder_settings",
+        details=settings,
+        correlation_id=cid,
+        company_id=company_id,
+    )
+    db.commit()
+    return CalendarReminderSettings(**settings)
+
+
+@router.post(
+    "/companies/{company_id}/calendar/reminders/dispatch",
+    response_model=MessageOut,
+)
+def dispatch_reminders(
+    company_id: str, db: DbDep, user: CurrentUser, cid: CorrelationId
+) -> MessageOut:
+    """Создать in-app уведомления по текущим настройкам (для демо / cron-хука)."""
+    require_company_access(db, user, company_id, write=True)
+    n = dispatch_obligation_reminders(db, company_id=company_id)
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="company",
+        entity_id=company_id,
+        action="calendar_reminders_dispatch",
+        details={"created": n},
+        correlation_id=cid,
+        company_id=company_id,
+    )
+    db.commit()
+    return MessageOut(message=f"created:{n}")
 
 def _get_company_need(db: DbDep, company_id: str, need_id: str, user: CurrentUser) -> FundingNeed:
     require_company_access(db, user, company_id)
