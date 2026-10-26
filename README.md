@@ -6,6 +6,8 @@
 
 > Это решение хакатона **«Альфа-Будущее»**.
 
+https://drive.google.com/drive/folders/1s3jRZ7dEbMVaaJjWIir_uSogXcXnIuoj - ссылка на презентацию и видео
+
 ---
 
 ## Содержание
