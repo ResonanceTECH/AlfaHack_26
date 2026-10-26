@@ -229,22 +229,32 @@ function parseAcceptResult(
 }
 
 /**
- * Accept invite by code. Prefers a live PENDING code from `/invites/mine`
- * so stale notification payload codes never hit the network as 409 spam.
+ * Accept invite by code. Resolves a live PENDING code from `/invites/mine`
+ * first — never POSTs stale notification payload codes (those 409 forever).
  */
-export async function acceptInvite(code: string): Promise<AcceptInviteResult> {
+export async function acceptInvite(
+  code: string,
+  opts?: { companyId?: string },
+): Promise<AcceptInviteResult> {
   const trimmed = code.trim()
   if (!trimmed) throw new Error('Пустой код приглашения')
 
   const mine = await listMyInvites().catch(() => [] as CompanyInvite[])
+  const byCompany = opts?.companyId
+    ? mine.find((i) => i.companyId === opts.companyId && i.code)
+    : undefined
   const exact = mine.find((i) => i.code === trimmed)
-  // Prefer exact pending match; never POST a code that is absent from mine
-  // when another pending invite exists (stale notification deep-links).
-  const codeToPost = exact?.code ?? (mine.length === 1 ? mine[0]?.code : undefined) ?? trimmed
+  const sole = mine.length === 1 ? mine[0] : undefined
+  const live = exact ?? byCompany ?? sole
+
+  if (!live?.code) {
+    // Not in pending inbox → already accepted/declined/revoked. Soft OK, no network 409.
+    return { companyId: opts?.companyId }
+  }
 
   try {
-    const { data } = await api.post(`/invites/${encodeURIComponent(codeToPost)}/accept`)
-    return parseAcceptResult(data, exact?.companyId ?? mine[0]?.companyId)
+    const { data } = await api.post(`/invites/${encodeURIComponent(live.code)}/accept`)
+    return parseAcceptResult(data, live.companyId)
   } catch (err) {
     const status = axios.isAxiosError(err) ? err.response?.status : undefined
     const errBody = axios.isAxiosError(err)
@@ -252,20 +262,24 @@ export async function acceptInvite(code: string): Promise<AcceptInviteResult> {
       : undefined
     const codeName = errBody?.error?.code
     if (status === 409 || codeName === 'INVITE_NOT_PENDING' || codeName === 'INVITE_EXPIRED') {
-      const refreshed = await listMyInvites().catch(() => [] as CompanyInvite[])
-      const live =
-        refreshed.find((i) => i.code && i.code !== codeToPost) ?? refreshed[0]
-      if (live?.code && live.code !== codeToPost) {
-        const { data } = await api.post(`/invites/${encodeURIComponent(live.code)}/accept`)
-        return parseAcceptResult(data, live.companyId)
-      }
-      // Already accepted / revoked and no pending left — soft OK (no throw → no retry loops)
-      return { companyId: live?.companyId ?? exact?.companyId }
+      // Race: accepted in another tab — soft OK
+      return { companyId: live.companyId ?? opts?.companyId }
     }
     throw err
   }
 }
 
 export async function declineInvite(code: string): Promise<void> {
-  await api.post(`/invites/${encodeURIComponent(code)}/decline`)
+  const trimmed = code.trim()
+  if (!trimmed) return
+  const mine = await listMyInvites().catch(() => [] as CompanyInvite[])
+  const live = mine.find((i) => i.code === trimmed) ?? (mine.length === 1 ? mine[0] : undefined)
+  if (!live?.code) return // already gone
+  try {
+    await api.post(`/invites/${encodeURIComponent(live.code)}/decline`)
+  } catch (err) {
+    const status = axios.isAxiosError(err) ? err.response?.status : undefined
+    if (status === 409) return
+    throw err
+  }
 }
