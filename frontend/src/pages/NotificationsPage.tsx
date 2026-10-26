@@ -1,4 +1,5 @@
 import {
+  Alert,
   Box,
   Button,
   Checkbox,
@@ -17,9 +18,10 @@ import AssignmentRoundedIcon from '@mui/icons-material/AssignmentRounded'
 import { useMemo, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { apiErrorMessage } from '@/api/errors'
 import {
   formatNotificationTime,
-  inviteCodeFromNotification,
+  inviteMetaFromNotification,
   listNotifications,
   markAllNotificationsRead,
   markNotificationRead,
@@ -28,7 +30,7 @@ import {
   notificationKind,
   type AppNotification,
 } from '@/api/notifications'
-import { acceptInvite, declineInvite } from '@/api/team'
+import { acceptInvite, declineInvite, listMyInvites } from '@/api/team'
 import { useAuth } from '@/contexts/AuthContext'
 import { isAnalystRole } from '@/features/analyst/roles'
 
@@ -54,6 +56,10 @@ type Notification = {
   unread: boolean
   href?: string
   inviteCode?: string
+  inviteId?: string
+  inviteCompanyId?: string
+  /** Live code from /invites/mine (stale notification payloads are remapped). */
+  liveInviteCode?: string
 }
 
 const KIND_META: Record<
@@ -71,6 +77,7 @@ const KIND_META: Record<
 type TabKey = 'all' | EntrepreneurCategory | AnalystCategory
 
 function mapItem(n: AppNotification, analyst: boolean): Notification {
+  const invite = inviteMetaFromNotification(n)
   return {
     id: n.id,
     kind: notificationKind(n),
@@ -80,7 +87,9 @@ function mapItem(n: AppNotification, analyst: boolean): Notification {
     time: formatNotificationTime(n.createdAt),
     unread: !n.isRead,
     href: notificationHref(n, analyst ? 'analyst' : 'entrepreneur'),
-    inviteCode: inviteCodeFromNotification(n),
+    inviteCode: invite.code,
+    inviteId: invite.inviteId,
+    inviteCompanyId: invite.companyId,
   }
 }
 
@@ -94,11 +103,18 @@ export function NotificationsPage() {
     queryKey: ['notifications'],
     queryFn: () => listNotifications({ limit: 50 }),
   })
+  const myInvitesQ = useQuery({
+    queryKey: ['team', 'invites', 'mine'],
+    queryFn: listMyInvites,
+    enabled: !analyst,
+  })
 
   const markAllM = useMutation({
     mutationFn: markAllNotificationsRead,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
   })
+
+  const [inviteActionError, setInviteActionError] = useState<string | null>(null)
 
   const inviteActionM = useMutation({
     mutationFn: async ({ code, action }: { code: string; action: 'accept' | 'decline' }) => {
@@ -107,14 +123,19 @@ export function NotificationsPage() {
       return undefined
     },
     onSuccess: async (res) => {
-      await qc.invalidateQueries({ queryKey: ['notifications'] })
-      await qc.invalidateQueries({ queryKey: ['team'] })
-      await qc.invalidateQueries({ queryKey: ['companies'] })
+      setInviteActionError(null)
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['notifications'] }),
+        qc.invalidateQueries({ queryKey: ['team'] }),
+        qc.invalidateQueries({ queryKey: ['companies'] }),
+        qc.invalidateQueries({ queryKey: ['team', 'invites', 'mine'] }),
+      ])
       if (res?.companyId) {
         selectCompany(res.companyId)
         navigate('/app/team')
       }
     },
+    onError: (err) => setInviteActionError(apiErrorMessage(err, 'Не удалось обработать приглашение')),
   })
 
   const [tab, setTab] = useState<TabKey>('all')
@@ -136,10 +157,27 @@ export function NotificationsPage() {
     assignments: true,
   })
 
-  const items = useMemo(
-    () => (listQ.data?.items ?? []).map((n) => mapItem(n, analyst)),
-    [listQ.data, analyst],
-  )
+  const pendingInvites = myInvitesQ.data ?? []
+  const items = useMemo(() => {
+    const byCode = new Map(pendingInvites.map((i) => [i.code, i]))
+    const byId = new Map(pendingInvites.map((i) => [i.id, i]))
+    const byCompany = new Map(
+      pendingInvites.filter((i) => i.companyId).map((i) => [i.companyId!, i]),
+    )
+    return (listQ.data?.items ?? []).map((raw) => {
+      const n = mapItem(raw, analyst)
+      if (!n.inviteCode && !n.inviteId && !n.inviteCompanyId) return n
+      const live =
+        (n.inviteCode && byCode.get(n.inviteCode)) ||
+        (n.inviteId && byId.get(n.inviteId)) ||
+        (n.inviteCompanyId && byCompany.get(n.inviteCompanyId)) ||
+        undefined
+      return {
+        ...n,
+        liveInviteCode: live?.code,
+      }
+    })
+  }, [listQ.data, analyst, pendingInvites])
 
   const unreadCount = listQ.data?.unreadCount ?? items.filter((i) => i.unread).length
 
@@ -293,6 +331,15 @@ export function NotificationsPage() {
         }}
       >
         <Stack spacing={1.25}>
+          {inviteActionError && (
+            <Alert
+              severity="error"
+              sx={{ borderRadius: 2.5 }}
+              onClose={() => setInviteActionError(null)}
+            >
+              {inviteActionError}
+            </Alert>
+          )}
           {listQ.isLoading && (
             <Box sx={{ ...tileSx, textAlign: 'center', py: 4 }}>
               <CircularProgress size={28} sx={{ color: '#EF3124' }} />
@@ -310,7 +357,9 @@ export function NotificationsPage() {
             filtered.map((n) => {
               const meta = KIND_META[n.kind]
               const Icon = meta.Icon
-              const isInvite = Boolean(n.inviteCode)
+              const actionableCode = n.liveInviteCode
+              const isInvite = Boolean(n.inviteCode || n.inviteId || n.inviteCompanyId)
+              const canAct = Boolean(actionableCode)
               return (
                 <Box
                   key={n.id}
@@ -389,7 +438,7 @@ export function NotificationsPage() {
                       >
                         {n.body}
                       </Typography>
-                      {isInvite && n.inviteCode && (
+                      {isInvite && canAct && actionableCode && (
                         <Stack direction="row" spacing={1} sx={{ mt: 1.25 }}>
                           <Button
                             size="small"
@@ -401,7 +450,7 @@ export function NotificationsPage() {
                               if (n.unread) {
                                 void markNotificationRead(n.id).catch(() => undefined)
                               }
-                              inviteActionM.mutate({ code: n.inviteCode!, action: 'decline' })
+                              inviteActionM.mutate({ code: actionableCode, action: 'decline' })
                             }}
                             sx={{
                               borderRadius: 2,
@@ -422,7 +471,7 @@ export function NotificationsPage() {
                               if (n.unread) {
                                 void markNotificationRead(n.id).catch(() => undefined)
                               }
-                              inviteActionM.mutate({ code: n.inviteCode!, action: 'accept' })
+                              inviteActionM.mutate({ code: actionableCode, action: 'accept' })
                             }}
                             sx={{
                               borderRadius: 2,
@@ -435,6 +484,11 @@ export function NotificationsPage() {
                             Принять
                           </Button>
                         </Stack>
+                      )}
+                      {isInvite && !canAct && (
+                        <Typography sx={{ fontSize: 12.5, color: '#9AA5B1', mt: 1, fontWeight: 600 }}>
+                          Приглашение уже обработано
+                        </Typography>
                       )}
                     </Box>
 
