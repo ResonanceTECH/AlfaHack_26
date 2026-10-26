@@ -29,6 +29,7 @@ from app.schemas.auth import (
 from app.schemas.common import MessageOut
 from app.services import auth_flow
 from app.services.audit import write_audit
+from app.services.device_label import format_device_label, is_cli_user_agent
 from app.services.email import get_email_provider
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -53,6 +54,7 @@ def _user_out(user: User) -> UserOut:
 
 
 def _device_info(request: Request) -> str:
+    """Persist raw User-Agent; list_sessions formats a friendly label."""
     return (request.headers.get("User-Agent") or "")[:400]
 
 
@@ -363,23 +365,32 @@ def _access_jti(request: Request) -> str | None:
 def list_sessions(request: Request, db: DbDep, user: CurrentUser) -> list[SessionOut]:
     rows = auth_flow.list_active_sessions(db, user.id)
     access_jti = _access_jti(request)
+    # Drop curl/httpx/postman smoke sessions from UI (still in DB until expiry)
+    browser_rows = [s for s in rows if not is_cli_user_agent(s.device_info)]
+    # Keep current session even if somehow CLI (shouldn't happen from browser)
+    if access_jti:
+        current_raw = next((s for s in rows if s.jti == access_jti), None)
+        if current_raw is not None and all(s.id != current_raw.id for s in browser_rows):
+            browser_rows = [current_raw, *browser_rows]
+    display = browser_rows or rows
+
     current_id = None
     if access_jti:
-        match = next((s for s in rows if s.jti == access_jti), None)
+        match = next((s for s in display if s.jti == access_jti), None)
         if match is not None:
             current_id = match.id
-    if current_id is None and rows:
-        current_id = rows[0].id
+    if current_id is None and display:
+        current_id = display[0].id
     return [
         SessionOut(
             id=s.id,
-            device_info=s.device_info,
+            device_info=format_device_label(s.device_info),
             created_at=s.created_at,
             expires_at=s.expires_at,
             current=s.id == current_id,
             revoked=bool(s.revoked),
         )
-        for s in rows
+        for s in display
     ]
 
 

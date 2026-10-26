@@ -194,6 +194,16 @@ class AssistantStatusOut(APIModel):
     disclaimer: str = "Локальная модель опциональна; активен rule-based fallback."
 
 
+class AgreementHelperReviewOut(APIModel):
+    id: str
+    assignee_user_id: str
+    assignee_name: str | None = None
+    status: str
+    purpose: str | None = None
+    comment: str | None = None
+    updated_at: datetime | None = None
+
+
 class AgreementOut(APIModel):
     id: str
     application_id: str
@@ -207,6 +217,10 @@ class AgreementOut(APIModel):
     confirmed: bool = False
     confirmed_at: datetime | None = None
     document_ready: bool = True
+    sent_at: str | None = None
+    sent_by: str | None = None
+    helper_approved: bool = False
+    helper_reviews: list[AgreementHelperReviewOut] = Field(default_factory=list)
     disclaimer: str = "Демонстрационный договор, не имеет юридической силы."
 
 

@@ -2,19 +2,26 @@ import {
   Box,
   Button,
   CircularProgress,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  IconButton,
   InputAdornment,
   MenuItem,
   Stack,
   TextField,
   Typography,
 } from '@mui/material'
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded'
+import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import axios from 'axios'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link as RouterLink, useSearchParams } from 'react-router-dom'
 import {
   deleteCompanyDocument,
   downloadCompanyDocument,
@@ -23,6 +30,17 @@ import {
   type CompanyDocument,
   type VaultDocStatus,
 } from '@/api/documents'
+import {
+  demoAppDocumentUrl,
+  fetchApplicationAgreementPdfBlob,
+  previewApplicationDocumentUrl,
+} from '@/api/applications'
+import {
+  listDocumentReviews,
+  patchDocumentReview,
+  REVIEW_STATUS_LABEL,
+  type DocumentReview,
+} from '@/api/docReviews'
 import { useAuth } from '@/contexts/AuthContext'
 import { useAppStore } from '@/hooks/useAppStore'
 
@@ -58,7 +76,7 @@ function apiError(err: unknown, fallback: string): string {
   return fallback
 }
 
-type TabKey = 'all' | 'need_upload' | 'pending' | 'accepted'
+type TabKey = 'all' | 'need_upload' | 'pending' | 'accepted' | 'mine_review'
 
 const STATUS_META: Record<
   DocStatus,
@@ -103,15 +121,39 @@ export function DocumentsPage() {
   const { user } = useAuth()
   const { companyId: storeCompanyId, company } = useAppStore()
   const qc = useQueryClient()
+  const [params] = useSearchParams()
   const companyId = storeCompanyId || user?.companyId
   const fileRef = useRef<HTMLInputElement | null>(null)
-  const [tab, setTab] = useState<TabKey>('all')
+  const [tab, setTab] = useState<TabKey>(() =>
+    params.get('tab') === 'review' ? 'mine_review' : 'all',
+  )
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState<'all' | DocCategory>('all')
   const [period, setPeriod] = useState('12')
   const [uploadTarget, setUploadTarget] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [preview, setPreview] = useState<{
+    title: string
+    url: string
+    blob: boolean
+  } | null>(null)
+  const [activeReviewId, setActiveReviewId] = useState<string | null>(null)
+  const [reviewComment, setReviewComment] = useState('')
+  const [workspaceUrl, setWorkspaceUrl] = useState<string | null>(null)
+  const [workspaceBlob, setWorkspaceBlob] = useState(false)
+  const [workspaceLoading, setWorkspaceLoading] = useState(false)
+
+  useEffect(() => {
+    if (params.get('tab') === 'review') setTab('mine_review')
+  }, [params])
+
+  useEffect(() => {
+    return () => {
+      if (preview?.blob && preview.url) URL.revokeObjectURL(preview.url)
+      if (workspaceBlob && workspaceUrl) URL.revokeObjectURL(workspaceUrl)
+    }
+  }, [preview, workspaceBlob, workspaceUrl])
 
   const docsQ = useQuery({
     queryKey: ['company-documents', companyId, category !== 'all' ? category : undefined],
@@ -123,6 +165,14 @@ export function DocumentsPage() {
   })
   const docs = docsQ.data ?? []
 
+  const myReviewsQ = useQuery({
+    queryKey: ['document-reviews', companyId, 'mine'],
+    queryFn: () => listDocumentReviews(companyId!, { mine: true }),
+    enabled: Boolean(companyId),
+  })
+  const myReviews = myReviewsQ.data ?? []
+  const pendingMine = myReviews.filter((r) => r.status === 'pending' || r.status === 'viewed')
+
   const stats = useMemo(() => {
     const accepted = docs.filter(
       (d) => d.status === 'accepted' || d.status === 'accepted_remark',
@@ -133,6 +183,7 @@ export function DocumentsPage() {
   }, [docs])
 
   const filtered = useMemo(() => {
+    if (tab === 'mine_review') return []
     const q = search.trim().toLowerCase()
     return docs.filter((d) => {
       if (!matchesTab(d, tab)) return false
@@ -143,6 +194,16 @@ export function DocumentsPage() {
       return true
     })
   }, [docs, tab, search, category])
+
+  const filteredReviews = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return myReviews.filter((r) => {
+      if (q && !r.title.toLowerCase().includes(q) && !(r.fileName || '').toLowerCase().includes(q)) {
+        return false
+      }
+      return true
+    })
+  }, [myReviews, search])
 
   function flashMsg(msg: string) {
     setFlash(msg)
@@ -202,11 +263,109 @@ export function DocumentsPage() {
     }
   }
 
+  async function resolveReviewPdf(r: DocumentReview): Promise<{ url: string; blob: boolean }> {
+    if (!companyId) throw new Error('Нет компании')
+    if (r.kind === 'agreement' && r.applicationId) {
+      const blob = await fetchApplicationAgreementPdfBlob(companyId, r.applicationId)
+      return { url: URL.createObjectURL(blob), blob: true }
+    }
+    if (r.documentId && r.applicationId) {
+      try {
+        const url = await previewApplicationDocumentUrl(companyId, r.applicationId, r.documentId)
+        return { url, blob: true }
+      } catch {
+        /* fall through to demo */
+      }
+    }
+    if (r.fileName) {
+      const demo = demoAppDocumentUrl(r.fileName)
+      const ok = await fetch(demo)
+        .then((res) => res.ok)
+        .catch(() => false)
+      if (ok) return { url: demo, blob: false }
+    }
+    if (r.kind === 'decision_report' || r.kind === 'agreement') {
+      return { url: '/demo/credit_contract_demo.pdf', blob: false }
+    }
+    throw new Error('Нет файла для предпросмотра')
+  }
+
+  async function openReviewWorkspace(r: DocumentReview) {
+    if (!companyId) return
+    setActiveReviewId(r.id)
+    setReviewComment(r.comment || '')
+    setWorkspaceLoading(true)
+    setActionError(null)
+    try {
+      if (workspaceBlob && workspaceUrl) URL.revokeObjectURL(workspaceUrl)
+      const { url, blob } = await resolveReviewPdf(r)
+      setWorkspaceUrl(url)
+      setWorkspaceBlob(blob)
+      if (r.status === 'pending') {
+        void patchDocumentReview(companyId, r.id, { status: 'viewed' }).then(() =>
+          qc.invalidateQueries({ queryKey: ['document-reviews'] }),
+        )
+      }
+    } catch (err) {
+      setWorkspaceUrl(null)
+      setWorkspaceBlob(false)
+      setActionError(apiError(err, 'Не удалось открыть документ'))
+    } finally {
+      setWorkspaceLoading(false)
+    }
+  }
+
+  async function decideReview(r: DocumentReview, status: 'approved' | 'rejected') {
+    if (!companyId) return
+    const comment = reviewComment.trim()
+    if (status === 'rejected' && !comment) {
+      setActionError('Для отправки на доработку напишите комментарий')
+      return
+    }
+    try {
+      await patchDocumentReview(companyId, r.id, {
+        status,
+        comment: comment || undefined,
+      })
+      flashMsg(
+        status === 'approved'
+          ? 'Корректность подтверждена · владелец получит уведомление'
+          : 'Отправлено на доработку · владелец увидит комментарий',
+      )
+      setReviewComment('')
+      await qc.invalidateQueries({ queryKey: ['document-reviews'] })
+      await qc.invalidateQueries({ queryKey: ['doc-reviews'] })
+      await qc.invalidateQueries({ queryKey: ['tasks', companyId] })
+      await qc.invalidateQueries({ queryKey: ['notifications'] })
+    } catch (err) {
+      setActionError(apiError(err, 'Не удалось обновить статус'))
+    }
+  }
+
+  const activeReview = useMemo(
+    () => filteredReviews.find((r) => r.id === activeReviewId) ?? null,
+    [filteredReviews, activeReviewId],
+  )
+
+  useEffect(() => {
+    if (tab !== 'mine_review') return
+    if (activeReviewId && filteredReviews.some((r) => r.id === activeReviewId)) return
+    const first = filteredReviews.find((r) => r.status === 'pending' || r.status === 'viewed')
+      ?? filteredReviews[0]
+    if (first) void openReviewWorkspace(first)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, filteredReviews.length, companyId])
+
   const tabs: { key: TabKey; label: string; badge?: number }[] = [
     { key: 'all', label: 'Все' },
     { key: 'need_upload', label: 'Нужно загрузить', badge: stats.need },
     { key: 'pending', label: 'На проверке' },
     { key: 'accepted', label: 'Приняты' },
+    {
+      key: 'mine_review',
+      label: 'Мне на проверку',
+      badge: pendingMine.length || undefined,
+    },
   ]
 
   const thSx = {
@@ -489,6 +648,194 @@ export function DocumentsPage() {
       </Box>
 
       <Box sx={{ ...tileSx, mb: 2, overflow: 'auto', p: { xs: 1.5, md: 2 } }}>
+        {tab === 'mine_review' ? (
+          <Box>
+            <Typography sx={{ fontSize: 13.5, color: '#5A6B7D', mb: 1.5, px: 0.5 }}>
+              Предпросмотр PDF, комментарий и решение — владелец заявки увидит результат в
+              уведомлениях и сможет заменить файл или сам согласовать.
+            </Typography>
+            {myReviewsQ.isLoading && (
+              <Box sx={{ py: 4, textAlign: 'center' }}>
+                <CircularProgress size={24} sx={{ color: '#EF3124' }} />
+              </Box>
+            )}
+            {!myReviewsQ.isLoading && filteredReviews.length === 0 && (
+              <Typography sx={{ py: 3, color: '#9AA5B1', fontSize: 14, textAlign: 'center' }}>
+                Пока нет назначений на проверку
+              </Typography>
+            )}
+            {filteredReviews.length > 0 && (
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: { xs: '1fr', md: '280px minmax(0, 1fr)' },
+                  gap: 1.5,
+                  minHeight: { md: 560 },
+                }}
+              >
+                <Stack spacing={1} sx={{ maxHeight: { md: 640 }, overflow: 'auto' }}>
+                  {filteredReviews.map((r) => {
+                    const active = r.id === activeReviewId
+                    return (
+                      <Box
+                        key={r.id}
+                        onClick={() => void openReviewWorkspace(r)}
+                        sx={{
+                          p: 1.35,
+                          borderRadius: 2,
+                          cursor: 'pointer',
+                          border: active
+                            ? '1.5px solid rgba(239,49,36,0.45)'
+                            : '1px solid rgba(11,31,53,0.08)',
+                          bgcolor: active ? 'rgba(239,49,36,0.04)' : '#F7F8FA',
+                          '&:hover': { borderColor: 'rgba(11,31,53,0.18)' },
+                        }}
+                      >
+                        <Typography sx={{ fontWeight: 750, fontSize: 13.5, color: '#0B1F35' }}>
+                          {r.title}
+                        </Typography>
+                        <Typography sx={{ fontSize: 12, color: '#8A96A3', mt: 0.35 }}>
+                          {REVIEW_STATUS_LABEL[r.status] || r.status}
+                          {r.assignedByName ? ` · от ${r.assignedByName}` : ''}
+                        </Typography>
+                      </Box>
+                    )
+                  })}
+                </Stack>
+
+                <Box
+                  sx={{
+                    borderRadius: 2.5,
+                    border: '1px solid rgba(11,31,53,0.08)',
+                    bgcolor: '#fff',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    minHeight: 480,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {activeReview ? (
+                    <>
+                      <Box
+                        sx={{
+                          px: 2,
+                          py: 1.5,
+                          borderBottom: '1px solid rgba(11,31,53,0.08)',
+                        }}
+                      >
+                        <Typography sx={{ fontWeight: 800, fontSize: 15, color: '#0B1F35' }}>
+                          {activeReview.title}
+                        </Typography>
+                        <Typography sx={{ fontSize: 12.5, color: '#8A96A3', mt: 0.35 }}>
+                          {activeReview.fileName || activeReview.kind}
+                          {activeReview.assignedByName
+                            ? ` · назначил ${activeReview.assignedByName}`
+                            : ''}
+                        </Typography>
+                        {activeReview.kind === 'agreement' && activeReview.applicationId && (
+                          <Button
+                            component={RouterLink}
+                            to={`/app/applications/${activeReview.applicationId}/contract`}
+                            size="small"
+                            sx={{ mt: 1, textTransform: 'none', fontWeight: 700, px: 0 }}
+                          >
+                            Открыть кредитный договор
+                          </Button>
+                        )}
+                      </Box>
+
+                      <Box sx={{ flex: 1, bgcolor: '#EEF1F4', minHeight: 280, position: 'relative' }}>
+                        {workspaceLoading && (
+                          <Box sx={{ display: 'grid', placeItems: 'center', height: 280 }}>
+                            <CircularProgress size={28} sx={{ color: '#EF3124' }} />
+                          </Box>
+                        )}
+                        {!workspaceLoading && workspaceUrl && (
+                          <Box
+                            component="iframe"
+                            title={activeReview.title}
+                            src={`${workspaceUrl}#toolbar=0`}
+                            sx={{ width: '100%', height: '100%', minHeight: 320, border: 0, bgcolor: '#fff' }}
+                          />
+                        )}
+                        {!workspaceLoading && !workspaceUrl && (
+                          <Typography sx={{ p: 3, color: '#9AA5B1', fontSize: 14 }}>
+                            Не удалось загрузить предпросмотр
+                          </Typography>
+                        )}
+                      </Box>
+
+                      <Box sx={{ p: 2, borderTop: '1px solid rgba(11,31,53,0.08)' }}>
+                        <TextField
+                          fullWidth
+                          multiline
+                          minRows={2}
+                          label="Комментарий"
+                          placeholder="Подтвердите корректность или опишите, что поправить"
+                          value={reviewComment}
+                          onChange={(e) => setReviewComment(e.target.value)}
+                          disabled={
+                            activeReview.status === 'approved' || activeReview.status === 'rejected'
+                          }
+                          sx={{ mb: 1.5, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                        />
+                        {(activeReview.status === 'pending' || activeReview.status === 'viewed') && (
+                          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                            <Button
+                              variant="contained"
+                              onClick={() => void decideReview(activeReview, 'approved')}
+                              sx={{
+                                textTransform: 'none',
+                                fontWeight: 700,
+                                boxShadow: 'none',
+                                bgcolor: '#1B8A5A',
+                                '&:hover': { bgcolor: '#167A4E', boxShadow: 'none' },
+                              }}
+                            >
+                              Подтвердить корректность
+                            </Button>
+                            <Button
+                              variant="outlined"
+                              color="error"
+                              onClick={() => void decideReview(activeReview, 'rejected')}
+                              sx={{ textTransform: 'none', fontWeight: 700 }}
+                            >
+                              На доработку
+                            </Button>
+                            <Button
+                              size="small"
+                              startIcon={<VisibilityRoundedIcon sx={{ fontSize: 16 }} />}
+                              onClick={() => {
+                                if (!workspaceUrl) return
+                                setPreview({
+                                  title: activeReview.title,
+                                  url: workspaceUrl,
+                                  blob: false,
+                                })
+                              }}
+                              sx={{ textTransform: 'none', fontWeight: 700, ml: { sm: 'auto' } }}
+                            >
+                              На весь экран
+                            </Button>
+                          </Stack>
+                        )}
+                        {(activeReview.status === 'approved' ||
+                          activeReview.status === 'rejected') && (
+                          <Typography sx={{ fontSize: 13, color: '#5A6B7D' }}>
+                            Решение уже отправлено владельцу
+                            {activeReview.comment ? `: «${activeReview.comment}»` : '.'}
+                          </Typography>
+                        )}
+                      </Box>
+                    </>
+                  ) : (
+                    <Typography sx={{ p: 3, color: '#9AA5B1' }}>Выберите документ слева</Typography>
+                  )}
+                </Box>
+              </Box>
+            )}
+          </Box>
+        ) : (
         <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse', minWidth: 780 }}>
           <Box component="thead">
             <Box component="tr">
@@ -622,6 +969,7 @@ export function DocumentsPage() {
             )}
           </Box>
         </Box>
+        )}
       </Box>
 
       <Box
@@ -639,9 +987,51 @@ export function DocumentsPage() {
         <WarningAmberRoundedIcon sx={{ fontSize: 20, color: '#C45A12', mt: 0.1, flexShrink: 0 }} />
         <Typography sx={{ fontSize: 13, color: '#7A5A3A', lineHeight: 1.45 }}>
           Принимаем PDF, JPG, PNG, XLSX до 20 МБ. Документы шифруются и доступны только менеджеру и
-          аналитику по вашей заявке.
+          аналитику по вашей заявке. Назначения на проверку видит исполнитель во вкладке «Мне на
+          проверку» и в задачах команды.
         </Typography>
       </Box>
+
+      <Dialog
+        open={Boolean(preview)}
+        onClose={() => {
+          if (preview?.blob && preview.url) URL.revokeObjectURL(preview.url)
+          setPreview(null)
+        }}
+        fullWidth
+        maxWidth="lg"
+        PaperProps={{ sx: { borderRadius: 3, height: { xs: '90vh', md: '85vh' } } }}
+      >
+        <DialogTitle
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 1,
+            borderBottom: '1px solid rgba(11,31,53,0.08)',
+          }}
+        >
+          <Typography sx={{ fontWeight: 800, fontSize: 15 }}>{preview?.title}</Typography>
+          <IconButton
+            onClick={() => {
+              if (preview?.blob && preview.url) URL.revokeObjectURL(preview.url)
+              setPreview(null)
+            }}
+          >
+            <CloseRoundedIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ p: 0, bgcolor: '#EEF1F4' }}>
+          {preview?.url && (
+            <Box
+              component="iframe"
+              title={preview.title}
+              src={`${preview.url}#toolbar=1`}
+              sx={{ width: '100%', height: '100%', minHeight: '70vh', border: 0, bgcolor: '#fff' }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </Box>
   )
 }

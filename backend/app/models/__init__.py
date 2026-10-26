@@ -45,6 +45,7 @@ from app.models.policy import CreditPolicy, CreditPolicyVersion, Policy, PolicyS
 from app.models.rbac import RolePermission
 from app.models.session import AuthSession, RefreshToken
 from app.models.task import CompanyTask
+from app.models.doc_review import DocumentReview
 from app.models.user import User
 
 __all__ = [
@@ -53,6 +54,7 @@ __all__ = [
     "RefreshToken",
     "RolePermission",
     "CompanyTask",
+    "DocumentReview",
     "Company",
     "CompanyMembership",
     "CompanyMember",

@@ -16,6 +16,7 @@ from app.core.enums import (
 from app.core.errors import AppError
 from app.models.application import (
     ApplicationCheck,
+    ApplicationDocument,
     ApplicationStatusHistory,
     ApplicationWorkflow,
     CreditApplication,
@@ -199,6 +200,100 @@ def _add_check(
     return check
 
 
+def _uploaded_docs_snapshot(db: Session, application_id: str) -> list[dict[str, Any]]:
+    """Live list of uploaded application documents (not 'requested' placeholders)."""
+    rows = list(
+        db.scalars(
+            select(ApplicationDocument)
+            .where(ApplicationDocument.application_id == application_id)
+            .order_by(ApplicationDocument.uploaded_at.desc())
+        ).all()
+    )
+    out: list[dict[str, Any]] = []
+    for d in rows:
+        st = (d.status or "").lower()
+        if st in ("requested",):
+            continue
+        name = d.file_name or d.name or "файл"
+        dtype = d.document_type or d.doc_type or "OTHER"
+        out.append(
+            {
+                "id": d.id,
+                "name": name,
+                "type": dtype,
+                "status": d.status or "uploaded",
+                "size": int(d.size_bytes or d.size or 0),
+                "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None,
+            }
+        )
+    return out
+
+
+def refresh_documents_baseline_check(
+    db: Session,
+    app: CreditApplication,
+    *,
+    workflow_id: str | None = None,
+) -> ApplicationCheck:
+    """
+    Upsert DOCUMENTS_BASELINE with live upload list so analyst sees what client attached
+    even after the initial validation pass (which often runs with 0 docs).
+    """
+    items = _uploaded_docs_snapshot(db, app.id)
+    n = len(items)
+    names = [str(i["name"]) for i in items[:6]]
+    if n == 0:
+        explanation = "Загружено документов: 0"
+        status = "WARNING"
+    elif n == 1:
+        explanation = f"Загружен 1 документ: {names[0]}"
+        status = "PASSED"
+    else:
+        preview = ", ".join(names[:3])
+        more = f" и ещё {n - 3}" if n > 3 else ""
+        explanation = f"Загружено документов: {n} ({preview}{more})"
+        status = "PASSED"
+
+    payload = {
+        "uploaded_count": n,
+        "documents": items,
+        "refreshed_at": utcnow().isoformat(),
+    }
+
+    existing = db.scalar(
+        select(ApplicationCheck)
+        .where(
+            ApplicationCheck.application_id == app.id,
+            ApplicationCheck.check_key == "DOCUMENTS_BASELINE",
+        )
+        .order_by(ApplicationCheck.created_at.desc())
+        .limit(1)
+    )
+    if existing is not None:
+        existing.status = status
+        existing.explanation = explanation
+        existing.payload = payload
+        existing.reason_codes = [] if n else ["NO_DOCUMENTS"]
+        db.flush()
+        return existing
+
+    wf = workflow_id
+    if wf is None:
+        active = active_workflow(app)
+        wf = active.id if active else None
+    return _add_check(
+        db,
+        app=app,
+        workflow_id=wf,
+        check_key="DOCUMENTS_BASELINE",
+        audience=CheckAudience.PUBLIC,
+        status=status,
+        explanation=explanation,
+        reason_codes=[] if n else ["NO_DOCUMENTS"],
+        payload=payload,
+    )
+
+
 def run_automated_validation(
     db: Session,
     app: CreditApplication,
@@ -283,19 +378,8 @@ def run_automated_validation(
         )
     )
 
-    docs = list(app.documents or [])
-    uploaded = [d for d in docs if (d.status or "") not in ("requested",)]
     checks.append(
-        _add_check(
-            db,
-            app=app,
-            workflow_id=wf_id,
-            check_key="DOCUMENTS_BASELINE",
-            audience=CheckAudience.PUBLIC,
-            status="PASSED" if uploaded else "WARNING",
-            explanation=f"Загружено документов: {len(uploaded)}",
-            payload={"uploaded_count": len(uploaded)},
-        )
+        refresh_documents_baseline_check(db, app, workflow_id=wf_id)
     )
 
     score = int(app.readiness_score or 50)

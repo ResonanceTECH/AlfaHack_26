@@ -173,8 +173,8 @@ def _allowed_actions(app: CreditApplication) -> list[str]:
         ApplicationStatus.DOCS_REQUESTED: ["REQUEST_DOCS", "APPROVE", "REJECT", "COUNTEROFFER", "NEED_INFO"],
         ApplicationStatus.APPROVED: ["REJECT", "COUNTEROFFER"],
         ApplicationStatus.COUNTEROFFERED: ["REQUEST_DOCS", "APPROVE", "REJECT", "COUNTEROFFER", "NEED_INFO"],
-        ApplicationStatus.OFFER_ACCEPTED: [],
-        ApplicationStatus.AGREEMENT_PREPARATION: [],
+        ApplicationStatus.OFFER_ACCEPTED: ["SEND_AGREEMENT"],
+        ApplicationStatus.AGREEMENT_PREPARATION: ["SEND_AGREEMENT"],
         ApplicationStatus.REJECTED: [],
         ApplicationStatus.ISSUED: [],
     }
@@ -255,6 +255,13 @@ def get_analyst_application(db: Session, application_id: str) -> CreditApplicati
 
 
 def build_analyst_card(db: Session, app: CreditApplication) -> dict[str, Any]:
+    # Keep DOCUMENTS_BASELINE / checks summary in sync with live uploads
+    from app.services.workflow import refresh_documents_baseline_check
+
+    refresh_documents_baseline_check(db, app)
+    db.flush()
+    db.expire(app, ["checks"])
+
     company = app.company or db.get(Company, app.company_id)
     snap = db.scalar(
         select(FinancialSnapshot)
@@ -363,7 +370,13 @@ def build_analyst_card(db: Session, app: CreditApplication) -> dict[str, Any]:
     }
 
 
-def build_analyst_checks(app: CreditApplication) -> dict[str, Any]:
+def build_analyst_checks(app: CreditApplication, db: Session | None = None) -> dict[str, Any]:
+    # Refresh DOCUMENTS_BASELINE from live uploads before returning
+    if db is not None:
+        from app.services.workflow import refresh_documents_baseline_check
+
+        refresh_documents_baseline_check(db, app)
+        db.flush()
     checks = analyst_visible_checks(app)
     return {
         "application_id": app.id,

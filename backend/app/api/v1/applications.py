@@ -44,7 +44,7 @@ from app.schemas.finance_p1 import AgreementConfirmIn, AgreementConfirmOut, Agre
 from app.services.agreements import (
     confirm_agreement,
     ensure_agreement,
-    pdf_stub_bytes,
+    pdf_bytes,
     serialize_agreement,
 )
 from app.services.access import (
@@ -874,7 +874,7 @@ def get_application_agreement(
     agreement = ensure_agreement(db, app)
     db.commit()
     db.refresh(agreement)
-    return AgreementOut(**serialize_agreement(agreement))
+    return AgreementOut(**serialize_agreement(db, agreement))
 
 
 @router.get(
@@ -886,12 +886,12 @@ def download_application_agreement(
     app = _company_app(db, company_id, application_id, user)
     agreement = ensure_agreement(db, app)
     db.commit()
-    body = pdf_stub_bytes(agreement)
+    body = pdf_bytes(agreement)
     return Response(
         content=body,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'attachment; filename="agreement-{agreement.number or agreement.id}.pdf"',
+            "Content-Disposition": f'inline; filename="agreement-{agreement.number or agreement.id}.pdf"',
         },
     )
 
@@ -912,14 +912,14 @@ def confirm_application_agreement(
     if not body.acknowledged:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Нужно подтвердить ознакомление")
     agreement = ensure_agreement(db, app)
-    conf = confirm_agreement(db, agreement, actor_id=user.id, note=body.note)
+    conf = confirm_agreement(db, agreement, actor=user, note=body.note, require_owner=True)
     write_audit(
         db,
         actor_id=user.id,
         entity_type="agreement",
         entity_id=agreement.id,
         action="agreement_confirm",
-        details={"demo": True},
+        details={"demo": True, "owner": True},
         correlation_id=cid,
         company_id=company_id,
     )
@@ -928,6 +928,7 @@ def confirm_application_agreement(
         agreement_id=agreement.id,
         status=agreement.status,
         confirmed_at=conf.confirmed_at,
+        message="Договор согласован владельцем (демо)",
     )
 
 # --- Legacy + analyst ---

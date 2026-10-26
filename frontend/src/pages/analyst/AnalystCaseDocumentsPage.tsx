@@ -3,19 +3,33 @@ import {
   Box,
   Button,
   CircularProgress,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  IconButton,
   MenuItem,
+  Stack,
   TextField,
   Typography,
 } from '@mui/material'
-import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded'
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
+import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined'
+import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded'
+import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { createAnalystDocumentRequest } from '@/api/analyst'
+import {
+  demoAppDocumentUrl,
+  downloadApplicationDocument,
+  downloadDemoAppDocument,
+  previewApplicationDocumentUrl,
+} from '@/api/applications'
 import type { AnalystCaseOutlet } from '@/components/analyst/AnalystCaseShell'
 import { analystStatusLabel } from '@/features/analyst/map'
-import { primaryBtn, statusPill, tileSx } from '@/features/analyst/styles'
+import { outlineBtn, primaryBtn, statusPill, tileSx } from '@/features/analyst/styles'
 import { formatFileSize } from '@/utils/format'
 
 const DOC_TYPES: { value: string; label: string }[] = [
@@ -39,9 +53,10 @@ function docTypeLabel(type?: string | null): string {
 type DocRow = {
   id: string
   name: string
+  fileName?: string
   size: string
   status: 'accepted' | 'review' | 'missing' | 'replace' | 'requested'
-  kind: string
+  kind: 'FILE' | 'REQUEST'
   meta?: string
 }
 
@@ -61,18 +76,24 @@ function mapDocStatus(s: string): DocRow['status'] {
   return 'review'
 }
 
+function looksLikePdf(name?: string): boolean {
+  return Boolean(name && /\.pdf$/i.test(name))
+}
+
 export function AnalystCaseDocumentsPage() {
   const { card, applicationId } = useOutletContext<AnalystCaseOutlet>()
   const qc = useQueryClient()
   const canRequest = card.allowedActions.includes('REQUEST_DOCS')
+  const companyId = card.application.companyId
 
   const rows: DocRow[] = useMemo(() => {
     const uploaded = card.application.documents.map((d) => ({
       id: d.id,
       name: d.name && d.name !== d.type ? d.name : docTypeLabel(d.type),
+      fileName: d.name || undefined,
       size: d.size ? formatFileSize(d.size) : '—',
       status: mapDocStatus(d.status),
-      kind: 'FILE',
+      kind: 'FILE' as const,
       meta: docTypeLabel(d.type),
     }))
     const requested = card.openDocumentRequests.map((r, i) => ({
@@ -80,7 +101,7 @@ export function AnalystCaseDocumentsPage() {
       name: docTypeLabel(String(r.docType ?? r.doc_type ?? '')),
       size: '—',
       status: 'requested' as const,
-      kind: 'REQUEST',
+      kind: 'REQUEST' as const,
       meta: String(r.comment ?? r.status ?? ''),
     }))
     return [...uploaded, ...requested]
@@ -91,7 +112,96 @@ export function AnalystCaseDocumentsPage() {
   const [comment, setComment] = useState('')
   const [flash, setFlash] = useState<string | null>(null)
 
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewTitle, setPreviewTitle] = useState('')
+  const [previewDoc, setPreviewDoc] = useState<DocRow | null>(null)
+  const [previewIsBlob, setPreviewIsBlob] = useState(false)
+
   const doc = rows.find((d) => d.id === selected) ?? rows[0]
+
+  useEffect(() => {
+    return () => {
+      if (previewIsBlob && previewUrl) URL.revokeObjectURL(previewUrl)
+    }
+  }, [previewIsBlob, previewUrl])
+
+  function closePreview() {
+    if (previewIsBlob && previewUrl) URL.revokeObjectURL(previewUrl)
+    setPreviewOpen(false)
+    setPreviewUrl(null)
+    setPreviewIsBlob(false)
+    setPreviewError(null)
+    setPreviewDoc(null)
+  }
+
+  async function openPreview(row: DocRow) {
+    if (row.kind !== 'FILE') return
+    setSelected(row.id)
+    setPreviewDoc(row)
+    setPreviewTitle(row.name)
+    setPreviewOpen(true)
+    setPreviewLoading(true)
+    setPreviewError(null)
+    if (previewIsBlob && previewUrl) URL.revokeObjectURL(previewUrl)
+    setPreviewUrl(null)
+    setPreviewIsBlob(false)
+
+    try {
+      if (companyId && applicationId && row.id) {
+        try {
+          const url = await previewApplicationDocumentUrl(companyId, applicationId, row.id)
+          setPreviewUrl(url)
+          setPreviewIsBlob(true)
+          return
+        } catch {
+          /* fall through to demo static PDF */
+        }
+      }
+      const fileName = row.fileName || row.name
+      if (fileName) {
+        const demo = demoAppDocumentUrl(fileName)
+        const probe = await fetch(demo).catch(() => null)
+        if (probe?.ok) {
+          // Prefer static URL so browser PDF viewer streams it; revoke not needed
+          setPreviewUrl(demo)
+          setPreviewIsBlob(false)
+          return
+        }
+      }
+      setPreviewError('Демо-файл для просмотра не найден')
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  async function downloadPreview() {
+    const row = previewDoc
+    if (!row) return
+    try {
+      if (companyId && applicationId && row.id) {
+        try {
+          await downloadApplicationDocument(
+            companyId,
+            applicationId,
+            row.id,
+            row.fileName || row.name,
+          )
+          return
+        } catch {
+          /* demo fallback */
+        }
+      }
+      const name = row.fileName || row.name
+      if (name) {
+        await downloadDemoAppDocument(name)
+      }
+    } catch {
+      setPreviewError('Не удалось скачать файл')
+    }
+  }
 
   const requestM = useMutation({
     mutationFn: () =>
@@ -128,6 +238,7 @@ export function AnalystCaseDocumentsPage() {
         {rows.map((d) => {
           const s = statusUi[d.status]
           const active = d.id === (doc?.id ?? selected)
+          const canView = d.kind === 'FILE'
           return (
             <Box
               key={d.id}
@@ -169,65 +280,179 @@ export function AnalystCaseDocumentsPage() {
                   {d.meta || `${d.kind} · ${d.size}`}
                 </Typography>
               </Box>
-              <Box sx={{ ...statusPill, bgcolor: s.bg, color: s.color }}>{s.label}</Box>
+              <Stack direction="row" spacing={0.75} alignItems="center" flexShrink={0}>
+                {canView && (
+                  <Button
+                    size="small"
+                    startIcon={<VisibilityRoundedIcon sx={{ fontSize: 16 }} />}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void openPreview(d)
+                    }}
+                    sx={{
+                      ...outlineBtn,
+                      minWidth: 0,
+                      px: 1.25,
+                      py: 0.5,
+                      fontSize: 12.5,
+                      textTransform: 'none',
+                      fontWeight: 700,
+                    }}
+                  >
+                    Просмотр
+                  </Button>
+                )}
+                <Box sx={{ ...statusPill, bgcolor: s.bg, color: s.color }}>{s.label}</Box>
+              </Stack>
             </Box>
           )
         })}
       </Box>
 
-      <Box sx={tileSx}>
-        <Typography sx={{ fontWeight: 700, fontSize: 14, color: '#0B1F35', mb: 1.5 }}>
-          Запрос документа
-        </Typography>
-        {flash && (
-          <Alert
-            severity={flash.startsWith('Ошибка') ? 'error' : 'success'}
-            sx={{ mb: 1.5 }}
-            onClose={() => setFlash(null)}
-          >
-            {flash}
-          </Alert>
+      <Stack spacing={2}>
+        {doc?.kind === 'FILE' && (
+          <Box sx={tileSx}>
+            <Typography sx={{ fontWeight: 700, fontSize: 14, color: '#0B1F35', mb: 0.75 }}>
+              Демо-просмотр
+            </Typography>
+            <Typography sx={{ fontSize: 13, color: '#7A8795', mb: 1.5, lineHeight: 1.45 }}>
+              {doc.name}
+              {doc.meta ? ` · ${doc.meta}` : ''}
+            </Typography>
+            <Button
+              fullWidth
+              variant="contained"
+              startIcon={<VisibilityRoundedIcon />}
+              sx={primaryBtn}
+              onClick={() => void openPreview(doc)}
+            >
+              Открыть документ
+            </Button>
+          </Box>
         )}
-        <TextField
-          select
-          fullWidth
-          size="small"
-          label="Тип документа"
-          value={docType}
-          onChange={(e) => setDocType(e.target.value)}
-          sx={{ mb: 1.5, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-        >
-          {DOC_TYPES.map((t) => (
-            <MenuItem key={t.value} value={t.value}>
-              {t.label}
-            </MenuItem>
-          ))}
-        </TextField>
-        <TextField
-          multiline
-          minRows={3}
-          fullWidth
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          label="Комментарий аналитика"
-          sx={{ mb: 1.5, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-        />
-        <Button
-          fullWidth
-          variant="contained"
-          sx={primaryBtn}
-          disabled={!canRequest || requestM.isPending}
-          onClick={() => requestM.mutate()}
-        >
-          {requestM.isPending ? <CircularProgress size={18} color="inherit" /> : 'Запросить'}
-        </Button>
-        {!canRequest && (
-          <Typography sx={{ mt: 1.25, fontSize: 12.5, color: '#C45A12' }}>
-            Запрос документов сейчас недоступен для статуса «
-            {analystStatusLabel(card.application.statusLabel)}»
+
+        <Box sx={tileSx}>
+          <Typography sx={{ fontWeight: 700, fontSize: 14, color: '#0B1F35', mb: 1.5 }}>
+            Запрос документа
           </Typography>
-        )}
-      </Box>
+          {flash && (
+            <Alert
+              severity={flash.startsWith('Ошибка') ? 'error' : 'success'}
+              sx={{ mb: 1.5 }}
+              onClose={() => setFlash(null)}
+            >
+              {flash}
+            </Alert>
+          )}
+          <TextField
+            select
+            fullWidth
+            size="small"
+            label="Тип документа"
+            value={docType}
+            onChange={(e) => setDocType(e.target.value)}
+            sx={{ mb: 1.5, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+          >
+            {DOC_TYPES.map((t) => (
+              <MenuItem key={t.value} value={t.value}>
+                {t.label}
+              </MenuItem>
+            ))}
+          </TextField>
+          <TextField
+            multiline
+            minRows={3}
+            fullWidth
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            label="Комментарий аналитика"
+            sx={{ mb: 1.5, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+          />
+          <Button
+            fullWidth
+            variant="contained"
+            sx={primaryBtn}
+            disabled={!canRequest || requestM.isPending}
+            onClick={() => requestM.mutate()}
+          >
+            {requestM.isPending ? <CircularProgress size={18} color="inherit" /> : 'Запросить'}
+          </Button>
+          {!canRequest && (
+            <Typography sx={{ mt: 1.25, fontSize: 12.5, color: '#C45A12' }}>
+              Запрос документов сейчас недоступен для статуса «
+              {analystStatusLabel(card.application.statusLabel)}»
+            </Typography>
+          )}
+        </Box>
+      </Stack>
+
+      <Dialog
+        open={previewOpen}
+        onClose={closePreview}
+        fullWidth
+        maxWidth="lg"
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            overflow: 'hidden',
+            height: { xs: '92vh', md: '88vh' },
+          },
+        }}
+      >
+        <DialogTitle
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            py: 1.5,
+            px: 2,
+            borderBottom: '1px solid rgba(11,31,53,0.08)',
+          }}
+        >
+          <PictureAsPdfRoundedIcon sx={{ color: '#EF3124', fontSize: 22 }} />
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography sx={{ fontWeight: 800, fontSize: 15, color: '#0B1F35', lineHeight: 1.3 }}>
+              {previewTitle || 'Просмотр документа'}
+            </Typography>
+            <Typography sx={{ fontSize: 12, color: '#8A96A3' }}>Демо-просмотр · PDF</Typography>
+          </Box>
+          <Button
+            size="small"
+            startIcon={<DownloadRoundedIcon />}
+            onClick={() => void downloadPreview()}
+            sx={{ ...outlineBtn, textTransform: 'none', fontWeight: 700, mr: 0.5 }}
+          >
+            Скачать
+          </Button>
+          <IconButton onClick={closePreview} aria-label="Закрыть">
+            <CloseRoundedIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ p: 0, bgcolor: '#EEF1F4', display: 'grid', placeItems: 'center' }}>
+          {previewLoading && <CircularProgress sx={{ color: '#EF3124', my: 8 }} />}
+          {!previewLoading && previewError && (
+            <Typography sx={{ color: '#C41E14', fontWeight: 600, p: 4 }}>{previewError}</Typography>
+          )}
+          {!previewLoading && previewUrl && (
+            <Box
+              component="iframe"
+              title={previewTitle}
+              src={
+                looksLikePdf(previewDoc?.fileName || previewDoc?.name)
+                  ? `${previewUrl}#toolbar=1&navpanes=0`
+                  : previewUrl
+              }
+              sx={{
+                width: '100%',
+                height: '100%',
+                border: 0,
+                bgcolor: '#fff',
+                minHeight: { xs: '70vh', md: '75vh' },
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </Box>
   )
 }

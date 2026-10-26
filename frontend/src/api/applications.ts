@@ -6,6 +6,9 @@ import type {
   UserRole,
 } from '@/types'
 import { ACTIVE_COMPANY_KEY, api, num, str } from '@/api/client'
+import { triggerBlobDownload } from '@/utils/download'
+
+export { triggerBlobDownload } from '@/utils/download'
 
 /** Backend: DRAFT / IN_REVIEW / … → frontend: draft / in_review / … */
 const STATUS_ALIASES: Record<string, ApplicationStatus> = {
@@ -375,16 +378,105 @@ export async function uploadCompanyApplicationDocument(
   applicationId: string,
   file: File,
   opts?: { docType?: string; documentRequestId?: string },
-): Promise<void> {
+): Promise<ApplicationDocument> {
   const form = new FormData()
   form.append('file', file)
   form.append('doc_type', opts?.docType || 'OTHER')
   if (opts?.documentRequestId) {
     form.append('document_request_id', opts.documentRequestId)
   }
-  await api.post(`/companies/${companyId}/applications/${applicationId}/documents`, form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  })
+  const { data } = await api.post(
+    `/companies/${companyId}/applications/${applicationId}/documents`,
+    form,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  )
+  return mapDoc(data as Record<string, unknown>)
+}
+
+async function fetchApplicationDocumentBlob(
+  companyId: string,
+  applicationId: string,
+  documentId: string,
+): Promise<{ blob: Blob; fileName?: string }> {
+  const { data, headers } = await api.get(
+    `/companies/${companyId}/applications/${applicationId}/documents/${encodeURIComponent(documentId)}/download`,
+    { responseType: 'blob' },
+  )
+  const disp = String(headers['content-disposition'] ?? '')
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disp)
+  return {
+    blob: data as Blob,
+    fileName: match ? decodeURIComponent(match[1]!) : undefined,
+  }
+}
+
+/** Object URL for in-app PDF preview (caller must revoke). */
+export async function previewApplicationDocumentUrl(
+  companyId: string,
+  applicationId: string,
+  documentId: string,
+): Promise<string> {
+  const { blob } = await fetchApplicationDocumentBlob(companyId, applicationId, documentId)
+  return URL.createObjectURL(blob)
+}
+
+/** Download application document via authenticated blob (not a naked <a href>). */
+export async function downloadApplicationDocument(
+  companyId: string,
+  applicationId: string,
+  documentId: string,
+  fileName?: string,
+): Promise<void> {
+  const { blob, fileName: fromHeader } = await fetchApplicationDocumentBlob(
+    companyId,
+    applicationId,
+    documentId,
+  )
+  // Backend stub when file_path is empty — treat as miss so caller can fall back to demo PDF
+  const ct = (blob.type || '').toLowerCase()
+  if (ct.includes('text/plain') && blob.size < 2048) {
+    throw new Error('Файл на сервере недоступен')
+  }
+  triggerBlobDownload(blob, fileName || fromHeader || 'document')
+}
+
+/** Demo PDFs shipped in /public/demo/app-docs for seeded checklist slots. */
+export function demoAppDocumentUrl(fileName: string): string {
+  return `/demo/app-docs/${encodeURIComponent(fileName)}`
+}
+
+function isSpaHtmlFallback(res: Response, blob: Blob): boolean {
+  const ct = `${res.headers.get('content-type') || ''} ${blob.type || ''}`.toLowerCase()
+  return ct.includes('text/html')
+}
+
+export async function downloadDemoAppDocument(fileName: string): Promise<void> {
+  // Prefer encoded path; also try raw UTF-8 for servers that don't decode %XX in static files
+  const candidates = [
+    `/demo/app-docs/${encodeURIComponent(fileName)}`,
+    `/demo/app-docs/${fileName}`,
+  ]
+  let lastErr: Error | null = null
+  for (const path of candidates) {
+    try {
+      const res = await fetch(path)
+      if (!res.ok) {
+        lastErr = new Error(`Файл не найден: ${fileName}`)
+        continue
+      }
+      const blob = await res.blob()
+      // Vite/nginx SPA fallback returns index.html with 200 — not a real PDF
+      if (isSpaHtmlFallback(res, blob) || blob.size < 64) {
+        lastErr = new Error(`Файл не найден: ${fileName}`)
+        continue
+      }
+      triggerBlobDownload(blob, fileName)
+      return
+    } catch (e) {
+      lastErr = e instanceof Error ? e : new Error(String(e))
+    }
+  }
+  throw lastErr || new Error(`Файл не найден: ${fileName}`)
 }
 
 export async function respondDocumentRequest(
@@ -439,5 +531,101 @@ export async function postApplicationComment(
     authorRole: str(raw.authorRole ?? raw.author_role),
     text: str(raw.text),
     createdAt: str(raw.createdAt ?? raw.created_at),
+  }
+}
+
+export type AppAgreement = {
+  id: string
+  applicationId: string
+  companyId: string
+  number?: string
+  status: string
+  amount: number
+  termMonths: number
+  rate: number
+  confirmed: boolean
+  confirmedAt?: string
+  sentAt?: string
+  helperApproved: boolean
+  helperReviews: {
+    id: string
+    assigneeUserId: string
+    assigneeName?: string
+    status: string
+    comment?: string
+  }[]
+  disclaimer: string
+}
+
+function mapAppAgreement(raw: Record<string, unknown>): AppAgreement {
+  const helpers = ((raw.helperReviews ?? raw.helper_reviews ?? []) as Record<string, unknown>[]).map(
+    (h) => ({
+      id: str(h.id),
+      assigneeUserId: str(h.assigneeUserId ?? h.assignee_user_id),
+      assigneeName:
+        h.assigneeName != null || h.assignee_name != null
+          ? str(h.assigneeName ?? h.assignee_name)
+          : undefined,
+      status: str(h.status),
+      comment: h.comment != null ? str(h.comment) : undefined,
+    }),
+  )
+  return {
+    id: str(raw.id),
+    applicationId: str(raw.applicationId ?? raw.application_id),
+    companyId: str(raw.companyId ?? raw.company_id),
+    number: raw.number != null ? str(raw.number) : undefined,
+    status: str(raw.status),
+    amount: num(raw.amount),
+    termMonths: num(raw.termMonths ?? raw.term_months),
+    rate: num(raw.rate),
+    confirmed: Boolean(raw.confirmed),
+    confirmedAt:
+      raw.confirmedAt != null || raw.confirmed_at != null
+        ? str(raw.confirmedAt ?? raw.confirmed_at)
+        : undefined,
+    sentAt: raw.sentAt != null || raw.sent_at != null ? str(raw.sentAt ?? raw.sent_at) : undefined,
+    helperApproved: Boolean(raw.helperApproved ?? raw.helper_approved),
+    helperReviews: helpers,
+    disclaimer: str(raw.disclaimer, 'Демонстрационный договор'),
+  }
+}
+
+export async function fetchApplicationAgreement(
+  companyId: string,
+  applicationId: string,
+): Promise<AppAgreement> {
+  const { data } = await api.get(`/companies/${companyId}/applications/${applicationId}/agreement`)
+  return mapAppAgreement(data as Record<string, unknown>)
+}
+
+export async function fetchApplicationAgreementPdfBlob(
+  companyId: string,
+  applicationId: string,
+): Promise<Blob> {
+  const { data } = await api.get(
+    `/companies/${companyId}/applications/${applicationId}/agreement/download`,
+    { responseType: 'blob' },
+  )
+  return data as Blob
+}
+
+export async function confirmApplicationAgreement(
+  companyId: string,
+  applicationId: string,
+  body?: { acknowledged?: boolean; note?: string },
+): Promise<{ agreementId: string; status: string; confirmedAt: string }> {
+  const { data } = await api.post(
+    `/companies/${companyId}/applications/${applicationId}/agreement/confirm`,
+    {
+      acknowledged: body?.acknowledged ?? true,
+      note: body?.note,
+    },
+  )
+  const raw = data as Record<string, unknown>
+  return {
+    agreementId: str(raw.agreementId ?? raw.agreement_id),
+    status: str(raw.status),
+    confirmedAt: str(raw.confirmedAt ?? raw.confirmed_at),
   }
 }

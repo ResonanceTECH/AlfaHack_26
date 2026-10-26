@@ -1,4 +1,5 @@
 import { api, num, str } from '@/api/client'
+import { triggerBlobDownload } from '@/utils/download'
 
 export type VaultDocStatus = 'accepted' | 'accepted_remark' | 'pending' | 'need_upload'
 
@@ -125,17 +126,8 @@ export async function downloadCompanyDocument(
     { responseType: 'blob' },
   )
   const blob = data as Blob
-  const url = URL.createObjectURL(blob)
   const disp = String(headers['content-disposition'] ?? '')
   const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disp)
   const name = fileName || (match ? decodeURIComponent(match[1]!) : 'document')
-  const a = document.createElement('a')
-  a.href = url
-  a.target = '_blank'
-  a.rel = 'noopener'
-  a.download = name
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  triggerBlobDownload(blob, name)
 }

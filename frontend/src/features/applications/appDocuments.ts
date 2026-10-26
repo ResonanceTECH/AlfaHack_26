@@ -8,9 +8,53 @@ export type AppDocSlot = {
   status: AppDocStatus
   fileName?: string
   fileSizeLabel?: string
+  /** Live ApplicationDocument.id when synced from API / upload. */
+  documentId?: string
 }
 
-const KEY = 'alfa_app_documents'
+/** Map backend document_type → checklist slot id. */
+const TYPE_TO_SLOT: Record<string, string> = {
+  statement: 'statement',
+  bank_statement: 'statement',
+  bank_statement_6m: 'statement',
+  bank_statement_12m: 'statement',
+  passport: 'passport',
+  equipment: 'equipment',
+  tax: 'tax',
+  usn: 'tax',
+  bki: 'bki',
+  collateral: 'collateral',
+}
+
+const KEY = 'alfa_app_documents_v2'
+
+/** Filenames under `frontend/public/demo/app-docs/` for checklist downloads. */
+export const DEMO_APP_DOC_BY_SLOT: Record<string, string> = {
+  statement: 'выписка_40702_окт2026.pdf',
+  passport: 'passport_petrov.pdf',
+  equipment: 'kp_equipment_2026.pdf',
+  tax: 'usn_2025.pdf',
+  bki: 'consent_bki.pdf',
+  collateral: 'collateral_equipment.pdf',
+}
+
+/** In-memory cache of files picked in this session (survives until reload). */
+const uploadCache = new Map<string, File>()
+
+export function cacheAppDocFile(applicationId: string, slotId: string, file: File) {
+  uploadCache.set(`${applicationId}:${slotId}`, file)
+}
+
+export function getCachedAppDocFile(applicationId: string, slotId: string): File | undefined {
+  return uploadCache.get(`${applicationId}:${slotId}`)
+}
+
+export function resolveDemoAppDocName(slot: Pick<AppDocSlot, 'id' | 'fileName'>): string | undefined {
+  if (slot.fileName && Object.values(DEMO_APP_DOC_BY_SLOT).includes(slot.fileName)) {
+    return slot.fileName
+  }
+  return DEMO_APP_DOC_BY_SLOT[slot.id] || slot.fileName
+}
 
 const DEFAULT_SLOTS: Omit<AppDocSlot, 'status' | 'fileName' | 'fileSizeLabel'>[] = [
   {
@@ -51,25 +95,38 @@ const DEFAULT_SLOTS: Omit<AppDocSlot, 'status' | 'fileName' | 'fileSizeLabel'>[]
   },
 ]
 
+/** Full kit seeded so «Скачать» works via /demo/app-docs out of the box. */
 const SEED: Record<string, Partial<AppDocSlot>> = {
   statement: {
     status: 'uploaded',
-    fileName: 'выписка_40702_окт2026.pdf',
-    fileSizeLabel: '2.4 МБ',
+    fileName: DEMO_APP_DOC_BY_SLOT.statement,
+    fileSizeLabel: '53.2 КБ',
   },
   passport: {
     status: 'uploaded',
-    fileName: 'passport_petrov.pdf',
-    fileSizeLabel: '1.1 МБ',
+    fileName: DEMO_APP_DOC_BY_SLOT.passport,
+    fileSizeLabel: '50.6 КБ',
   },
-  equipment: { status: 'needed' },
+  equipment: {
+    status: 'uploaded',
+    fileName: DEMO_APP_DOC_BY_SLOT.equipment,
+    fileSizeLabel: '50.9 КБ',
+  },
   tax: {
-    status: 'review',
-    fileName: 'usn_2025.pdf',
-    fileSizeLabel: '0.8 МБ',
+    status: 'uploaded',
+    fileName: DEMO_APP_DOC_BY_SLOT.tax,
+    fileSizeLabel: '50.9 КБ',
   },
-  bki: { status: 'needed' },
-  collateral: { status: 'optional' },
+  bki: {
+    status: 'uploaded',
+    fileName: DEMO_APP_DOC_BY_SLOT.bki,
+    fileSizeLabel: '50.7 КБ',
+  },
+  collateral: {
+    status: 'uploaded',
+    fileName: DEMO_APP_DOC_BY_SLOT.collateral,
+    fileSizeLabel: '52.1 КБ',
+  },
 }
 
 function readStore(): Record<string, AppDocSlot[]> {
@@ -119,4 +176,53 @@ export function saveAppDocuments(applicationId: string, slots: AppDocSlot[]) {
 export function formatBytesLabel(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`
   return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`
+}
+
+export type LiveAppDoc = {
+  id: string
+  type: string
+  name: string
+  size: number
+  status: string
+}
+
+/** Merge checklist slots with live `/applications/.../documents` rows. */
+export function mergeSlotsWithLiveDocs(
+  slots: AppDocSlot[],
+  docs: LiveAppDoc[],
+): AppDocSlot[] {
+  const usable = docs.filter((d) => d.status !== 'requested' && d.id)
+  if (!usable.length) return slots
+
+  const bySlot = new Map<string, LiveAppDoc>()
+  for (const d of usable) {
+    const key = TYPE_TO_SLOT[d.type.toLowerCase()] || d.type.toLowerCase()
+    if (!bySlot.has(key)) bySlot.set(key, d)
+  }
+  // filename fallback for seed names
+  for (const d of usable) {
+    for (const slot of slots) {
+      if (slot.fileName && d.name === slot.fileName && !bySlot.has(slot.id)) {
+        bySlot.set(slot.id, d)
+      }
+    }
+  }
+
+  return slots.map((slot) => {
+    const live = bySlot.get(slot.id)
+    if (!live) return slot
+    const status: AppDocStatus =
+      live.status === 'rejected'
+        ? 'needed'
+        : live.status === 'verified'
+          ? 'review'
+          : 'uploaded'
+    return {
+      ...slot,
+      documentId: live.id,
+      fileName: live.name || slot.fileName,
+      fileSizeLabel: live.size > 0 ? formatBytesLabel(live.size) : slot.fileSizeLabel,
+      status,
+    }
+  })
 }

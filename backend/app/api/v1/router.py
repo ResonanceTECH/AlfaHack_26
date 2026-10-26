@@ -10,6 +10,7 @@ from app.api.v1 import (
     companies,
     credit,
     credit_agent,
+    doc_reviews,
     finance,
     notifications,
     tasks,
@@ -21,6 +22,7 @@ api_router.include_router(auth.router)
 api_router.include_router(companies.router)
 api_router.include_router(team.router)
 api_router.include_router(tasks.router)
+api_router.include_router(doc_reviews.router)
 api_router.include_router(credit.router)
 api_router.include_router(applications.router)
 api_router.include_router(finance.router)

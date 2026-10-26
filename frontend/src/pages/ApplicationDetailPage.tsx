@@ -3,7 +3,12 @@ import {
   Box,
   Button,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   LinearProgress,
+  MenuItem,
   Stack,
   TextField,
   Typography,
@@ -12,6 +17,7 @@ import CheckRoundedIcon from '@mui/icons-material/CheckRounded'
 import PriorityHighRoundedIcon from '@mui/icons-material/PriorityHighRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import PersonAddAlt1RoundedIcon from '@mui/icons-material/PersonAddAlt1Rounded'
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { Link as RouterLink, Navigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -19,6 +25,9 @@ import { EmptyState } from '@/components/common/EmptyState'
 import {
   acceptApplicationOffer,
   declineApplicationOffer,
+  downloadApplicationDocument,
+  downloadDemoAppDocument,
+  triggerBlobDownload,
   fetchApplicationComments,
   fetchApplicationDecision,
   fetchApplicationOffers,
@@ -38,11 +47,22 @@ import {
   type AiAgentResponse,
 } from '@/api/ai'
 import { AiAgentReply } from '@/components/ai/AiAgentReply'
+import {
+  assignDocumentReviews,
+  listDocumentReviews,
+  REVIEW_STATUS_LABEL,
+} from '@/api/docReviews'
+import { listMembers } from '@/api/team'
 import { useAuth } from '@/contexts/AuthContext'
 import { useAppStore } from '@/hooks/useAppStore'
+import { ROLE_LABEL } from '@/features/team/store'
 import {
+  cacheAppDocFile,
   formatBytesLabel,
+  getCachedAppDocFile,
   loadAppDocuments,
+  mergeSlotsWithLiveDocs,
+  resolveDemoAppDocName,
   saveAppDocuments,
   type AppDocSlot,
   type AppDocStatus,
@@ -203,6 +223,21 @@ export function ApplicationDetailPage() {
     retry: false,
     refetchInterval: 15_000,
   })
+  const membersQ = useQuery({
+    queryKey: ['team', 'members', companyId],
+    queryFn: () => listMembers(companyId!),
+    enabled: Boolean(companyId && !editable),
+    staleTime: 60_000,
+  })
+  const appReviewsQ = useQuery({
+    queryKey: ['doc-reviews', companyId, id],
+    queryFn: () => listDocumentReviews(companyId!, { applicationId: id! }),
+    enabled: Boolean(companyId && id && !editable),
+    staleTime: 15_000,
+  })
+  const reviewFeedback = (appReviewsQ.data ?? []).filter(
+    (r) => r.status === 'approved' || r.status === 'rejected' || Boolean(r.comment),
+  )
 
   const [slots, setSlots] = useState<AppDocSlot[]>(() => (id ? loadAppDocuments(id) : []))
   const [flash, setFlash] = useState<string | null>(null)
@@ -213,10 +248,40 @@ export function ApplicationDetailPage() {
   const bulkRef = useRef<HTMLInputElement>(null)
   const docReqFileRef = useRef<HTMLInputElement>(null)
   const [activeDocReq, setActiveDocReq] = useState<DocumentRequest | null>(null)
+  const [assignOpen, setAssignOpen] = useState(false)
+  const [assignUserId, setAssignUserId] = useState('')
+  const [assignBusy, setAssignBusy] = useState(false)
 
   useEffect(() => {
     if (id) setSlots(loadAppDocuments(id))
   }, [id])
+
+  // Bind checklist slots to live application.documents (enables real download)
+  useEffect(() => {
+    if (!id || !app?.documents?.length) return
+    setSlots((prev) => {
+      const base = prev.length ? prev : loadAppDocuments(id)
+      const next = mergeSlotsWithLiveDocs(
+        base,
+        app.documents.map((d) => ({
+          id: d.id,
+          type: d.type,
+          name: d.name,
+          size: d.size,
+          status: d.status,
+        })),
+      )
+      const changed = next.some(
+        (s, i) =>
+          s.documentId !== base[i]?.documentId ||
+          s.fileName !== base[i]?.fileName ||
+          s.status !== base[i]?.status,
+      )
+      if (!changed) return prev
+      saveAppDocuments(id, next)
+      return next
+    })
+  }, [id, app?.documents])
 
   useEffect(() => {
     if (typeof window === 'undefined' || !app) return
@@ -319,15 +384,19 @@ export function ApplicationDetailPage() {
     if (!id || !app) return
     setBusyId(slotId)
     setError(null)
+    let documentId: string | undefined
     try {
+      cacheAppDocFile(id, slotId, file)
       try {
         if (app.companyId) {
-          await uploadCompanyApplicationDocument(app.companyId, app.id, file, {
+          const uploaded = await uploadCompanyApplicationDocument(app.companyId, app.id, file, {
             docType: slots.find((s) => s.id === slotId)?.id || 'OTHER',
           })
+          documentId = uploaded.id
         } else {
           const updated = await uploadApplicationDocument(app.id, file)
           upsertLocalApp(updated)
+          documentId = updated.documents.find((d) => d.name === file.name)?.id
         }
         await qc.invalidateQueries({ queryKey: ['application', id] })
         await qc.invalidateQueries({ queryKey: ['applications'] })
@@ -342,6 +411,7 @@ export function ApplicationDetailPage() {
                 status: 'uploaded' as AppDocStatus,
                 fileName: file.name,
                 fileSizeLabel: formatBytesLabel(file.size),
+                documentId: documentId ?? s.documentId,
               }
             : s,
         ),
@@ -351,6 +421,88 @@ export function ApplicationDetailPage() {
       setError(e instanceof Error ? e.message : 'Не удалось загрузить файл')
     } finally {
       setBusyId(null)
+    }
+  }
+
+  async function downloadSlot(slot: AppDocSlot) {
+    if (!id) return
+    const label = slot.fileName || resolveDemoAppDocName(slot) || 'документ'
+    setBusyId(slot.id)
+    setError(null)
+    try {
+      // 1) file picked this session
+      const cached = getCachedAppDocFile(id, slot.id)
+      if (cached) {
+        triggerBlobDownload(cached, cached.name || label)
+        showFlash(`Скачано: ${cached.name || label}`)
+        return
+      }
+      // 2) live API document
+      if (slot.documentId && companyId) {
+        try {
+          await downloadApplicationDocument(
+            companyId,
+            id,
+            slot.documentId,
+            slot.fileName || undefined,
+          )
+          showFlash(`Скачано: ${label}`)
+          return
+        } catch {
+          /* fall through to demo */
+        }
+      }
+      // 3) demo PDF by known slot / filename
+      const demoName = resolveDemoAppDocName(slot)
+      if (demoName) {
+        await downloadDemoAppDocument(demoName)
+        showFlash(`Скачано: ${demoName}`)
+        return
+      }
+      throw new Error('Файл недоступен для скачивания')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось скачать документ')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function assignPackReview() {
+    if (!companyId || !id || !assignUserId) return
+    const items = slots
+      .filter((s) => Boolean(s.fileName))
+      .map((s) => ({
+        kind: 'app_slot' as const,
+        slotKey: s.id,
+        documentId: s.documentId,
+        title: s.title,
+        fileName: s.fileName,
+      }))
+    if (!items.length) {
+      setError('Нет загруженных документов для проверки')
+      return
+    }
+    setAssignBusy(true)
+    setError(null)
+    try {
+      await assignDocumentReviews(companyId, {
+        assigneeUserId: assignUserId,
+        applicationId: id,
+        purpose: 'review',
+        dueDays: 3,
+        items,
+      })
+      setAssignOpen(false)
+      showFlash('Назначено · уведомление, календарь и задача на доске')
+      await qc.invalidateQueries({ queryKey: ['tasks', companyId] })
+      await qc.invalidateQueries({ queryKey: ['obligations', companyId] })
+      await qc.invalidateQueries({ queryKey: ['doc-reviews', companyId] })
+      await qc.invalidateQueries({ queryKey: ['document-reviews'] })
+      await qc.invalidateQueries({ queryKey: ['notifications'] })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось назначить проверку')
+    } finally {
+      setAssignBusy(false)
     }
   }
 
@@ -934,21 +1086,42 @@ export function ApplicationDetailPage() {
                   PDF, JPEG, PNG, XML
                 </Typography>
               </Box>
-              <Button
-                variant="outlined"
-                startIcon={<AddRoundedIcon />}
-                onClick={() => bulkRef.current?.click()}
-                sx={{
-                  borderRadius: 2,
-                  borderColor: 'rgba(239,49,36,0.45)',
-                  color: '#EF3124',
-                  fontWeight: 700,
-                  bgcolor: '#fff',
-                  textTransform: 'none',
-                }}
-              >
-                Загрузить файл
-              </Button>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                <Button
+                  variant="outlined"
+                  startIcon={<PersonAddAlt1RoundedIcon />}
+                  disabled={!slots.some((s) => s.fileName)}
+                  onClick={() => {
+                    setAssignUserId('')
+                    setAssignOpen(true)
+                  }}
+                  sx={{
+                    borderRadius: 2,
+                    borderColor: 'rgba(11,31,53,0.16)',
+                    color: '#0B1F35',
+                    fontWeight: 700,
+                    bgcolor: '#fff',
+                    textTransform: 'none',
+                  }}
+                >
+                  Назначить проверку
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<AddRoundedIcon />}
+                  onClick={() => bulkRef.current?.click()}
+                  sx={{
+                    borderRadius: 2,
+                    borderColor: 'rgba(239,49,36,0.45)',
+                    color: '#EF3124',
+                    fontWeight: 700,
+                    bgcolor: '#fff',
+                    textTransform: 'none',
+                  }}
+                >
+                  Загрузить файл
+                </Button>
+              </Stack>
               <input
                 ref={bulkRef}
                 hidden
@@ -981,10 +1154,95 @@ export function ApplicationDetailPage() {
                   dragging={dragId === slot.id}
                   setDragging={(v) => setDragId(v ? slot.id : null)}
                   onPick={(files) => onPick(slot.id, files)}
-                  onDownload={() => showFlash(`Скачивание: ${slot.fileName}`)}
+                  onDownload={() => void downloadSlot(slot)}
                 />
               ))}
             </Stack>
+
+            {reviewFeedback.length > 0 && (
+              <Box
+                sx={{
+                  mt: 2,
+                  pt: 1.75,
+                  borderTop: '1px solid rgba(11,31,53,0.08)',
+                }}
+              >
+                <Typography sx={{ fontWeight: 800, fontSize: 14, color: '#0B1F35', mb: 0.5 }}>
+                  Обратная связь по проверке
+                </Typography>
+                <Typography sx={{ fontSize: 12.5, color: '#8A96A3', mb: 1.25, lineHeight: 1.4 }}>
+                  Комментарии коллеги. Можно заменить файл («Заменить» у слота) или принять как есть.
+                </Typography>
+                <Stack spacing={1}>
+                  {reviewFeedback.map((r) => {
+                    const rework = r.status === 'rejected'
+                    const slot = slots.find(
+                      (s) => s.id === r.slotKey || s.documentId === r.documentId,
+                    )
+                    return (
+                      <Box
+                        key={r.id}
+                        sx={{
+                          p: 1.35,
+                          borderRadius: 2,
+                          border: rework
+                            ? '1px solid rgba(196,90,18,0.35)'
+                            : '1px solid rgba(27,138,90,0.25)',
+                          bgcolor: rework ? '#FFF6EB' : '#E6F5EE',
+                        }}
+                      >
+                        <Stack
+                          direction={{ xs: 'column', sm: 'row' }}
+                          spacing={1}
+                          justifyContent="space-between"
+                          alignItems={{ xs: 'stretch', sm: 'center' }}
+                        >
+                          <Box sx={{ minWidth: 0 }}>
+                            <Typography sx={{ fontWeight: 750, fontSize: 13.5, color: '#0B1F35' }}>
+                              {r.title}
+                            </Typography>
+                            <Typography sx={{ fontSize: 12.5, color: '#5A6B7D', mt: 0.3 }}>
+                              {r.assigneeName || 'Коллега'} ·{' '}
+                              {REVIEW_STATUS_LABEL[r.status] || r.status}
+                              {r.comment ? ` · «${r.comment}»` : ''}
+                            </Typography>
+                          </Box>
+                          {rework && slot && (
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => {
+                                const input = document.createElement('input')
+                                input.type = 'file'
+                                input.accept = ACCEPT
+                                input.onchange = () => {
+                                  const file = input.files?.[0]
+                                  if (file) void attachFile(slot.id, file)
+                                }
+                                input.click()
+                              }}
+                              sx={{ textTransform: 'none', fontWeight: 700, whiteSpace: 'nowrap' }}
+                            >
+                              Заменить файл
+                            </Button>
+                          )}
+                          {r.kind === 'agreement' && id && (
+                            <Button
+                              component={RouterLink}
+                              to={`/app/applications/${id}/contract`}
+                              size="small"
+                              sx={{ textTransform: 'none', fontWeight: 700 }}
+                            >
+                              К договору
+                            </Button>
+                          )}
+                        </Stack>
+                      </Box>
+                    )
+                  })}
+                </Stack>
+              </Box>
+            )}
           </Box>
 
           <Box sx={tileSx}>
@@ -1170,7 +1428,9 @@ export function ApplicationDetailPage() {
                   Принять предложение банка
                 </Button>
               )}
-              {app.status === 'issued' && (
+              {(app.status === 'issued' ||
+                app.status === 'agreement_preparation' ||
+                app.status === 'offer_accepted') && (
                 <Button
                   component={RouterLink}
                   to={`/app/applications/${app.id}/contract`}
@@ -1216,6 +1476,54 @@ export function ApplicationDetailPage() {
           </Box>
         </Stack>
       </Box>
+
+      <Dialog open={assignOpen} onClose={() => !assignBusy && setAssignOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle sx={{ fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>
+          Назначить проверку документов
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ fontSize: 13.5, color: '#5A6B7D', mb: 2, lineHeight: 1.45 }}>
+            Сотрудник сразу получит уведомление, дедлайн появится в календаре, карточка — на доске
+            «Команда → Задачи», файлы — в «Документы → На проверке». После решения банка ему же
+            уйдёт отчёт на перепроверку.
+          </Typography>
+          <TextField
+            select
+            fullWidth
+            label="Кто проверяет"
+            value={assignUserId}
+            onChange={(e) => setAssignUserId(e.target.value)}
+            sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+          >
+            {(membersQ.data ?? [])
+              .filter((m) => m.status === 'active' && m.id !== user?.id)
+              .map((m) => (
+                <MenuItem key={m.id} value={m.id}>
+                  {m.name} · {ROLE_LABEL[m.role] || m.role}
+                </MenuItem>
+              ))}
+          </TextField>
+          {(membersQ.data ?? []).filter((m) => m.status === 'active' && m.id !== user?.id)
+            .length === 0 && (
+            <Typography sx={{ mt: 1.5, fontSize: 13, color: '#C45A12' }}>
+              В команде пока нет других участников. Пригласите бухгалтера на странице «Команда».
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setAssignOpen(false)} disabled={assignBusy} sx={{ textTransform: 'none' }}>
+            Отмена
+          </Button>
+          <Button
+            variant="contained"
+            disabled={!assignUserId || assignBusy}
+            onClick={() => void assignPackReview()}
+            sx={{ textTransform: 'none', fontWeight: 700, boxShadow: 'none' }}
+          >
+            {assignBusy ? 'Назначаю…' : 'Назначить'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }
@@ -1474,9 +1782,10 @@ function DocRow({
             >
               Заменить
             </Button>
-            {hasFile && slot.status !== 'review' && (
+            {hasFile && (
               <Button
                 variant="text"
+                disabled={busy}
                 onClick={onDownload}
                 sx={{ fontWeight: 600, color: '#5A6B7D', textTransform: 'none' }}
               >

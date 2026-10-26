@@ -679,7 +679,10 @@ export function AppLayout() {
             </Badge>
           </IconButton>
 
-          {activeCompany && (
+          {activeCompany &&
+            user &&
+            !isAnalystRole(user.role) &&
+            user.role !== 'admin' && (
             <>
               <Button
                 onClick={(e) => setCompanyAnchor(e.currentTarget)}

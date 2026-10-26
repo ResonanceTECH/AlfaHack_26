@@ -1,4 +1,5 @@
 import {
+  Alert,
   Box,
   Button,
   Checkbox,
@@ -13,8 +14,22 @@ import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import RadioButtonUncheckedRoundedIcon from '@mui/icons-material/RadioButtonUncheckedRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import PersonAddAlt1RoundedIcon from '@mui/icons-material/PersonAddAlt1Rounded'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link as RouterLink, useParams, useSearchParams } from 'react-router-dom'
+import {
+  confirmApplicationAgreement,
+  fetchApplicationAgreement,
+  fetchApplicationAgreementPdfBlob,
+} from '@/api/applications'
+import {
+  assignDocumentReviews,
+  listDocumentReviews,
+  patchDocumentReview,
+  type DocumentReview,
+} from '@/api/docReviews'
+import { listCompanies } from '@/api/companies'
+import { listMembers } from '@/api/team'
 import { useAuth } from '@/contexts/AuthContext'
 import {
   loadTeamMembers,
@@ -41,10 +56,10 @@ const tileSx = {
 } as const
 
 const APP_ID = 'ABC-2026-1042'
-const AMOUNT = '3 000 000 ₽'
+const AMOUNT = 'NaN'
 const TERM = '24 мес.'
 const RATE = '17,9%'
-const PAYMENT = '154 000 ₽'
+const PAYMENT = 'NaN'
 
 const PAYMENTS = [
   { date: '28.11.2026', amount: '154 000', rest: '2 890 000' },
@@ -106,11 +121,13 @@ const FALLBACK_TEAM: TeamMember[] = [
 
 export function DocumentViewPage() {
   const { user } = useAuth()
+  const qc = useQueryClient()
   const { docId, id: appId } = useParams<{ docId?: string; id?: string }>()
   const [params] = useSearchParams()
 
   const isContractRoute = Boolean(appId) || docId === 'contract' || params.get('type') === 'contract'
   const applicationId = appId || params.get('app') || APP_ID
+  const companyId = user?.companyId || ''
   const title =
     isContractRoute
       ? 'Демонстрационный договор'
@@ -125,13 +142,87 @@ export function DocumentViewPage() {
   const [smsSending, setSmsSending] = useState(false)
   const [flash, setFlash] = useState<string | null>(null)
   const [signedAt, setSignedAt] = useState<string | null>(null)
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const smsInputRef = useRef<HTMLInputElement | null>(null)
 
   const [assignments, setAssignments] = useState<DocAssignment[]>(() => loadDocAssignments(docKey))
   const [pickMemberId, setPickMemberId] = useState('')
   const [pickPurpose, setPickPurpose] = useState<DocAssignPurpose>('approve')
 
+  const companiesQ = useQuery({
+    queryKey: ['companies'],
+    queryFn: listCompanies,
+    enabled: isContractRoute && Boolean(companyId || user),
+  })
+  const membershipRole = companiesQ.data?.find((c) => c.id === companyId)?.membershipRole
+  const isOwner = membershipRole === 'OWNER'
+
+  const agreementQ = useQuery({
+    queryKey: ['agreement', companyId, applicationId],
+    queryFn: () => fetchApplicationAgreement(companyId, applicationId),
+    enabled: isContractRoute && Boolean(companyId) && Boolean(applicationId),
+  })
+
+  const reviewsQ = useQuery({
+    queryKey: ['doc-reviews', companyId, applicationId, 'agreement'],
+    queryFn: () => listDocumentReviews(companyId, { applicationId }),
+    enabled: isContractRoute && Boolean(companyId),
+  })
+  const agreementReviews = (reviewsQ.data ?? []).filter((r) => r.kind === 'agreement')
+  const myHelperReview = agreementReviews.find((r) => r.assigneeUserId === user?.id)
+
+  const membersQ = useQuery({
+    queryKey: ['members', companyId],
+    queryFn: () => listMembers(companyId),
+    enabled: isContractRoute && Boolean(companyId),
+  })
+
+  useEffect(() => {
+    if (!isContractRoute || !companyId || !applicationId) {
+      setPdfUrl('/demo/contract_ABC-775C68EB.pdf')
+      return
+    }
+    let revoked = false
+    let url: string | null = null
+    void fetchApplicationAgreementPdfBlob(companyId, applicationId)
+      .then((blob) => {
+        if (revoked) return
+        url = URL.createObjectURL(blob)
+        setPdfUrl(url)
+      })
+      .catch(() => {
+        if (!revoked) setPdfUrl('/demo/contract_ABC-775C68EB.pdf')
+      })
+    return () => {
+      revoked = true
+      if (url) URL.revokeObjectURL(url)
+    }
+  }, [isContractRoute, companyId, applicationId])
+
+  useEffect(() => {
+    const a = agreementQ.data
+    if (!a) return
+    if (a.confirmed) {
+      setBorrowerSigned(true)
+      setBankSigned(true)
+      if (a.confirmedAt) {
+        setSignedAt(
+          new Date(a.confirmedAt).toLocaleString('ru-RU', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+        )
+      }
+    }
+  }, [agreementQ.data])
+
   const team = useMemo(() => {
+    if (isContractRoute && (membersQ.data?.length ?? 0) > 0) {
+      return membersQ.data!
+    }
     const seed: TeamMember = {
       id: user?.id || 'owner',
       name: user?.fullName || 'Владелец компании',
@@ -147,11 +238,11 @@ export function DocumentViewPage() {
       (f) => !loaded.some((m) => m.id === f.id || m.email === f.email),
     )
     return [...loaded, ...extras]
-  }, [user])
+  }, [user, isContractRoute, membersQ.data])
 
   const assignable = useMemo(
-    () => team.filter((m) => m.status === 'active' || m.status === 'invited'),
-    [team],
+    () => team.filter((m) => (m.status === 'active' || m.status === 'invited') && m.id !== user?.id),
+    [team, user?.id],
   )
 
   useEffect(() => {
@@ -162,33 +253,96 @@ export function DocumentViewPage() {
   const conditionsAccepted = true
   const fullySigned = borrowerSigned && bankSigned
   const canSign = isContractRoute || Boolean(docId)
+  const canOwnerConfirm = isContractRoute && isOwner && !agreementQ.data?.confirmed
+  const canHelperApprove =
+    isContractRoute &&
+    !isOwner &&
+    myHelperReview &&
+    myHelperReview.status !== 'approved' &&
+    myHelperReview.status !== 'rejected'
+
+  const assignM = useMutation({
+    mutationFn: async () => {
+      const member = assignable.find((m) => m.id === pickMemberId)
+      if (!member) throw new Error('Выберите сотрудника')
+      if (isContractRoute && companyId) {
+        await assignDocumentReviews(companyId, {
+          assigneeUserId: member.id,
+          applicationId,
+          purpose: pickPurpose === 'approve' ? 'approve' : 'review',
+          items: [
+            {
+              kind: 'agreement',
+              title: `Договор ${agreementQ.data?.number || applicationId.slice(0, 8)}`,
+              fileName: 'agreement.pdf',
+              slotKey: 'credit_agreement',
+            },
+          ],
+        })
+        return member
+      }
+      const item: DocAssignment = {
+        memberId: member.id,
+        name: member.name,
+        email: member.email,
+        roleLabel: ROLE_LABEL[member.role],
+        purpose: pickPurpose,
+        status: 'pending',
+        assignedAt: new Date().toLocaleString('ru-RU', {
+          day: '2-digit',
+          month: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      }
+      setAssignments(addDocAssignment(docKey, item))
+      return member
+    },
+    onSuccess: (member) => {
+      setPickMemberId('')
+      setFlash(
+        `Назначено: ${member.name} · уведомление, календарь и задача на доске`,
+      )
+      void qc.invalidateQueries({ queryKey: ['doc-reviews', companyId, applicationId] })
+      void qc.invalidateQueries({ queryKey: ['doc-reviews', companyId] })
+      void qc.invalidateQueries({ queryKey: ['tasks', companyId] })
+      void qc.invalidateQueries({ queryKey: ['obligations', companyId] })
+      void qc.invalidateQueries({ queryKey: ['notifications'] })
+      window.setTimeout(() => setFlash(null), 2200)
+    },
+    onError: (e: unknown) => {
+      setFlash(e instanceof Error ? e.message : 'Не удалось назначить')
+      window.setTimeout(() => setFlash(null), 2500)
+    },
+  })
 
   function assignPerson() {
-    const member = assignable.find((m) => m.id === pickMemberId)
-    if (!member) return
-    const item: DocAssignment = {
-      memberId: member.id,
-      name: member.name,
-      email: member.email,
-      roleLabel: ROLE_LABEL[member.role],
-      purpose: pickPurpose,
-      status: 'pending',
-      assignedAt: new Date().toLocaleString('ru-RU', {
-        day: '2-digit',
-        month: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-    }
-    setAssignments(addDocAssignment(docKey, item))
-    setPickMemberId('')
-    setFlash(`Назначено: ${member.name} · ${PURPOSE_LABEL[pickPurpose].toLowerCase()}`)
-    window.setTimeout(() => setFlash(null), 2200)
+    assignM.mutate()
   }
 
   function unassign(memberId: string) {
     setAssignments(removeDocAssignment(docKey, memberId))
   }
+
+  const helperApproveM = useMutation({
+    mutationFn: async (status: 'approved' | 'rejected') => {
+      if (!companyId || !myHelperReview) throw new Error('Нет назначения')
+      return patchDocumentReview(companyId, myHelperReview.id, {
+        status,
+        comment: status === 'approved' ? 'Рекомендую согласовать' : 'Есть замечания',
+      })
+    },
+    onSuccess: (r: DocumentReview) => {
+      setFlash(
+        r.status === 'approved'
+          ? 'Рекомендация отправлена владельцу. Финальное одобрение — за ним.'
+          : 'Замечания отправлены владельцу',
+      )
+      void qc.invalidateQueries({ queryKey: ['doc-reviews', companyId, applicationId] })
+      void qc.invalidateQueries({ queryKey: ['agreement', companyId, applicationId] })
+      window.setTimeout(() => setFlash(null), 2800)
+    },
+  })
 
   useEffect(() => {
     if (smsOpen) {
@@ -197,6 +351,18 @@ export function DocumentViewPage() {
   }, [smsOpen])
 
   function downloadPdf() {
+    if (pdfUrl) {
+      const a = document.createElement('a')
+      a.href = pdfUrl
+      a.download = `contract_${applicationId || 'demo'}.pdf`
+      a.rel = 'noopener'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setFlash('PDF скачивается')
+      window.setTimeout(() => setFlash(null), 2000)
+      return
+    }
     setFlash('PDF скачивается (демо)')
     window.setTimeout(() => setFlash(null), 2000)
   }
@@ -208,13 +374,18 @@ export function DocumentViewPage() {
       return
     }
     if (fullySigned) return
+    if (isContractRoute && !isOwner) {
+      setFlash('Финальное согласование доступно только владельцу')
+      window.setTimeout(() => setFlash(null), 2500)
+      return
+    }
     setSmsCode('')
     setSmsSending(true)
     setSmsOpen(true)
     window.setTimeout(() => setSmsSending(false), 600)
   }
 
-  function confirmSms() {
+  async function confirmSms() {
     if (smsCode.trim().length < 4) return
     const now = new Date()
     const stamp = now.toLocaleString('ru-RU', {
@@ -225,6 +396,32 @@ export function DocumentViewPage() {
       minute: '2-digit',
     })
     setSmsOpen(false)
+
+    if (isContractRoute && companyId && canOwnerConfirm) {
+      try {
+        await confirmApplicationAgreement(companyId, applicationId, {
+          acknowledged: true,
+          note: 'ПЭП демо',
+        })
+        setBorrowerSigned(true)
+        setBankSigned(true)
+        setSignedAt(stamp)
+        setFlash('Договор согласован владельцем')
+        void qc.invalidateQueries({ queryKey: ['agreement', companyId, applicationId] })
+        window.setTimeout(() => setFlash(null), 2800)
+        return
+      } catch (e: unknown) {
+        const msg =
+          (e as { response?: { data?: { detail?: string; error?: { message?: string } } } })
+            ?.response?.data?.error?.message ||
+          (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+          'Не удалось согласовать'
+        setFlash(String(msg))
+        window.setTimeout(() => setFlash(null), 3000)
+        return
+      }
+    }
+
     setBorrowerSigned(true)
     setSignedAt(stamp)
     setFlash('ПЭП подтверждена · ждём подпись банка…')
@@ -616,6 +813,37 @@ export function DocumentViewPage() {
               </Button>
             </Stack>
 
+            {agreementReviews.length > 0 && (
+              <Stack spacing={1} sx={{ mt: 2 }}>
+                <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#9AA5B1' }}>
+                  На проверке договора
+                </Typography>
+                {agreementReviews.map((r) => (
+                  <Box
+                    key={r.id}
+                    sx={{
+                      p: 1.25,
+                      borderRadius: 2,
+                      border: '1px solid rgba(11,31,53,0.08)',
+                      bgcolor: 'rgba(11,31,53,0.015)',
+                    }}
+                  >
+                    <Typography sx={{ fontSize: 13.5, fontWeight: 750, color: '#0B1F35' }}>
+                      {r.assigneeName || r.assigneeEmail || r.assigneeUserId.slice(0, 8)}
+                    </Typography>
+                    <Typography sx={{ fontSize: 12, color: '#7A8795', mt: 0.25 }}>
+                      {r.status === 'approved'
+                        ? 'Рекомендовал согласовать'
+                        : r.status === 'rejected'
+                          ? 'Есть замечания'
+                          : 'Ожидает разбора'}
+                      {r.comment ? ` · ${r.comment}` : ''}
+                    </Typography>
+                  </Box>
+                ))}
+              </Stack>
+            )}
+
             {assignments.length > 0 && (
               <Stack spacing={1} sx={{ mt: 2 }}>
                 <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#9AA5B1' }}>
@@ -821,7 +1049,41 @@ export function DocumentViewPage() {
             </Box>
           )}
 
-          {canSign && (
+          {isContractRoute && agreementQ.data?.helperApproved && !agreementQ.data.confirmed && (
+            <Alert severity="success" sx={{ borderRadius: 2 }}>
+              Помощник рекомендовал согласовать. Финальное решение — за владельцем.
+            </Alert>
+          )}
+
+          {canHelperApprove && (
+            <Stack spacing={1}>
+              <Typography sx={{ fontSize: 13, color: '#5A6B7D', lineHeight: 1.45 }}>
+                Вас назначили на разбор договора. Можете дать рекомендацию — финально одобряет
+                только владелец.
+              </Typography>
+              <Button
+                fullWidth
+                variant="contained"
+                color="primary"
+                disabled={helperApproveM.isPending}
+                onClick={() => helperApproveM.mutate('approved')}
+                sx={{ borderRadius: 2, fontWeight: 700, textTransform: 'none', boxShadow: 'none' }}
+              >
+                Рекомендовать согласовать
+              </Button>
+              <Button
+                fullWidth
+                variant="outlined"
+                disabled={helperApproveM.isPending}
+                onClick={() => helperApproveM.mutate('rejected')}
+                sx={{ borderRadius: 2, fontWeight: 700, textTransform: 'none' }}
+              >
+                Есть замечания
+              </Button>
+            </Stack>
+          )}
+
+          {canSign && (isContractRoute ? canOwnerConfirm || fullySigned : true) && (
             <Box>
               <FormControlLabel
                 control={
@@ -835,7 +1097,7 @@ export function DocumentViewPage() {
                 label={
                   <Typography sx={{ fontSize: 13.5, fontWeight: 600, color: '#0B1F35', lineHeight: 1.4 }}>
                     {isContractRoute
-                      ? 'Я прочитал договор и согласен с условиями'
+                      ? 'Я прочитал договор и согласен с условиями (финал владельца)'
                       : 'Я прочитал документ и согласен подписать'}
                   </Typography>
                 }
@@ -856,7 +1118,7 @@ export function DocumentViewPage() {
                   '&:hover': { boxShadow: 'none' },
                 }}
               >
-                {fullySigned ? 'Документ подписан' : 'Подписать (демо)'}
+                {fullySigned ? 'Документ подписан' : isContractRoute ? 'Согласовать договор' : 'Подписать (демо)'}
               </Button>
               {!fullySigned && (
                 <Typography sx={{ fontSize: 12, color: '#9AA5B1', mt: 1, lineHeight: 1.4, textAlign: 'center' }}>

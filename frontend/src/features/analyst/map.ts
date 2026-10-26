@@ -11,6 +11,9 @@ const STEP_LABELS: Record<string, string> = {
   DECISION: 'Подготовка решения',
   OFFER: 'Оферта клиенту',
   AGREEMENT: 'Подготовка договора',
+  AGREEMENT_PREPARATION: 'Подготовка договора',
+  AGREEMENT_PREPARED: 'Договор подготовлен',
+  AGREEMENT_CONFIRMED: 'Договор согласован',
   AUTOMATED_VALIDATION: 'Автопроверка',
   CREDIT_PARAMETERS: 'Параметры кредита',
   CLOSED: 'Закрыта',
@@ -27,6 +30,7 @@ const STATUS_LABELS: Record<string, string> = {
   COUNTEROFFERED: 'Контрпредложение',
   OFFER_ACCEPTED: 'Оферта принята',
   AGREEMENT_PREPARATION: 'Подготовка договора',
+  AGREEMENT_CONFIRMED: 'Договор согласован',
   REJECTED: 'Отклонена',
   NEED_INFO: 'Нужна информация',
   ISSUED: 'Выдана',
@@ -36,6 +40,7 @@ const STATUS_LABELS: Record<string, string> = {
   RUNNING: 'В работе',
   COMPLETED: 'Завершён',
   FAILED: 'Ошибка',
+  VALIDATING: 'Автопроверка',
 }
 
 export function analystStatusLabel(status?: string | null): string {
@@ -55,8 +60,10 @@ function statusLabelsFallback(status: string): string {
     counteroffered: 'Контрпредложение',
     offer_accepted: 'Оферта принята',
     agreement_preparation: 'Подготовка договора',
+    agreement_confirmed: 'Договор согласован',
     rejected: 'Отклонена',
     issued: 'Выдана',
+    validating: 'Автопроверка',
   }
   return map[lower] || status
 }

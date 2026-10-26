@@ -254,6 +254,33 @@ def upload_document(
         )
 
     db.flush()
+
+    # Keep analyst auto-check in sync with live uploads
+    from app.services.workflow import refresh_documents_baseline_check
+
+    refresh_documents_baseline_check(db, app)
+
+    analyst_id = app.assigned_analyst_id or app.assigned_manager_id
+    if analyst_id and analyst_id != user.id:
+        from app.services.notifications import notify
+
+        label = filename or doc.file_name or doc.name or "файл"
+        notify(
+            db,
+            user_id=analyst_id,
+            type="APP_DOC_UPLOADED",
+            title="Клиент загрузил документ",
+            body=f"«{label}» по заявке {app.id[:8]}… — смотрите «Проверки» / «Документы».",
+            payload={
+                "application_id": app.id,
+                "document_id": doc.id,
+                "file_name": label,
+                "doc_type": doc.document_type or doc.doc_type,
+                "company_id": app.company_id,
+            },
+        )
+
+    db.flush()
     return doc
 
 

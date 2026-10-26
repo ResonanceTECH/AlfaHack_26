@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import Response
 
 from app.core.enums import ApplicationStatus, UserRole
 from app.deps import CorrelationId, CurrentUser, DbDep
@@ -27,7 +28,14 @@ from app.schemas.analyst import (
     AnalystWorkflowBrief,
 )
 from app.schemas.application import ApplicationOut, CommentOut, DocumentRequestOut
+from app.schemas.finance_p1 import AgreementOut
 from app.services.access import require_application_access, require_roles
+from app.services.agreements import (
+    ensure_agreement,
+    pdf_bytes,
+    send_agreement_to_client,
+    serialize_agreement,
+)
 from app.services.analyst import (
     assign_application,
     build_analyst_card,
@@ -142,6 +150,7 @@ def analyst_application_card(
     require_application_access(db, user, app)
 
     raw = build_analyst_card(db, app)
+    db.commit()
     return AnalystApplicationCard(
         application=ApplicationOut(**raw["application"]),
         company=AnalystCompanyBrief(**raw["company"]) if raw.get("company") else None,
@@ -165,7 +174,8 @@ def analyst_application_checks(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Заявка не найдена")
     require_application_access(db, user, app)
 
-    raw = build_analyst_checks(app)
+    raw = build_analyst_checks(app, db=db)
+    db.commit()
     return AnalystChecksOut(
         application_id=raw["application_id"],
         status=raw["status"],
@@ -469,3 +479,76 @@ def analyst_propose_decision(
         explanation=payload.get("explanation"),
         offer=offer_brief,
     )
+
+
+@router.get(
+    "/applications/{application_id}/agreement",
+    response_model=AgreementOut,
+)
+def analyst_get_agreement(
+    application_id: str, db: DbDep, user: CurrentUser
+) -> AgreementOut:
+    require_roles(user, UserRole.ANALYST)
+    app = get_analyst_application(db, application_id)
+    if app is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Заявка не найдена")
+    require_application_access(db, user, app)
+    agreement = ensure_agreement(db, app)
+    db.commit()
+    db.refresh(agreement)
+    return AgreementOut(**serialize_agreement(db, agreement))
+
+
+@router.get("/applications/{application_id}/agreement/download")
+def analyst_download_agreement(
+    application_id: str, db: DbDep, user: CurrentUser
+) -> Response:
+    require_roles(user, UserRole.ANALYST)
+    app = get_analyst_application(db, application_id)
+    if app is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Заявка не найдена")
+    require_application_access(db, user, app)
+    agreement = ensure_agreement(db, app)
+    db.commit()
+    body = pdf_bytes(agreement)
+    return Response(
+        content=body,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'inline; filename="agreement-{agreement.number or agreement.id}.pdf"'
+            ),
+        },
+    )
+
+
+@router.post(
+    "/applications/{application_id}/agreement/send",
+    response_model=AgreementOut,
+)
+def analyst_send_agreement(
+    application_id: str,
+    db: DbDep,
+    user: CurrentUser,
+    cid: CorrelationId,
+) -> AgreementOut:
+    require_roles(user, UserRole.ANALYST)
+    app = get_analyst_application(db, application_id)
+    if app is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Заявка не найдена")
+    require_application_access(db, user, app, write=True)
+    agreement = ensure_agreement(db, app)
+    send_agreement_to_client(db, agreement, actor=user)
+    write_audit(
+        db,
+        actor_id=user.id,
+        entity_type="agreement",
+        entity_id=agreement.id,
+        action="agreement_send",
+        details={"application_id": app.id},
+        correlation_id=cid,
+        company_id=app.company_id,
+    )
+    db.commit()
+    db.refresh(agreement)
+    return AgreementOut(**serialize_agreement(db, agreement))

@@ -130,16 +130,17 @@ def _notify_assignee(
     if not task.assignee_user_id or task.assignee_user_id == actor.id:
         return
     due = task.due_date.isoformat() if task.due_date else None
-    verb = "назначена" if is_new else "обновлена"
-    body_parts = [f'Вам {verb} задача «{task.title}» в «{company_name}».']
+    actor_name = actor.full_name or actor.email or "Коллега"
+    verb = "назначил(а) вам задачу" if is_new else "обновил(а) задачу"
+    body_parts = [f"{actor_name} {verb} «{task.title}» в «{company_name}»."]
     if due:
-        body_parts.append(f"Дедлайн: {due}.")
+        body_parts.append(f"Дедлайн: {due} — в календаре и на доске задач.")
     body_parts.append("Откройте «Команда → Совместные задачи».")
     notify(
         db,
         user_id=task.assignee_user_id,
         type="TEAM_TASK",
-        title=f"Задача: {task.title}",
+        title=f"{actor_name}: {task.title}",
         body=" ".join(body_parts),
         payload={
             "task_id": task.id,
@@ -147,8 +148,9 @@ def _notify_assignee(
             "company_name": company_name,
             "due_date": due,
             "status": task.status,
+            "obligation_id": task.obligation_id,
             "assigned_by": actor.id,
-            "assigned_by_name": actor.full_name,
+            "assigned_by_name": actor_name,
         },
     )
 
@@ -163,6 +165,7 @@ def create_task(
     assignee_user_id: str | None,
     due_date: date | None,
     status: str = "todo",
+    notify_assignee: bool = True,
 ) -> CompanyTask:
     status = (status or "todo").strip().lower()
     if status not in VALID_STATUSES:
@@ -188,7 +191,8 @@ def create_task(
     db.add(task)
     db.flush()
     _sync_calendar_obligation(db, task)
-    _notify_assignee(db, task=task, actor=actor, company_name=company_name, is_new=True)
+    if notify_assignee:
+        _notify_assignee(db, task=task, actor=actor, company_name=company_name, is_new=True)
     db.flush()
     return task
 
