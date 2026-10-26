@@ -213,7 +213,9 @@ docker compose down
 # с данными БД:
 docker compose down -v
 ```
-
+Модель загружена и готова к работе когда мы видим лог
+model loaded
+listening on http://0.0.0.0:8080
 ---
 
 ## 5. Локальная разработка
