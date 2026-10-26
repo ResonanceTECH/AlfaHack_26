@@ -44,6 +44,7 @@ from app.models.notification import Notification
 from app.models.policy import CreditPolicy, CreditPolicyVersion, Policy, PolicySimulation, PolicyVersion
 from app.models.rbac import RolePermission
 from app.models.session import AuthSession, RefreshToken
+from app.models.task import CompanyTask
 from app.models.user import User
 
 __all__ = [
@@ -51,6 +52,7 @@ __all__ = [
     "AuthSession",
     "RefreshToken",
     "RolePermission",
+    "CompanyTask",
     "Company",
     "CompanyMembership",
     "CompanyMember",
